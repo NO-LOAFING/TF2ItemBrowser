@@ -1,5 +1,15 @@
-local s = file.Read("scripts/items/items_game.txt", "tf")
-s = util.KeyValuesToTable(s)
+local classes = {"any", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
+//our favorite black scottish cyclops is called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), 
+//"demo" in model paths, and either one interchangably in equip region names. dumb!!!
+for k, v in ipairs (classes) do
+	local shortname = v
+	if v == "demoman" then shortname = "demo" end
+	classes[k] = {shortname = shortname, longname = v}
+end
+
+
+local _s = file.Read("scripts/items/items_game.txt", "tf")
+local s = util.KeyValuesToTable(_s)
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -60,7 +70,6 @@ PrintTable(t)]]
 local bad_values = {"public_prefab", "qc_template", "triangle_budget_lod0", "triangle_budget_lod1", "triangle_budget_lod2"}
 
 for k, v in pairs (s.items) do
-
 	//clear useless items
 	if v.equip_type == "account" then //contracts
 		s.items[k] = nil
@@ -77,11 +86,41 @@ for k, v in pairs (s.items) do
 		v.equip_regions = {[v.equip_region] = 1}
 	end
 	v.equip_region = nil
-	
 end
 
 
-TF2Items = s.items
+//s.equip_regions has multiple "shared" keys that are subtables filled with many different class-specific strings, but these get clobbered by util.KeyValuesToTable, 
+//so we have to rescue them. also use this chance to get the implementation order, because it makes the equip region list look nicer.
+local s2 = util.KeyValuesToTablePreserveOrder(_s)
+local tab = {}
+for _, class in ipairs (classes) do //sort these by class so we can filter them easily + print class-based ones in class order
+	tab[class.longname] = {}
+end
+
+for k, v in ipairs (s2) do
+	if v.Key == "equip_regions_list" then
+		for k2, v2 in ipairs (v.Value) do
+			if istable(v2.Value) then
+				for k3, v3 in pairs (v2.Value) do
+					for _, class in ipairs (classes) do
+						if string.StartsWith(v3.Key, class.shortname) or string.StartsWith(v3.Key, class.longname) then
+							table.insert(tab[class.longname], v3.Key)
+							break
+						end
+					end
+						
+				end
+			else
+				table.insert(tab["any"], v2.Key)
+			end
+		end
+		break
+	end
+end
+s.equip_regions_list = tab
+
+
+TF2Items = s
 
 
 
@@ -93,6 +132,11 @@ TF2Items = s.items
 
 
 if CLIENT then
+
+	local bgcol = Color(42,39,37,255) //eyedropped from tf2 loadout screen, don't know what the material is
+	local LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
+	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
+	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
 	
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Item Browser",
@@ -110,20 +154,215 @@ if CLIENT then
 			window:SetMinHeight( window:GetTall() )
 			window:Center()]]
 
+			function window:Paint(w, h)
+				surface.SetDrawColor(bgcol)
+				surface.DrawRect(0,0,w,h)
+			end
+			
+
 			local scroll = vgui.Create("DScrollPanel", window)
 			scroll:Dock(FILL)
 
-			local list = vgui.Create("DIconLayout", scroll)
-			list:Dock(FILL)
-			list:SetSpaceY(5)
-			list:SetSpaceX(5)
-			list.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
+			local iconlist = vgui.Create("DIconLayout", scroll)
+			iconlist:Dock(FILL)
+			iconlist:SetSpaceY(5)
+			iconlist:SetSpaceX(5)
+			iconlist.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
 			
+
+			--[[local filters_holder = window:Add("DPanel")
+			filters_holder:DockPadding(8,8,8,8)
+			filters_holder:SetWidth(100)
+			filters_holder:Dock(LEFT)]]
+
+			local filters = window:Add("DPanel")
+			//filters:DockPadding(8,8,8,8)
+			filters:DockPadding(24,24,24,24)
+			filters:SetWidth(220)
+			filters:Dock(LEFT)
+			//filters:EnableVerticalScrollbar()
+			//filters:Dock(FILL)
+
+			function filters:Paint(w,h)
+				//surface.SetDrawColor(255,255,255,255)
+				//surface.DrawRect(0,0,w,h)
+				TFThinLineBorder(0,0,w,h)
+			end
+
+			//ugly temporary filter options
+			local betweenitems = 8
+			local betweencategories = 20
+
+			local search = vgui.Create("DTextEntry", filters)
+			search:SetHeight(20)
+			search:Dock(TOP)
+			search:DockMargin(0,0,0,betweencategories)
+			search:SetPlaceholderText("#spawnmenu.search")
+			search:SetTooltip("#spawnmenu.enter_search")
+			filters.search = search
+			search.OnEnter = function()
+				//TODO
+			end
+			local searchbutton = search:Add("DImageButton")
+			searchbutton:SetImage("icon16/magnifier.png")
+			searchbutton:Dock(RIGHT)
+			searchbutton:DockMargin(4,2,4,2)
+			searchbutton:SetSize(16,16)
+			searchbutton:SetTooltip("#spawnmenu.press_search")
+			searchbutton.DoClick = function()
+				search.OnEnter()
+			end
+
+			//make this use red/blu team icons later
+			local check = vgui.Create("DCheckBoxLabel", filters)
+			check:SetText("BLU")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			filters.team = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local drop = vgui.Create("Panel", filters)
+			drop.Label = vgui.Create("DLabel", drop)
+			drop.Label:SetText("Class")
+			drop.Label:Dock(LEFT)
+			drop.Combo = vgui.Create("DComboBox", drop)
+			drop.Combo:SetHeight(25)
+			drop.Combo:Dock(FILL)
+			drop:SetHeight(25)
+			drop:Dock(TOP)
+			drop:DockMargin(0,0,0,betweenitems)
+			function drop.PerformLayout(_, w, h)
+				drop.Label:SetWide(w / 2.4)
+			end
+			drop.Combo:SetSortItems(false)
+			for _, kv in ipairs (classes) do //if we don't have an "any" option then we don't have to worry about picking the current class model to spawn from a dropdown, hmm
+				drop.Combo:AddChoice(string.NiceName(kv.longname), kv)
+			end
+			filters.class = drop.Combo
+			function drop.Combo.OnSelect(_, index, value, data)
+				//TODO
+			end
+
+			local drop = vgui.Create("Panel", filters)
+			drop.Label = vgui.Create("DLabel", drop)
+			drop.Label:SetText("Item Type")
+			drop.Label:Dock(LEFT)
+			drop.Combo = vgui.Create("DComboBox", drop)
+			drop.Combo:SetHeight(25)
+			drop.Combo:Dock(FILL)
+			drop:SetHeight(25)
+			drop:Dock(TOP)
+			drop:DockMargin(0,0,0,betweencategories)
+			function drop.PerformLayout(_, w, h)
+				drop.Label:SetWide(w / 2.4)
+			end
+			drop.Combo:SetSortItems(false)
+			for _, kv in ipairs ({"any", "weapon", "cosmetic", "taunt", "other"}) do
+				drop.Combo:AddChoice(string.NiceName(kv), kv)
+			end
+			filters.type = drop.Combo
+			function drop.Combo.OnSelect(_, index, value, data)
+				//TODO
+			end
+
+			local cat = vgui.Create("DCollapsibleCategory", filters)
+			cat:SetLabel("Equip Regions")
+			cat:Dock(TOP)
+			cat:DockMargin(0,0,0,betweencategories)
+			local pnl = vgui.Create("DPanel", cat) //stupid buffer panel to stop DCollapsibleCategory from forcibly running SizeToContents on container, overriding its desired height
+			pnl:Dock(TOP)
+			pnl.Paint = function() end
+			local container = vgui.Create("DScrollPanel", pnl)
+			container:Dock(TOP)
+			container:SetTall(300)
+			container:GetCanvas():DockPadding(4,4,4,4)
+			pnl:SizeToContents()
+			filters.equip_regions = {}
+			for _, class in ipairs (classes) do
+				for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
+					//TODO: when a class is selected, rebuild this list, and don't add checkboxes for classes that are filtered out
+					local check = vgui.Create("DCheckBoxLabel", container) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+					check:SetText(string.NiceName(v))
+					check:SetHeight(15)
+					check:Dock(TOP)
+					check:DockMargin(0,0,0,betweenitems)
+					container:AddItem(check)
+					filters.equip_regions[v] = check
+					check.OnChange = function(_, val)
+						//TODO
+					end
+				end
+			end
+			cat:SetContents(pnl)
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("Holiday-Restricted")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			filters.holiday = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("Paintable")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			filters.paint = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("War Paintable")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweencategories)
+			filters.warpaint = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("Custom Items")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			filters.custom = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local button = vgui.Create("DButton", filters)
+			button:SetText("Add custom item...")
+			button:SetHeight(20)
+			button:Dock(TOP)
+			button:DockMargin(0,0,0,0)
+			button.DoClick = function()
+				//TODO
+			end
+
+
+
+
+
+
+
+
+
+
+
+
 
 			local function RebuildIconList()
 				window.icons = {}
 				window.icons_to_add = {}
-				for k, v in pairs (TF2Items) do
+				for k, v in pairs (TF2Items.items) do
 					//test, this makes testing faster because it filters out >60% of items; TODO: apply proper filters here eventually
 					if v.equip_regions and v.equip_regions.medal then continue end
 
@@ -142,7 +381,7 @@ if CLIENT then
 					for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
 						local v = self.icons_to_add[k]
 						if v then
-							local item = list:Add("TF2ItemIcon")
+							local item = iconlist:Add("TF2ItemIcon")
 							item:SetItemID(v)
 							self.icons[v] = item
 						else
@@ -154,7 +393,7 @@ if CLIENT then
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-					//list:Layout()
+					//iconlist:Layout()
 					scroll:InvalidateLayout()
 				end
 
@@ -172,11 +411,7 @@ if CLIENT then
 				old_Think(self, ...)
 			end
 
-			local bgcol = Color(42,39,37,255) //eyedropped from tf2 loadout screen, don't know what the material is
-			function window:Paint(w, h)
-				surface.SetDrawColor(bgcol)
-				surface.DrawRect(0,0,w,h)
-			end
+
 
 		end
 	})
@@ -201,10 +436,10 @@ if CLIENT then
 
 		self.m_iItemID = i
 
-		self.ImageToQueue = TF2Items[i].image_inventory
+		self.ImageToQueue = TF2Items.items[i].image_inventory
 
 		//test
-		self:SetTooltip(TF2Items[i].name)
+		self:SetTooltip(TF2Items.items[i].name)
 		
 	end
 
@@ -284,6 +519,7 @@ if CLIENT then
 		end
 
 		if self.mat then
+			surface.SetDrawColor(255,255,255,255)
 			surface.SetMaterial(self.mat)
 			//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
 			local diff = (1-(h/w))/2
@@ -302,7 +538,7 @@ if CLIENT then
 	function PANEL:DoClick()
 
 		//test
-		PrintTable(TF2Items[self:GetItemID()])
+		PrintTable(TF2Items.items[self:GetItemID()])
 
 	end
 
