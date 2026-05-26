@@ -216,7 +216,7 @@ if CLIENT then
 				surface.SetDrawColor(bgcol)
 				surface.DrawRect(0,0,w,h)
 			end
-			
+
 
 			local scroll = vgui.Create("DScrollPanel", window)
 			scroll:Dock(FILL)
@@ -226,7 +226,7 @@ if CLIENT then
 			iconlist:SetSpaceY(5)
 			iconlist:SetSpaceX(5)
 			iconlist.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
-			
+
 
 			--[[local filters_holder = window:Add("DPanel")
 			filters_holder:DockPadding(8,8,8,8)
@@ -282,75 +282,58 @@ if CLIENT then
 				//TODO
 			end
 
-			local drop = vgui.Create("Panel", filters)
-			drop.Label = vgui.Create("DLabel", drop)
-			drop.Label:SetText("Class")
-			drop.Label:Dock(LEFT)
-			drop.Combo = vgui.Create("DComboBox", drop)
-			drop.Combo:SetHeight(25)
-			drop.Combo:Dock(FILL)
-			drop:SetHeight(25)
-			drop:Dock(TOP)
-			drop:DockMargin(0,0,0,betweenitems)
-			function drop.PerformLayout(_, w, h)
-				drop.Label:SetWide(w / 2.4)
-			end
-			drop.Combo:SetSortItems(false)
-			for _, kv in ipairs (classes) do
-				drop.Combo:AddChoice(string.NiceName(kv.longname), kv)
-			end
-			filters.class = drop.Combo
-			function drop.Combo.OnSelect(_, index, value, data)
-				//TODO
-			end
-
-			local drop = vgui.Create("Panel", filters)
-			drop.Label = vgui.Create("DLabel", drop)
-			drop.Label:SetText("Item Type")
-			drop.Label:Dock(LEFT)
-			drop.Combo = vgui.Create("DComboBox", drop)
-			drop.Combo:SetHeight(25)
-			drop.Combo:Dock(FILL)
-			drop:SetHeight(25)
-			drop:Dock(TOP)
-			drop:DockMargin(0,0,0,betweenitems)
-			function drop.PerformLayout(_, w, h)
-				drop.Label:SetWide(w / 2.4)
-			end
-			drop.Combo:SetSortItems(false)
-			for _, kv in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
-				drop.Combo:AddChoice(string.NiceName(kv), kv)
-			end
-			filters.type = drop.Combo
-			function drop.Combo.OnSelect(_, index, value, data)
-				//TODO
+			local function AddDropdownFilter(label, populatefunc)
+				local drop = vgui.Create("Panel", filters)
+				drop.Label = vgui.Create("DLabel", drop)
+				drop.Label:SetText(label)
+				drop.Label:Dock(LEFT)
+				drop.Combo = vgui.Create("DComboBox", drop)
+				drop.Combo:SetHeight(25)
+				drop.Combo:Dock(FILL)
+				drop:SetHeight(25)
+				drop:Dock(TOP)
+				drop:DockMargin(0,0,0,betweenitems)
+				function drop.PerformLayout(_, w, h)
+					drop.Label:SetWide(w / 2.4)
+				end
+				drop.Combo:SetSortItems(false)
+				populatefunc(drop.Combo)
+				function drop.Combo.OnSelect(_, index, value, data)
+					//TODO
+				end
+				return drop.Combo
 			end
 
-			local drop = vgui.Create("Panel", filters)
-			drop.Label = vgui.Create("DLabel", drop)
-			drop.Label:SetText("Equip Region")
-			drop.Label:Dock(LEFT)
-			drop.Combo = vgui.Create("DComboBox", drop)
-			drop.Combo:SetHeight(25)
-			drop.Combo:Dock(FILL)
-			drop:SetHeight(25)
-			drop:Dock(TOP)
-			drop:DockMargin(0,0,0,betweencategories)
-			function drop.PerformLayout(_, w, h)
-				drop.Label:SetWide(w / 2.4)
-			end
-			drop.Combo:SetSortItems(false)
-			drop.Combo:AddChoice("(any)", "(any)")
-			for _, class in ipairs (classes) do
-				for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
-					//TODO: when a class is selected, rebuild this list, and don't add entries for classes that are filtered out
-					drop.Combo:AddChoice(string.NiceName(v), v)
+			filters.class = AddDropdownFilter("Class", function(self)
+				for _, v in ipairs (classes) do
+					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
+				end
+			end)
+
+			filters.type = AddDropdownFilter("Item Type", function(self) 
+				for _, v in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
+					self:AddChoice(string.NiceName(v), v, v == "(any)")
+				end
+			end)
+
+			local equip_regions_populate = function(self)
+				local _, old_choice = self:GetSelected()
+				old_choice = old_choice or "(any)"
+				self:AddChoice("(any)", "(any)", old_choice == "(any)")
+				for _, class in ipairs (classes) do
+					//If we have a class selected, filter out equip regions for other classes
+					local _, selected_class = filters.class:GetSelected()
+					selected_class = selected_class or "(any)"
+					if selected_class == "(any)" or class.longname == "(any)" or selected_class == class.longname then
+						for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
+							self:AddChoice(string.NiceName(v), v, old_choice == v)
+						end
+					end
 				end
 			end
-			filters.equip_region = drop.Combo
-			function drop.Combo.OnSelect(_, index, value, data)
-				//TODO
-			end
+			filters.equip_region = AddDropdownFilter("Equip Region", equip_regions_populate)
+			filters.equip_region.RebuildControls = equip_regions_populate //make this func externally accessible so we can rebuild it when picking a new class
+			filters.equip_region:GetParent():DockMargin(0,0,0,betweencategories)
 			
 			local check = vgui.Create("DCheckBoxLabel", filters)
 			check:SetText("Hide conflicting items")
@@ -363,69 +346,29 @@ if CLIENT then
 				//TODO
 			end
 
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Multi-class")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			filters.multi_class = check
-			check.OnChange = function(_, val)
-				//TODO
+			local function AddIncludeExcludeFilter(label)
+				//TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+				local check = vgui.Create("DCheckBoxLabel", filters)
+				check:SetText(label)
+				check:SetHeight(15)
+				check:Dock(TOP)
+				check:DockMargin(0,0,0,betweenitems)
+				check.OnChange = function(_, val)
+					//TODO
+				end
+				return check
 			end
 
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Holiday restricted")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			filters.holiday = check
-			check.OnChange = function(_, val)
-				//TODO
-			end
-
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Paintable")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			filters.paint = check
-			check.OnChange = function(_, val)
-				//TODO
-			end
-
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("War Paintable")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			filters.warpaint = check
-			check.OnChange = function(_, val)
-				//TODO
-			end
-
+			filters.multi_class = AddIncludeExcludeFilter("Multi-class")
+			filters.holiday = AddIncludeExcludeFilter("Holiday restricted")
+			filters.paint = AddIncludeExcludeFilter("Paintable")
+			filters.warpaint = AddIncludeExcludeFilter("War Paintable")
 			//This kind of sucks, ordinarily i'd just make this a separate item type, but we need to be able to 
 			//filter them out by default when item type is set to '(all)', because there's so many of them (about
 			//twice as many tournament medals as other items) that they severely impact this menu's performance
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Tournament medals")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweencategories)
-			filters.tournament_medals = check
-			//TODO: this one should be set to exclude by default!!!
-			check.OnChange = function(_, val)
-				//TODO
-			end
-
-			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Custom items")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			filters.custom = check
-			check.OnChange = function(_, val)
-				//TODO
-			end
+			filters.tournament_medals = AddIncludeExcludeFilter("Tournament medals") //TODO: this one should be set to exclude by default!!!
+			filters.tournament_medals:DockMargin(0,0,0,betweencategories)
+			filters.custom = AddIncludeExcludeFilter("Custom items")
 
 			local button = vgui.Create("DButton", filters)
 			button:SetText("Add custom item...")
@@ -435,17 +378,6 @@ if CLIENT then
 			button.DoClick = function()
 				//TODO
 			end
-
-
-
-
-
-
-
-
-
-
-
 
 
 			local function RebuildIconList()
@@ -499,8 +431,6 @@ if CLIENT then
 				end
 				old_Think(self, ...)
 			end
-
-
 
 		end
 	})
