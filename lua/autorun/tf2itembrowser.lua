@@ -1,4 +1,4 @@
-local classes = {"any", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
+local classes = {"(any)", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
 //our favorite black scottish cyclops is called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), 
 //"demo" in model paths, and either one interchangably in equip region names. dumb!!!
 for k, v in ipairs (classes) do
@@ -10,6 +10,28 @@ end
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
 local s = util.KeyValuesToTable(_s)
+
+
+//TODO: inject custom values into a few items:
+//
+//these items have existing models in the files, but aren't assigned in the schema; add them anyway
+//models/props_halloween/flask_bottle.mdl
+//models/props_halloween/flask_erlenmeyer.mdl
+//models/props_halloween/flask_florence.mdl
+//models/props_halloween/flask_tub.mdl
+//models/props_halloween/flask_tube.mdl
+//models/props_halloween/flask_vial.mdl
+//models/props_halloween/hwn_spellbook_incomplete.mdl
+//models/props_halloween/hwn_spellbook_page.mdl
+//models/props_halloween/hwn_spellbook_magazine.mdl
+//models/workshop/cases/invasion_case/invasion_key.mdl
+//models/crafting/halloween2015_gargoyle_key.mdl
+//models/crafting/ticket_summer2015.mdl
+//models/crafting/ticket_tough_break.mdl
+//models/player/items/crafting/bundle_of_taunts.mdl //eehh, broken materials
+//models/player/items/crafting/crate_variation.mdl //eehh, broken materials
+//
+//add some value to the tournament medal prefab that we can filter for
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -86,6 +108,42 @@ for k, v in pairs (s.items) do
 		v.equip_regions = {[v.equip_region] = 1}
 	end
 	v.equip_region = nil
+
+	//TODO: handle extra_wearable and extra_wearable_vm:
+	//- if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (a few spellbooks)
+	//- if an item has an extra_wearable that's the same as its model_player, then get rid of it (sniper shields, maybe more)
+	//- if an item has an extra_wearable_vm, then get rid of its extra_wearable and convert the _vm to visuals.attached_models (botkillers)
+
+
+	if v.model_player == "" then v.model_player = nil end
+	if v.model_player_per_class then //takes priority over v.model_player, not that anything has both except 378 The Team Captain
+		if v.model_player_per_class.basename then
+			for _, class in ipairs (classes) do
+				//if this table contains both basename and class-specific strings, the class-specific ones take priority
+				//(example: 987 The Merc's Muffler has a manually defined "engineer" path with ".../all_winter_scarf_engy.mdl",
+				//so it doesn't use basename to auto-generate one with ".../all_winter_scarf_engineer.mdl" like the other classes)
+				if v.used_by_classes[class.longname] and !v.model_player_per_class[class.longname] then
+					v.model_player_per_class[class.longname] = string.Replace(v.model_player_per_class.basename, "%s", class.shortname)
+				end
+			end
+	 	end
+	elseif v.model_player then
+		//Some items like cases have valid models to spawn but no class; dump these into a special "none" class category
+		//(all of these use model_player, none of them use model_player_per_class)
+		if !v.used_by_classes then 
+			v.used_by_classes = {none = 1}
+		end
+	end
+	//clear items that still have no class assigned after the above check, which means they have no model (these are items that only exist 
+	//in the backpack like tools, craft items, stamps, most crates+keys); also clear items that have a class assigned, but have no model or 
+	//other visual data (store bundles, invisible action items like damaged capacitor, class craft tokens)
+	if !v.used_by_classes then
+		//MsgN("group 1: ", k, " ", v.name)
+		s.items[k] = nil
+	elseif (!v.model_player and !v.model_player_per_class and !extra_wearable and !v.visuals and !v.taunt) then
+		//MsgN("group 2: ", k, " ", v.name)
+		s.items[k] = nil
+	end
 end
 
 
@@ -111,7 +169,7 @@ for k, v in ipairs (s2) do
 						
 				end
 			else
-				table.insert(tab["any"], v2.Key)
+				table.insert(tab["(any)"], v2.Key)
 			end
 		end
 		break
@@ -178,7 +236,7 @@ if CLIENT then
 			local filters = window:Add("DPanel")
 			//filters:DockPadding(8,8,8,8)
 			filters:DockPadding(24,24,24,24)
-			filters:SetWidth(220)
+			filters:SetWidth(244)
 			filters:Dock(LEFT)
 			//filters:EnableVerticalScrollbar()
 			//filters:Dock(FILL)
@@ -218,7 +276,7 @@ if CLIENT then
 			check:SetText("BLU")
 			check:SetHeight(15)
 			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
+			check:DockMargin(0,0,0,betweencategories)
 			filters.team = check
 			check.OnChange = function(_, val)
 				//TODO
@@ -238,7 +296,7 @@ if CLIENT then
 				drop.Label:SetWide(w / 2.4)
 			end
 			drop.Combo:SetSortItems(false)
-			for _, kv in ipairs (classes) do //if we don't have an "any" option then we don't have to worry about picking the current class model to spawn from a dropdown, hmm
+			for _, kv in ipairs (classes) do
 				drop.Combo:AddChoice(string.NiceName(kv.longname), kv)
 			end
 			filters.class = drop.Combo
@@ -255,12 +313,12 @@ if CLIENT then
 			drop.Combo:Dock(FILL)
 			drop:SetHeight(25)
 			drop:Dock(TOP)
-			drop:DockMargin(0,0,0,betweencategories)
+			drop:DockMargin(0,0,0,betweenitems)
 			function drop.PerformLayout(_, w, h)
 				drop.Label:SetWide(w / 2.4)
 			end
 			drop.Combo:SetSortItems(false)
-			for _, kv in ipairs ({"any", "weapon", "cosmetic", "taunt", "other"}) do
+			for _, kv in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
 				drop.Combo:AddChoice(string.NiceName(kv), kv)
 			end
 			filters.type = drop.Combo
@@ -268,38 +326,55 @@ if CLIENT then
 				//TODO
 			end
 
-			local cat = vgui.Create("DCollapsibleCategory", filters)
-			cat:SetLabel("Equip Regions")
-			cat:Dock(TOP)
-			cat:DockMargin(0,0,0,betweencategories)
-			local pnl = vgui.Create("DPanel", cat) //stupid buffer panel to stop DCollapsibleCategory from forcibly running SizeToContents on container, overriding its desired height
-			pnl:Dock(TOP)
-			pnl.Paint = function() end
-			local container = vgui.Create("DScrollPanel", pnl)
-			container:Dock(TOP)
-			container:SetTall(300)
-			container:GetCanvas():DockPadding(4,4,4,4)
-			pnl:SizeToContents()
-			filters.equip_regions = {}
+			local drop = vgui.Create("Panel", filters)
+			drop.Label = vgui.Create("DLabel", drop)
+			drop.Label:SetText("Equip Region")
+			drop.Label:Dock(LEFT)
+			drop.Combo = vgui.Create("DComboBox", drop)
+			drop.Combo:SetHeight(25)
+			drop.Combo:Dock(FILL)
+			drop:SetHeight(25)
+			drop:Dock(TOP)
+			drop:DockMargin(0,0,0,betweencategories)
+			function drop.PerformLayout(_, w, h)
+				drop.Label:SetWide(w / 2.4)
+			end
+			drop.Combo:SetSortItems(false)
+			drop.Combo:AddChoice("(any)", "(any)")
 			for _, class in ipairs (classes) do
 				for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
-					//TODO: when a class is selected, rebuild this list, and don't add checkboxes for classes that are filtered out
-					local check = vgui.Create("DCheckBoxLabel", container) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-					check:SetText(string.NiceName(v))
-					check:SetHeight(15)
-					check:Dock(TOP)
-					check:DockMargin(0,0,0,betweenitems)
-					container:AddItem(check)
-					filters.equip_regions[v] = check
-					check.OnChange = function(_, val)
-						//TODO
-					end
+					//TODO: when a class is selected, rebuild this list, and don't add entries for classes that are filtered out
+					drop.Combo:AddChoice(string.NiceName(v), v)
 				end
 			end
-			cat:SetContents(pnl)
+			filters.equip_region = drop.Combo
+			function drop.Combo.OnSelect(_, index, value, data)
+				//TODO
+			end
+			
+			local check = vgui.Create("DCheckBoxLabel", filters)
+			check:SetText("Hide conflicting items")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweencategories)
+			filters.conflicting = check
+			//TODO: gray this out or something unless we're in equip mode, because the concept of conflicting items only applies there
+			check.OnChange = function(_, val)
+				//TODO
+			end
 
 			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Holiday-Restricted")
+			check:SetText("Multi-class")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			filters.multi_class = check
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("Holiday restricted")
 			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweenitems)
@@ -322,14 +397,28 @@ if CLIENT then
 			check:SetText("War Paintable")
 			check:SetHeight(15)
 			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweencategories)
+			check:DockMargin(0,0,0,betweenitems)
 			filters.warpaint = check
 			check.OnChange = function(_, val)
 				//TODO
 			end
 
+			//This kind of sucks, ordinarily i'd just make this a separate item type, but we need to be able to 
+			//filter them out by default when item type is set to '(all)', because there's so many of them (about
+			//twice as many tournament medals as other items) that they severely impact this menu's performance
 			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-			check:SetText("Custom Items")
+			check:SetText("Tournament medals")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweencategories)
+			filters.tournament_medals = check
+			//TODO: this one should be set to exclude by default!!!
+			check.OnChange = function(_, val)
+				//TODO
+			end
+
+			local check = vgui.Create("DCheckBoxLabel", filters) //TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+			check:SetText("Custom items")
 			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweenitems)
@@ -395,19 +484,19 @@ if CLIENT then
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
 					//iconlist:Layout()
 					scroll:InvalidateLayout()
-				end
-
-				for k, v in ipairs (TF2ItemBrowser_ImageQueue) do
-					table.remove(TF2ItemBrowser_ImageQueue, k)
-					if IsValid(v.pnl) then
-						v.pnl.mat = Material(v.img .. ".vmt")
-						if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
-							TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
-							break
+				else
+					for k, v in ipairs (TF2ItemBrowser_ImageQueue) do
+						table.remove(TF2ItemBrowser_ImageQueue, k)
+						if IsValid(v.pnl) then
+							v.pnl.mat = Material(v.img .. ".vmt")
+							if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
+								TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
+								break
+							end
 						end
 					end
+					//MsgN("#TF2ItemBrowser_ImageQueue = ", #TF2ItemBrowser_ImageQueue)
 				end
-				//MsgN("#TF2ItemBrowser_ImageQueue = ", #TF2ItemBrowser_ImageQueue)
 				old_Think(self, ...)
 			end
 
@@ -439,7 +528,7 @@ if CLIENT then
 		self.ImageToQueue = TF2Items.items[i].image_inventory
 
 		//test
-		self:SetTooltip(TF2Items.items[i].name)
+		self:SetTooltip(tostring(i) .. " " .. TF2Items.items[i].name)
 		
 	end
 
