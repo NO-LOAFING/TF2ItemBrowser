@@ -259,7 +259,7 @@ if CLIENT then
 			search:SetTooltip("#spawnmenu.enter_search")
 			filters.search = search
 			search.OnEnter = function()
-				//TODO
+				//TODO: update filters
 			end
 			local searchbutton = search:Add("DImageButton")
 			searchbutton:SetImage("icon16/magnifier.png")
@@ -279,7 +279,7 @@ if CLIENT then
 			check:DockMargin(0,0,0,betweencategories)
 			filters.team = check
 			check.OnChange = function(_, val)
-				//TODO
+				//TODO: if in equip mode, update skins of equipped items
 			end
 
 			local function AddDropdownFilter(label, populatefunc)
@@ -299,7 +299,7 @@ if CLIENT then
 				drop.Combo:SetSortItems(false)
 				populatefunc(drop.Combo)
 				function drop.Combo.OnSelect(_, index, value, data)
-					//TODO
+					//TODO: update filters
 				end
 				return drop.Combo
 			end
@@ -317,6 +317,7 @@ if CLIENT then
 			end)
 
 			local equip_regions_populate = function(self)
+				self:Clear()
 				local _, old_choice = self:GetSelected()
 				old_choice = old_choice or "(any)"
 				self:AddChoice("(any)", "(any)", old_choice == "(any)")
@@ -343,20 +344,64 @@ if CLIENT then
 			filters.conflicting = check
 			//TODO: gray this out or something unless we're in equip mode, because the concept of conflicting items only applies there
 			check.OnChange = function(_, val)
-				//TODO
+				//TODO: update filters? or just set visibilty of existing panels? this option might be impractical, DIconLayout doesn't like it when icons start off hidden.
 			end
 
-			local function AddIncludeExcludeFilter(label)
-				//TODO: should use a variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
-				local check = vgui.Create("DCheckBoxLabel", filters)
-				check:SetText(label)
-				check:SetHeight(15)
-				check:Dock(TOP)
-				check:DockMargin(0,0,0,betweenitems)
-				check.OnChange = function(_, val)
-					//TODO
+			local function AddIncludeExcludeFilter(label) //variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
+				local self = vgui.Create("DPanel", filters)
+				self:SetTall(15)
+				self.Button1 = vgui.Create("DCheckBox", self)
+				self.Button1.OnChange = function(_, val) self:OnChange(val, self.Button1) end
+				self.Button2 = vgui.Create("DCheckBox", self)
+				self.Button2.OnChange = function(_, val) self:OnChange(val, self.Button2) end
+				local _oldpaint = self.Button2.Paint
+				function self.Button2:Paint(w,h)
+					//ugly temporary visuals for exclude button
+					_oldpaint(self,w,h)
+					surface.SetDrawColor(255,64,0,128)
+					surface.DrawRect(0,0,w,h)
 				end
-				return check
+				self.Label = vgui.Create("DLabel", self)
+				self.Label:SetText(label)
+				self.Label:SetMouseInputEnabled(true)
+				self.Label.DoClick = function()
+					//cycle through all 3 states when label is clicked
+					local v = self:GetValue()
+					if v == 0 then self.Button1:SetValue(true)
+					elseif v == 1 then self.Button2:SetValue(true)
+					else self.Button2:SetValue(false) end
+				end 
+				self.Paint = function() end
+				function self:PerformLayout()
+					self.Button1:SetSize(15, 15)
+					self.Button1:SetPos(0, math.floor((self:GetTall() - self.Button1:GetTall()) / 2))
+
+					self.Button2:SetSize(15, 15)
+					self.Button2:SetPos(self.Button1:GetWide() + 2, math.floor((self:GetTall() - self.Button2:GetTall()) / 2))
+
+					self.Label:SizeToContents()
+					self.Label:SetPos(self.Button1:GetWide() + 2 + self.Button2:GetWide() + 9, math.floor((self:GetTall() - self.Label:GetTall()) / 2))
+				end
+				function self:GetValue()
+					if self.Button1:GetChecked() then return 1
+					elseif self.Button2:GetChecked() then return -1
+					else return 0 end
+				end
+				function self:OnChange(val, button)
+					//don't let include and exclude both be checked at once
+					if val then
+						if button == self.Button1 and self.Button2:GetChecked() then
+							self.Button2:SetChecked(false)
+						elseif button == self.Button2 and self.Button1:GetChecked() then
+							self.Button1:SetChecked(false)
+						end
+					end
+					val = self:GetValue()
+					//TODO: update filters
+				end
+				self:Dock(TOP)
+				self:DockMargin(0,0,0,betweenitems)
+				return self
 			end
 
 			filters.multi_class = AddIncludeExcludeFilter("Multi-class")
@@ -376,7 +421,7 @@ if CLIENT then
 			button:Dock(TOP)
 			button:DockMargin(0,0,0,0)
 			button.DoClick = function()
-				//TODO
+				//TODO: open custom item dialog
 			end
 
 
