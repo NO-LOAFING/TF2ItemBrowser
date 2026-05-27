@@ -41,6 +41,8 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon
 //1057 MvM GateBotLight Scout (and the others) - missing textures
 //30143 tw_demobot_armor (and the others) - placeholder white circle
+//
+//just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -213,6 +215,11 @@ if CLIENT then
 	local LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
 	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
+	local item_icon_w = 64
+	local item_icon_scale = item_icon_w/121 //tf2 backpack panels are 121x94 (???); scale ours down proportionately
+	local item_icon_h = 94*item_icon_scale
+	local item_icon_gap = 5
+	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
 	
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Item Browser",
@@ -239,7 +246,29 @@ if CLIENT then
 			local scroll = vgui.Create("DScrollPanel", window)
 			scroll:Dock(FILL)
 
-			local iconlist //this panel gets created in window.RebuildIconList further down
+			local iconlist = vgui.Create("DPanel", scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
+			iconlist.Paint = function() end
+
+			local old_OnChildAdded = scroll.OnChildAdded
+			scroll.OnChildAdded = nil //don't dock the loading icon inside the scroll panel, just place it on top of it
+			local iconlist_loading = vgui.Create("DPanel", scroll)
+			iconlist_loading:Dock(FILL)
+			iconlist_loading:SetZPos(10) //this needs to render above the iconlist
+			iconlist_loading:SetMouseInputEnabled(false)
+			function iconlist_loading:Paint(w, h)
+				if !window.icons_to_add then return end
+
+				local w, h = scroll:GetSize()
+				surface.SetDrawColor(bgcol.r, bgcol.g, bgcol.b, 192)
+				surface.DrawRect(0,0,w,h)
+	
+				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_gap)/2, h/2
+				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
+				surface.SetMaterial(spinner)
+				surface.DrawTexturedRect(mid_w-50, mid_h-50, 100, 100)
+				//TODO: this is okay, but i want to do better. add a progress bar and text listing tostring(window.icons_to_add_key-1) .. "/" .. tostring(#window.icons_to_add)
+			end
+			scroll.OnChildAdded = old_OnChildAdded
 
 
 			--[[local filters_holder = window:Add("DPanel")
@@ -448,17 +477,6 @@ if CLIENT then
 			window.RebuildIconList = function(clicked)
 				if filters.equip_region.IsRebuilding then return end
 
-				//Create a whole new DIconLayout every time we rebuild the list, because clearing the list and repopulating it causes 
-				//weird issues i can't figure out (switching filters from an empty list to a populated one causes subsequent lists to 
-				//also appear empty; switching filters from a very short list to pyro_head_replacement causes most icons to be missing; 
-				//in both cases, the think func appears to be creating the missing icon panels correctly, they just aren't visible??)
-				if iconlist then iconlist:Remove() end
-				iconlist = vgui.Create("DIconLayout", scroll)
-				iconlist:Dock(FILL)
-				iconlist:SetSpaceY(5)
-				iconlist:SetSpaceX(5)
-				iconlist.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
-
 				window.icons = {}
 				window.icons_to_add = {}
 				window.icons_to_add_key = 1
@@ -501,6 +519,15 @@ if CLIENT then
 
 					table.insert(window.icons_to_add, k)
 				end
+				//Clear the icon list, and resize it to the height of the new list
+				iconlist:Clear()
+				local rows = math.floor((#window.icons_to_add-1)/10)+1
+				iconlist:SetHeight((rows*item_icon_h) + ((rows-1)*item_icon_gap))
+				iconlist:SetWidth((10*item_icon_w) + (9*item_icon_gap))
+				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
+				scroll:InvalidateLayout()
+				scroll.VBar:SetScroll(0)
+				scroll:SetMouseInputEnabled(false)
 				//MsgN(#window.icons_to_add, " icons to add")
 			end
 			window.RebuildIconList()
@@ -515,18 +542,22 @@ if CLIENT then
 						local v = self.icons_to_add[k]
 						if v then
 							local item = iconlist:Add("TF2ItemIcon")
+							local col = (k-1)%10
+							local row = math.floor((k-1)/10)
+							item:SetPos(col*(item_icon_w+item_icon_gap), row*(item_icon_h+item_icon_gap))
 							item:SetItemID(v)
 							self.icons[v] = item
 						else
 							//We've gone through the whole table, so we're done here, get rid of it
 							self.icons_to_add = nil
 							self.icons_to_add_key = nil
+							//Allow the list to be scrolled and clicked on now that it's fully loaded
+							scroll:SetMouseInputEnabled(true)
 							break
 						end
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-					scroll:InvalidateLayout()
 				else
 					for k, v in ipairs (TF2ItemBrowser_ImageQueue) do
 						table.remove(TF2ItemBrowser_ImageQueue, k)
@@ -553,10 +584,9 @@ if CLIENT then
 
 	AccessorFunc(PANEL, "m_iItemID", "ItemID" )
 
-	local scale = 64/121 //tf2 backpack panels are 121 wide, ours are 64
 	function PANEL:Init()
 
-		self:SetSize(64,94*scale)//64*(94/121)) //tf2 backpack panels are 121x94 (???)
+		self:SetSize(item_icon_w, item_icon_h)
 		self:SetDoubleClickingEnabled(false)
 		self:SetText("")
 
@@ -633,9 +663,9 @@ if CLIENT then
 
 	end
 
-	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"), scale)
-	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"), scale)
-	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"), scale)
+	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"), item_icon_scale)
+	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"), item_icon_scale)
+	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"), item_icon_scale)
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
 	function PANEL:Paint(w, h)
@@ -661,6 +691,10 @@ if CLIENT then
 				table.insert(TF2ItemBrowser_ImageQueue, {pnl = self, img = self.ImageToQueue})
 			end
 			self.ImageToQueue = nil
+		else
+			//show loading icon
+			surface.SetMaterial(spinner)
+			surface.DrawTexturedRect((w/2)-(h/2), 0, h, h)
 		end
 
 	end
