@@ -12,7 +12,11 @@ local _s = file.Read("scripts/items/items_game.txt", "tf")
 local s = util.KeyValuesToTable(_s)
 
 
-//TODO: inject custom values into a few items:
+//inject custom values into a few items
+s.prefabs.paintkit_base._paintkit = true //custom value for filter
+s.prefabs.tournament_medal._tm = true //custom value for filter
+
+//TODO:
 //
 //these items have existing models in the files, but aren't assigned in the schema; add them anyway
 //models/props_halloween/flask_bottle.mdl
@@ -32,6 +36,11 @@ local s = util.KeyValuesToTable(_s)
 //models/player/items/crafting/crate_variation.mdl //eehh, broken materials
 //
 //add some value to the tournament medal prefab that we can filter for
+//
+//maybe better backpack icons for:
+//1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon
+//1057 MvM GateBotLight Scout (and the others) - missing textures
+//30143 tw_demobot_armor (and the others) - placeholder white circle
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -90,10 +99,13 @@ PrintTable(t)]]
 
 
 local bad_values = {"public_prefab", "qc_template", "triangle_budget_lod0", "triangle_budget_lod1", "triangle_budget_lod2"}
+local used_equip_regions = {}
 
 for k, v in pairs (s.items) do
 	//clear useless items
-	if v.equip_type == "account" then //contracts
+	if v.equip_type == "account" //contracts
+	or (v.static_attrs and v.static_attrs.paintkit_proto_def_index and (v.item_class != "tool" or v.static_attrs.paintkit_proto_def_index > 0)) //war paint items; the second part is a hack because the generic paintkit base item (which we want) uses protodef 0, but so does the first pre-JI pre-skinned weapon, 15013 concealedkiller_pistol_redrockroscoe, which we don't want
+	then 
 		s.items[k] = nil
 		continue
 	end
@@ -108,6 +120,12 @@ for k, v in pairs (s.items) do
 		v.equip_regions = {[v.equip_region] = 1}
 	end
 	v.equip_region = nil
+	//Also check which equip regions are actually used, so we can filter out unused ones (soldier_gloves, spy_coat)
+	if v.equip_regions then
+		for k, _ in pairs (v.equip_regions) do
+			used_equip_regions[k] = true
+		end
+	end
 
 	//TODO: handle extra_wearable and extra_wearable_vm:
 	//- if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (a few spellbooks)
@@ -162,14 +180,14 @@ for k, v in ipairs (s2) do
 				for k3, v3 in pairs (v2.Value) do
 					for _, class in ipairs (classes) do
 						if string.StartsWith(v3.Key, class.shortname) or string.StartsWith(v3.Key, class.longname) then
-							table.insert(tab[class.longname], v3.Key)
+							if used_equip_regions[v3.Key] then table.insert(tab[class.longname], v3.Key) end
 							break
 						end
 					end
 						
 				end
 			else
-				table.insert(tab["(any)"], v2.Key)
+				if used_equip_regions[v2.Key] then table.insert(tab["(any)"], v2.Key) end
 			end
 		end
 		break
@@ -282,7 +300,7 @@ if CLIENT then
 				//TODO: if in equip mode, update skins of equipped items
 			end
 
-			local function AddDropdownFilter(label, populatefunc)
+			local function AddDropdownFilter(label, populatefunc, select_extras)
 				local drop = vgui.Create("Panel", filters)
 				drop.Label = vgui.Create("DLabel", drop)
 				drop.Label:SetText(label)
@@ -299,7 +317,8 @@ if CLIENT then
 				drop.Combo:SetSortItems(false)
 				populatefunc(drop.Combo)
 				function drop.Combo.OnSelect(_, index, value, data)
-					//TODO: update filters
+					if select_extras then select_extras() end
+					window.RebuildIconList()
 				end
 				return drop.Combo
 			end
@@ -308,18 +327,19 @@ if CLIENT then
 				for _, v in ipairs (classes) do
 					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
 				end
-			end)
+			end, function() filters.equip_region:RebuildControls() end)
 
-			filters.type = AddDropdownFilter("Item Type", function(self) 
+			filters.item_type = AddDropdownFilter("Item Type", function(self) 
 				for _, v in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
 					self:AddChoice(string.NiceName(v), v, v == "(any)")
 				end
 			end)
 
 			local equip_regions_populate = function(self)
-				self:Clear()
 				local _, old_choice = self:GetSelected()
 				old_choice = old_choice or "(any)"
+				self.IsRebuilding = true
+				self:Clear()
 				self:AddChoice("(any)", "(any)", old_choice == "(any)")
 				for _, class in ipairs (classes) do
 					//If we have a class selected, filter out equip regions for other classes
@@ -331,6 +351,10 @@ if CLIENT then
 						end
 					end
 				end
+				//if we had a class-specific region selected, and then switched to a class that doesn't have it, revert to "(any)"
+				local _, check = self:GetSelected()
+				if check == nil then self:ChooseOptionID(1) end
+				self.IsRebuilding = nil
 			end
 			filters.equip_region = AddDropdownFilter("Equip Region", equip_regions_populate)
 			filters.equip_region.RebuildControls = equip_regions_populate //make this func externally accessible so we can rebuild it when picking a new class
@@ -396,8 +420,7 @@ if CLIENT then
 							self.Button1:SetChecked(false)
 						end
 					end
-					val = self:GetValue()
-					//TODO: update filters
+					window.RebuildIconList()
 				end
 				self:Dock(TOP)
 				self:DockMargin(0,0,0,betweenitems)
@@ -409,10 +432,11 @@ if CLIENT then
 			filters.paint = AddIncludeExcludeFilter("Paintable")
 			filters.warpaint = AddIncludeExcludeFilter("War Paintable")
 			//This kind of sucks, ordinarily i'd just make this a separate item type, but we need to be able to 
-			//filter them out by default when item type is set to '(all)', because there's so many of them (about
-			//twice as many tournament medals as other items) that they severely impact this menu's performance
-			filters.tournament_medals = AddIncludeExcludeFilter("Tournament medals") //TODO: this one should be set to exclude by default!!!
-			filters.tournament_medals:DockMargin(0,0,0,betweencategories)
+			//filter them out by default when item type is set to "(all)", because there's so many of them (over
+			//75% of all spawnable items) that they severely impact performance while building the icon list.
+			filters.tm = AddIncludeExcludeFilter("Tournament medals")
+			filters.tm:DockMargin(0,0,0,betweencategories)
+			filters.tm.Button2:SetChecked(true)
 			filters.custom = AddIncludeExcludeFilter("Custom items")
 
 			local button = vgui.Create("DButton", filters)
@@ -425,18 +449,56 @@ if CLIENT then
 			end
 
 
-			local function RebuildIconList()
+			window.RebuildIconList = function(clicked)
+				if filters.equip_region.IsRebuilding then return end
+				for k, v in pairs (iconlist:GetChildren()) do
+					v:Remove()
+				end
 				window.icons = {}
 				window.icons_to_add = {}
+				local item_slot_types = {
+					primary = "weapon",
+					secondary = "weapon",
+					melee = "weapon",
+					pda = "weapon",
+					pda2 = "weapon",
+					building = "weapon",
+					head = "cosmetic", 
+					misc = "cosmetic",
+					taunt = "taunt"
+				}
+				local function DoIncludeExcludeFilter(f, criteria)
+					return (f == 1 and !criteria) or (f == -1 and criteria)
+				end
 				for k, v in pairs (TF2Items.items) do
-					//test, this makes testing faster because it filters out >60% of items; TODO: apply proper filters here eventually
-					if v.equip_regions and v.equip_regions.medal then continue end
+					//this filter is on by default and catches >75% of items, so check this first
+					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
+
+					//TODO: search bar filter by name (+ other text too?)
+					
+					local _, f = filters.class:GetSelected()
+					if f != "(any)" and !v.used_by_classes[f] then continue end
+
+					local _, f = filters.item_type:GetSelected()
+					if f != "(any)" and ((f == "other" and v.item_slot and item_slot_types[v.item_slot]) 
+					or (f != "other" and (!v.item_slot or item_slot_types[v.item_slot] != f))) then continue end
+
+					local _, f = filters.equip_region:GetSelected()
+					if f != "(any)" and (!v.equip_regions or !v.equip_regions[f]) then continue end
+
+
+					if DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
+					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
+					or DoIncludeExcludeFilter(filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
+					or DoIncludeExcludeFilter(filters.warpaint:GetValue(), v._paintkit)
+					//TODO: filter for custom items when we add those at the end
+					then continue end
 
 					table.insert(window.icons_to_add, k)
 				end
 				window.icons_to_add_key = 1
 			end
-			RebuildIconList()
+			window.RebuildIconList()
 
 			local old_Think = window.Think
 			TF2ItemBrowser_ImageQueue = {}
@@ -602,7 +664,9 @@ if CLIENT then
 	function PANEL:DoClick()
 
 		//test
+		MsgN(self:GetItemID(), " ", TF2Items.items[self:GetItemID()].name)
 		PrintTable(TF2Items.items[self:GetItemID()])
+		MsgN("")
 
 	end
 
