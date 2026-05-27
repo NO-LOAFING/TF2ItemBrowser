@@ -239,11 +239,7 @@ if CLIENT then
 			local scroll = vgui.Create("DScrollPanel", window)
 			scroll:Dock(FILL)
 
-			local iconlist = vgui.Create("DIconLayout", scroll)
-			iconlist:Dock(FILL)
-			iconlist:SetSpaceY(5)
-			iconlist:SetSpaceX(5)
-			iconlist.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
+			local iconlist //this panel gets created in window.RebuildIconList further down
 
 
 			--[[local filters_holder = window:Add("DPanel")
@@ -451,11 +447,21 @@ if CLIENT then
 
 			window.RebuildIconList = function(clicked)
 				if filters.equip_region.IsRebuilding then return end
-				for k, v in pairs (iconlist:GetChildren()) do
-					v:Remove()
-				end
+
+				//Create a whole new DIconLayout every time we rebuild the list, because clearing the list and repopulating it causes 
+				//weird issues i can't figure out (switching filters from an empty list to a populated one causes subsequent lists to 
+				//also appear empty; switching filters from a very short list to pyro_head_replacement causes most icons to be missing; 
+				//in both cases, the think func appears to be creating the missing icon panels correctly, they just aren't visible??)
+				if iconlist then iconlist:Remove() end
+				iconlist = vgui.Create("DIconLayout", scroll)
+				iconlist:Dock(FILL)
+				iconlist:SetSpaceY(5)
+				iconlist:SetSpaceX(5)
+				iconlist.OnChildAdded = nil //this gets called way too many times per frame when adding new icons https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/diconlayout.lua#L138-L151
+
 				window.icons = {}
 				window.icons_to_add = {}
+				window.icons_to_add_key = 1
 				local item_slot_types = {
 					primary = "weapon",
 					secondary = "weapon",
@@ -486,7 +492,6 @@ if CLIENT then
 					local _, f = filters.equip_region:GetSelected()
 					if f != "(any)" and (!v.equip_regions or !v.equip_regions[f]) then continue end
 
-
 					if DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
 					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
 					or DoIncludeExcludeFilter(filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
@@ -496,7 +501,7 @@ if CLIENT then
 
 					table.insert(window.icons_to_add, k)
 				end
-				window.icons_to_add_key = 1
+				//MsgN(#window.icons_to_add, " icons to add")
 			end
 			window.RebuildIconList()
 
@@ -521,7 +526,6 @@ if CLIENT then
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-					//iconlist:Layout()
 					scroll:InvalidateLayout()
 				else
 					for k, v in ipairs (TF2ItemBrowser_ImageQueue) do
