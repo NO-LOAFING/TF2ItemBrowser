@@ -1,3 +1,64 @@
+local tf_lang = file.Read("resource/tf_english.txt", "tf")
+tf_lang = util.KeyValuesToTable(tf_lang, true, true).Tokens //TODO: this doesn't work, it's just a bit different from the usual keyvalue structure
+
+local langs = { //list of gmod-supported languages from https://wiki.facepunch.com/gmod/Addon_Localization#supportedlanguages
+	bg = "bulgarian",
+	cs = "czech",
+	da = "danish",
+	de = "german",
+	el = "greek",
+	//en = "english",
+	["en-PT"] = "pirate",
+	["es-ES"] = "spanish", //tf2 also has tf_latam
+	//et 	Estonian
+	fi = "finnish",
+	fr = "french",
+	//he 	Hebrew
+	//hr 	Croatian
+	hu = "hungarian",
+	it = "italian",
+	ja = "japanese",
+	ko = "korean", //tf2 has both tf_korean and tf_koreana translations available, what's the difference? is this the right one to use?
+	//lt 	Lithuanian
+	nl = "dutch",
+	no = "norwegian",
+	pl = "polish",
+	["pt-BR"] = "brazilian",
+	["pt-PT"] = "portuguese",
+	ru = "russian",
+	//sk 	Slovak
+	["sv-SE"] = "swedish",
+	th = "thai",
+	tr = "turkish",
+	uk = "ukrainian",
+	//vi 	Vietnamese
+	["zh-CN"] = "schinese",
+	["zh-TW"] = "tchinese"
+}
+local lang = GetConVar("gmod_language"):GetString()
+if langs[lang] then
+	lang = file.Read("resource/tf_" .. langs[lang] ..".txt", "tf")
+	lang = util.KeyValuesToTable(lang, true, true).Tokens
+	table.Merge(tf_lang, lang)
+end
+for k, v in pairs (tf_lang) do
+	if string.StartsWith(k, "T") then MsgN(k, " = ", v) end
+end
+
+local function GetTFLanguageString(str)
+	str = string.TrimLeft(str, "#")
+	return tf_lang[str] or str
+end
+
+
+
+
+
+
+
+
+
+
 local classes = {"(any)", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
 //our favorite black scottish cyclops is called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), 
 //"demo" in model paths, and either one interchangably in equip region names. dumb!!!
