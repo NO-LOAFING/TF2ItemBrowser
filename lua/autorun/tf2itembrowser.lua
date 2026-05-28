@@ -41,9 +41,6 @@ if langs[lang] then
 	lang = util.KeyValuesToTable(lang, true, true).Tokens
 	table.Merge(tf_lang, lang)
 end
-for k, v in pairs (tf_lang) do
-	if string.StartsWith(k, "T") then MsgN(k, " = ", v) end
-end
 
 local function GetTFLanguageString(str)
 	str = string.TrimLeft(str, "#")
@@ -281,6 +278,51 @@ if CLIENT then
 	local item_icon_h = 94*item_icon_scale
 	local item_icon_gap = 5
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
+	surface.CreateFont("TF2ItemBrowser_ItemName", {
+		font = "TF2 Build",
+		size = 20, //these are really wimpy units; this matches the size of the item names when spectating players
+		weight = 500,
+		extended = true
+	})
+
+	//questionably appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
+	local GetTextSize = surface.GetTextSize
+	local sub, gsub = string.sub, string.gsub
+	local function textWrap(text, font, maxWidth)
+		local totalWidth = 0
+
+		surface.SetFont(font)
+		local spaceWidth = GetTextSize(" ")
+
+		text = gsub(text, "(%s?[%S]+)", function(word)
+			local char = sub(word, 1, 1)
+			if char == "\n" or char == "\t" then
+				totalWidth = 0
+			end
+
+			local wordlen = GetTextSize(word)
+			totalWidth = totalWidth + wordlen
+
+			if wordlen >= maxWidth then
+				local splitWord, splitPoint = charWrap(word, maxWidth - (totalWidth - wordlen), maxWidth)
+				totalWidth = splitPoint
+				return splitWord
+			elseif totalWidth < maxWidth then
+				return word
+			end
+
+			if char == " " then
+				totalWidth = wordlen - spaceWidth
+				return "\n" .. sub(word, 2)
+			end
+
+			totalWidth = wordlen
+			return "\n" .. word
+		end)
+
+		return text
+	end
+
 	
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Item Browser",
@@ -290,22 +332,9 @@ if CLIENT then
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
-			//window stuff from playermodel selector, how much of this do we care about?
-			--[[window:SetTitle( "#smwidget.playermodel_title" )
-			window:SetSize( math.min( ScrW() - 16, window:GetWide() ), math.min( ScrH() - 16, window:GetTall() ) )]]
-			window:SetSizable(true)
-			--[[window:SetMinWidth( window:GetWide() )
-			window:SetMinHeight( window:GetTall() )
-			window:Center()]]
-
-			function window:Paint(w, h)
-				surface.SetDrawColor(bgcol)
-				surface.DrawRect(0,0,w,h)
-			end
-
-
 			local scroll = vgui.Create("DScrollPanel", window)
-			scroll:Dock(FILL)
+			scroll:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
+			scroll:Dock(RIGHT)
 
 			local iconlist = vgui.Create("DPanel", scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
 			iconlist.Paint = function() end
@@ -314,7 +343,7 @@ if CLIENT then
 			scroll.OnChildAdded = nil //don't dock the loading icon inside the scroll panel, just place it on top of it
 			local iconlist_loading = vgui.Create("DPanel", scroll)
 			iconlist_loading:Dock(FILL)
-			iconlist_loading:SetZPos(10) //this needs to render above the iconlist
+			//iconlist_loading:SetZPos(10) //this needs to render above the iconlist
 			iconlist_loading:SetMouseInputEnabled(false)
 			function iconlist_loading:Paint(w, h)
 				if !window.icons_to_add then return end
@@ -332,24 +361,28 @@ if CLIENT then
 			scroll.OnChildAdded = old_OnChildAdded
 
 
-			--[[local filters_holder = window:Add("DPanel")
-			filters_holder:DockPadding(8,8,8,8)
-			filters_holder:SetWidth(100)
-			filters_holder:Dock(LEFT)]]
+			local filters_holder = vgui.Create("DPanel", window)
+			filters_holder:DockPadding(24,24,24,24)
+			filters_holder:Dock(FILL)
 
-			local filters = window:Add("DPanel")
-			//filters:DockPadding(8,8,8,8)
-			filters:DockPadding(24,24,24,24)
-			filters:SetWidth(244)
-			filters:Dock(LEFT)
-			//filters:EnableVerticalScrollbar()
-			//filters:Dock(FILL)
-
-			function filters:Paint(w,h)
-				//surface.SetDrawColor(255,255,255,255)
-				//surface.DrawRect(0,0,w,h)
+			function filters_holder:Paint(w,h)
 				TFThinLineBorder(0,0,w,h)
 			end
+
+			local filters = vgui.Create("DScrollPanel", filters_holder)
+			filters:Dock(FILL)
+
+
+			TF2ItemBrowser = window
+			function window:Paint(w, h)
+				surface.SetDrawColor(bgcol)
+				surface.DrawRect(0,0,w,h)
+			end
+			window:SetSizable(true)
+			local p1, _, p2, _ = window:GetDockPadding()
+			local p3, _, p4, _ = filters_holder:GetDockPadding()
+			window:SetMinWidth(p1 + p2 + p3 + p4 + filters.VBar:GetWide() + scroll:GetWide())
+
 
 			//ugly temporary filter options
 			local betweenitems = 8
@@ -594,7 +627,8 @@ if CLIENT then
 			window.RebuildIconList()
 
 			local old_Think = window.Think
-			TF2ItemBrowser_ImageQueue = {}
+			window.ImageQueue = {}
+			//this one is global so it carries over between windows
 			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
 			local iconsperframe = 100
 			function window:Think(...)
@@ -620,8 +654,8 @@ if CLIENT then
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
 				else
-					for k, v in ipairs (TF2ItemBrowser_ImageQueue) do
-						table.remove(TF2ItemBrowser_ImageQueue, k)
+					for k, v in ipairs (self.ImageQueue) do
+						table.remove(self.ImageQueue, k)
 						if IsValid(v.pnl) then
 							v.pnl.mat = Material(v.img .. ".vmt")
 							if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
@@ -630,13 +664,19 @@ if CLIENT then
 							end
 						end
 					end
-					//MsgN("#TF2ItemBrowser_ImageQueue = ", #TF2ItemBrowser_ImageQueue)
+					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
 				end
 				old_Think(self, ...)
 			end
 
 		end
 	})
+
+
+
+
+
+
 
 
 
@@ -656,13 +696,53 @@ if CLIENT then
 	function PANEL:SetItemID(i)
 
 		self.m_iItemID = i
-
 		self.ImageToQueue = TF2Items.items[i].image_inventory
-
-		//test
-		self:SetTooltip(tostring(i) .. " " .. TF2Items.items[i].name)
 		
 	end
+
+	function PANEL:CreateMouseOverPanel()
+
+		if IsValid(TF2ItemBrowser.MouseOverPanel) then TF2ItemBrowser.MouseOverPanel:Remove() end
+
+		local pnl = vgui.Create("DPanel", TF2ItemBrowser)
+		TF2ItemBrowser.MouseOverPanel = pnl
+		pnl.Owner = self
+
+		local pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller, so scale it down proportionately
+		pnl:DockPadding(pad,pad,pad,pad) 
+		local w, h = 400, pad*2
+		local function AddText(text, font, col)
+			for _, v in ipairs (string.Explode("\n", textWrap(text, font, w-(pad*2)))) do
+				local label = pnl:Add("DLabel")
+				label:Dock(TOP)
+				label:SetFont(font)
+				label:SetText(v)
+				label:SetTextColor(col)
+				label:SetAutoStretchVertical(true)
+				label:SetContentAlignment(5)
+				h = h + label:GetTall()
+			end
+		end
+		AddText("Spectacularly Lethal Sophisticated Carbonado Botkiller Killing Gloves of Boxing Mk.II", "TF2ItemBrowser_ItemName", Color(255,0,255,255)) //TODO: real names later
+		pnl:SetSize(w,h)
+
+		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
+		local b_w, b_h = TF2ItemBrowser:GetSize()
+		x = math.max(0,x-w/2) //center the panel with the icon, but don't let the left side of the panel go beyond the left side of the browser
+		if x+w > b_w then //if the right side of the panel goes beyond the right side of the browser, then move it left
+			x = x - ((x+w)-b_w)
+		end
+		if y+h > b_h then //if the bottom of the panel goes beyond the bottom of the browser, then move it above the item icon
+			y = y-self:GetTall()-h
+		end
+		pnl:SetPos(x, y)
+		
+		function pnl:Paint(w,h)
+			LoadoutItemPopupBorder(0,0,w,h)
+		end
+
+	end
+
 
 	//dumb modified version of GWEN.CreateTextureBorder (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/derma/derma_gwen.lua#L6-L56),
 	//used to scale down the tf2 backpack textures to match our tiny backpack icons
@@ -731,6 +811,21 @@ if CLIENT then
 
 	function PANEL:Paint(w, h)
 
+		if self:IsHovered() then
+			if !IsValid(TF2ItemBrowser.MouseOverPanel) or TF2ItemBrowser.MouseOverPanel.Owner != self then
+				local time = CurTime()
+				self.HoverTime = self.HoverTime or time
+				if time - self.HoverTime > 0.1 then
+					self:CreateMouseOverPanel()
+				end
+			end
+		else
+			self.HoverTime = nil
+			if IsValid(TF2ItemBrowser.MouseOverPanel) and TF2ItemBrowser.MouseOverPanel.Owner == self then
+				TF2ItemBrowser.MouseOverPanel:Remove()
+			end
+		end
+
 		if self:IsDown() then
 			BackpackItemSelectedBorder(0,0,w,h)
 		elseif self:IsHovered() then
@@ -749,7 +844,7 @@ if CLIENT then
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
 			else
-				table.insert(TF2ItemBrowser_ImageQueue, {pnl = self, img = self.ImageToQueue})
+				table.insert(TF2ItemBrowser.ImageQueue, {pnl = self, img = self.ImageToQueue})
 			end
 			self.ImageToQueue = nil
 		else
