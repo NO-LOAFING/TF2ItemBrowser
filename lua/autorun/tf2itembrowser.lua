@@ -1,5 +1,5 @@
 local tf_lang = file.Read("resource/tf_english.txt", "tf")
-tf_lang = util.KeyValuesToTable(tf_lang, true, true).Tokens //TODO: this doesn't work, it's just a bit different from the usual keyvalue structure
+tf_lang = util.KeyValuesToTable(tf_lang, true, false).tokens
 
 local langs = { //list of gmod-supported languages from https://wiki.facepunch.com/gmod/Addon_Localization#supportedlanguages
 	bg = "bulgarian",
@@ -38,13 +38,17 @@ local langs = { //list of gmod-supported languages from https://wiki.facepunch.c
 local lang = GetConVar("gmod_language"):GetString()
 if langs[lang] then
 	lang = file.Read("resource/tf_" .. langs[lang] ..".txt", "tf")
-	lang = util.KeyValuesToTable(lang, true, true).Tokens
+	lang = util.KeyValuesToTable(lang, true, false).tokens
 	table.Merge(tf_lang, lang)
 end
 
-local function GetTFLanguageString(str)
-	str = string.TrimLeft(str, "#")
-	return tf_lang[str] or str
+local function GetTFLanguageString(str, return_str_on_fail)
+	local result = ""
+	if return_str_on_fail then result = str end
+	if !isstring(str) then return result end
+
+	result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
+	return result
 end
 
 
@@ -281,13 +285,75 @@ if CLIENT then
 	surface.CreateFont("TF2ItemBrowser_ItemName", {
 		font = "TF2 Build",
 		size = 20, //these are really wimpy units; this matches the size of the item names when spectating players
-		weight = 500,
 		extended = true
 	})
+	surface.CreateFont("TF2ItemBrowser_ItemDesc", {
+		font = "TF2 Secondary",
+		size = 18, //on the tf2 backpack screen, desc text is 15px high, but to match our smaller item name text, this is 11px high instead
+		extended = true
+	})
+	local quality_colors = {
+		normal		= Color(178,178,178,255),
+		rarity1		= Color(77,116,85,255), //genuine
+		rarity2		= Color(141,131,75,255), //"customized (unused)""
+		rarity3		= Color(204,204,250,255), //"artisan"
+		rarity4		= Color(134,80,172,255), //unusual
+		vintage		= Color(71,98,145,255),
+		unique		= Color(255,215,0,255),
+		community	= Color(112,176,74,255),
+		developer	= Color(165,15,121,255),
+		selfmade	= Color(112,176,74,255),
+		customized	= Color(71,98,145,255),
+		strange		= Color(207,106,50,255),
+		completed	= Color(134,80,172,255),
+		haunted		= Color(56,243,171,255),
+		collectors	= Color(170,0,0,255),
+		paintkitweapon	= Color(250,250,250,255),
+	}
+	local rarity_colors = {
+		default		= Color(131,126,119,255),
+		common		= Color(176,195,217,255),
+		uncommon	= Color(94,152,217,255),
+		rare		= Color(75,105,255,255),
+		mythical	= Color(136,71,255,255),
+		legendary	= Color(211,44,230,255),
+		ancient		= Color(235,75,75,255),
+	}
+	local desc_colors = {
+		level		= Color(117,107,94,255),
+		neutral		= Color(235,226,202,255),
+		positive	= Color(153,204,255,255),
+		negative	= Color(255,64,64,255),
+		--[[ItemSetName		= Color(225,255,15,255),
+		ItemSetItemEquipped	= Color(149,175,12,255),
+		ItemSetItemMissing	= Color(139,137,137,255),
+		ItemIsotope		= Color(225,255,15,255),
+		ItemBundleItem		= Color(149,175,12,255),
+		ItemLimitedUse		= Color(0,160,0,255),
+		ItemFlag		= Color(117,107,94,255),
+		ItemLimitedQuantity	= Color(225,209,0,255),]]
+	}
 
-	//questionably appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
+	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
 	local sub, gsub = string.sub, string.gsub
+	local function charWrap(text, remainingWidth, maxWidth)
+		local totalWidth = 0
+
+		text = gsub(text, ".", function(char)
+			totalWidth = totalWidth + GetTextSize(char)
+
+			if totalWidth >= remainingWidth then
+				totalWidth = GetTextSize(char)
+				remainingWidth = maxWidth
+				return "\n" .. char
+			end
+
+			return char
+		end)
+
+		return text, totalWidth
+	end
 	local function textWrap(text, font, maxWidth)
 		local totalWidth = 0
 
@@ -691,13 +757,109 @@ if CLIENT then
 		self:SetDoubleClickingEnabled(false)
 		self:SetText("")
 
+		self.quality = "unique"
+		self.rarity = nil
+
 	end
 
 	function PANEL:SetItemID(i)
 
 		self.m_iItemID = i
 		self.ImageToQueue = TF2Items.items[i].image_inventory
+		self.quality = TF2Items.items[i].item_quality or self.quality
+		self.rarity = TF2Items.items[i]._rarity or self.rarity //TODO: populate this value in the item defs by going through collections
+
+		self.itemname = self:UpdateItemName()
 		
+	end
+
+	function PANEL:UpdateItemName()
+
+		//based on https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L610, it's a whopper
+		//this is probably way overengineered for our use case, but oh well!
+
+		local i = self:GetItemID()
+		if !TF2Items.items[i] then return "Unknown Item" end
+
+		local useProperName = true
+		local ignoreWear = false
+		local ignoreQuality = false
+		if self.paintkit and self.quality != "strange" and self.quality != "selfmade" then
+			ignoreQuality = true
+		end
+		
+		// Start with the base name.
+		local itemName = GetTFLanguageString(TF2Items.items[i].item_name, true) or "Unknown Item"
+
+		//tf2 code here sets killstreak values, but this addon won't be doing those unless rubat implements $sheenmap someday
+
+		if self.festivized then useProperName = false end
+
+		local quality = ""
+		if !ignoreQuality then 
+			if self.quality != "normal" and self.quality != "paintkitweapon" then //tf2 code here checks nQuality > 0, which only filters out normal quality (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.h#L516)
+				if self.quality == "unique" then
+					if useProperName and TF2Items.items[i].propername == 1 then 
+						quality = GetTFLanguageString("TF_Unique_Prepend_Proper")
+					end
+				else // Any quality besides unique ignores "proper name" articles.
+					quality = GetTFLanguageString(self.quality)
+					if quality != "" then quality = quality .. GetTFLanguageString("#Rarity_Spacer") end
+				end
+			end
+
+			//tf2 code here sets strange ranks, which we don't care about, but also prepends strange rank onto strange unusual weapons,
+			//which in our use cases, only applies to weapons with both an unusual effect and a stat clock enabled.
+			if self.quality != "strange" and self.statclock then
+				quality = GetTFLanguageString("strange") .. " " .. quality
+			end
+			//TODO: we might actually care about ranks if we're getting the correct name for token/gargoyle rank styles? or maybe just lump that in with australium? come back to this later.
+		end
+
+		local australium_skin = ""
+		if self.australium then australium_skin = GetTFLanguageString("ItemNameAustralium") end
+		//TODO: "self.australium" might not be how we implement this, come back to this later
+
+		local festivized = ""
+		if self.festivized then festivized = GetTFLanguageString("ItemNameFestive") end
+
+		local qualityFormat
+		if (self.quality == "normal" or self.quality == "unique" or self.quality == "paintkitweapon" or ignoreQuality) and self.quality != "selfmade" then
+			qualityformat = GetTFLanguageString("ItemNameNormalOrUniqueQualityFormat")
+		else
+			qualityformat = GetTFLanguageString("ItemNameQualityFormat")
+		end
+
+		//loc_scpy_safe( szQuality, CConstructLocalizedString( pLocalizationProvider->Find( pszQualityFormat ), szQuality, szIsFestivized, szKillStreak, szAustraliumSkin, szDuckBadge ) );
+		// Strange Unusual Festive Killstreak Australium ducks
+		qualityformat = string.Replace(qualityformat, "%s1", quality)
+		qualityformat = string.Replace(qualityformat, "%s2", festivized)
+		qualityformat = string.Replace(qualityformat, "%s3", "") //killstreak
+		qualityformat = string.Replace(qualityformat, "%s4", australium_skin)
+		qualityformat = string.Replace(qualityformat, "%s5", "") //duck journal rank
+		quality = qualityformat
+
+		if self.paintkit then
+			//TODO: tf2 code here gets localized paintkit name and concatenates it with itemName here; these names aren't stored in 
+			//normal localization files, maybe we can grab them from the war paints gmod addon, which reads them from protodefs?
+			//https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1001
+		end
+
+		//note: in the tf2 code, at the very top of this method, "ItemNameFormat" is set as the default value, and a comment mentions 
+		//using a different format for names with an article, but it never actually does this or changes this value anywhere
+		local format = GetTFLanguageString("ItemNameFormat")
+		if format != "" then
+			format = string.Replace(format, "%s1", quality)
+			format = string.Replace(format, "%s2", itemName)
+			format = string.Replace(format, "%s3", "") //craft index
+			format = string.Replace(format, "%s4", "") //crate series
+			format = string.Replace(format, "%s5", "") //tool target name
+			format = string.Replace(format, "%s6", "") //dynamic recipe output name
+			return format
+		else
+			return "Unknown Item"
+		end
+
 	end
 
 	function PANEL:CreateMouseOverPanel()
@@ -708,9 +870,9 @@ if CLIENT then
 		TF2ItemBrowser.MouseOverPanel = pnl
 		pnl.Owner = self
 
-		local pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller, so scale it down proportionately
+		local pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 		pnl:DockPadding(pad,pad,pad,pad) 
-		local w, h = 400, pad*2
+		local w, h = 420, pad*2
 		local function AddText(text, font, col)
 			for _, v in ipairs (string.Explode("\n", textWrap(text, font, w-(pad*2)))) do
 				local label = pnl:Add("DLabel")
@@ -720,10 +882,14 @@ if CLIENT then
 				label:SetTextColor(col)
 				label:SetAutoStretchVertical(true)
 				label:SetContentAlignment(5)
-				h = h + label:GetTall()
+				local _, _h = surface.GetTextSize(v)
+				h = h + _h
 			end
 		end
-		AddText("Spectacularly Lethal Sophisticated Carbonado Botkiller Killing Gloves of Boxing Mk.II", "TF2ItemBrowser_ItemName", Color(255,0,255,255)) //TODO: real names later
+		AddText(self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+		//TODO: real level and description text
+		AddText("Level 7 Boxing Gloves", "TF2ItemBrowser_ItemDesc", desc_colors.level)
+		AddText("On Kill: 5 seconds of 100% critical chance\nAlso Here's Another Line", "TF2ItemBrowser_ItemDesc", desc_colors.positive)
 		pnl:SetSize(w,h)
 
 		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
