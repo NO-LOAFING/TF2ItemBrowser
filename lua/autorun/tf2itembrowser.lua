@@ -386,8 +386,8 @@ if CLIENT then
 		ItemIsotope		= Color(225,255,15,255),
 		ItemBundleItem		= Color(149,175,12,255),
 		ItemLimitedUse		= Color(0,160,0,255),
-		ItemFlag		= Color(117,107,94,255),
-		ItemLimitedQuantity	= Color(225,209,0,255),]]
+		ItemFlag		= Color(117,107,94,255),]]
+		ItemLimitedQuantity	= Color(225,209,0,255),
 	}
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
@@ -881,9 +881,10 @@ if CLIENT then
 		self.m_iItemID = i
 		self.ImageToQueue = TF2Items.items[i].image_inventory
 		self.quality = TF2Items.items[i].item_quality or self.quality
-		self.rarity = TF2Items.items[i]._rarity or self.rarity //TODO: populate this value in the item defs by going through collections
+		self.rarity = TF2Items.items[i]._rarity or self.rarity
 
 		self.itemname = self:UpdateItemName()
+		self.itemdesc = self:UpdateItemDescription()
 		
 	end
 
@@ -892,8 +893,8 @@ if CLIENT then
 		//based on https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L610, it's a whopper
 		//this is probably way overengineered for our use case, but oh well!
 
-		local i = self:GetItemID()
-		if !TF2Items.items[i] then return "Unknown Item" end
+		local i = TF2Items.items[self:GetItemID()]
+		if !i then return "Unknown Item" end
 
 		local useProperName = true
 		local ignoreWear = false
@@ -903,7 +904,7 @@ if CLIENT then
 		end
 		
 		// Start with the base name.
-		local itemName = GetTFLanguageString(TF2Items.items[i].item_name, true) or "Unknown Item"
+		local itemName = GetTFLanguageString(i.item_name, true) or "Unknown Item"
 
 		//tf2 code here sets killstreak values, but this addon won't be doing those unless rubat implements $sheenmap someday
 
@@ -913,7 +914,7 @@ if CLIENT then
 		if !ignoreQuality then 
 			if self.quality != "normal" and self.quality != "paintkitweapon" then //tf2 code here checks nQuality > 0, which only filters out normal quality (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.h#L516)
 				if self.quality == "unique" then
-					if useProperName and TF2Items.items[i].propername == 1 then 
+					if useProperName and i.propername == 1 then 
 						quality = GetTFLanguageString("TF_Unique_Prepend_Proper")
 					end
 				else // Any quality besides unique ignores "proper name" articles.
@@ -976,6 +977,103 @@ if CLIENT then
 
 	end
 
+	function PANEL:UpdateItemDescription()
+
+		//based on CEconItemDescription::GenerateDescriptionLines https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L347
+
+		local desc = {}
+		local i = TF2Items.items[self:GetItemID()]
+		if !i then return desc end
+
+		if i._rarity then
+			//Item rarity; based on CEconItemDescription::Generate_ItemRarityDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1521
+			
+			local tooltip = "TFUI_InvTooltip_Rarity"
+			if !self.wear then tooltip = "TFUI_InvTooltip_RarityNoWear" end //TODO: we might end up storing paintkit wear differently, come back to this
+			tooltip = GetTFLanguageString(tooltip)
+			if tooltip != "" then
+				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString(TF2Items.rarities[i._rarity].loc_key))
+				tooltip = string.Replace(tooltip, "%s2", GetTFLanguageString(i.item_type_name))
+				tooltip = string.Replace(tooltip, "%s3", "") //TODO: convert wear value (however we end up storing it) to localization string from this table https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.cpp#L200-L208
+				table.insert(desc, {str = tooltip, col = rarity_colors[i._rarity]})
+			end
+		else
+			//Item level; based on CEconItemDescription::Generate_ItemLevelDesc, which calls CEconItemDescription::Generate_ItemLevelDesc_Default (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1252);
+			//the former also has a use case for showing strange ranks in place of levels, but this addon doesn't need those
+			
+			local typeName = GetTFLanguageString(i.item_type_name)
+			if typeName != "" then
+				local level = math.random(i.min_ilevel or 1, i.max_ilevel or 1)
+
+				//tf2 code has a case here where if an item has no typeName, the attribute "force_level_display" can 
+				//make it use the "ItemTypeDescNoLevel" format (just "Level X") instead of returning nothing (or doing 
+				//any of the below checks), but nothing in items_game uses this attribute, so don't bother
+
+				//tf2 code here also has a case for items with a override_item_level_desc_string attribute that makes
+				//them use the "ItemTypeDescCustomLevelString_MvMTour" format (Tour No. X typeName) but nothing uses this
+
+				if i.static_attrs and i.static_attrs["limited quantity item"] == 1 then
+					local format = GetTFLanguageString("ItemTypeDescLimited")
+					if format != "" then
+						format = string.Replace(format, "%s1", level)
+						format = string.Replace(format, "%s2", typeName)
+						format = string.Replace(format, "%s3", GetTFLanguageString("LimitedQualityDesc"))
+						table.insert(desc, {str = format, col = desc_colors.ItemLimitedQuantity})
+					end
+				else
+					local format = GetTFLanguageString("ItemTypeDesc")
+					if format != "" then
+						format = string.Replace(format, "%s1", level)
+						format = string.Replace(format, "%s2", typeName)
+						table.insert(desc, {str = format, col = desc_colors.level})
+					end
+				end
+			end
+		end
+
+		//TODO: tf2 code does a bunch of other stuff here, go through these and see which ones we care about
+		//Generate_CraftTag( pLocalizationProvider, pEconItem );
+		//Generate_StyleDesc( pLocalizationProvider, pEconItem );
+		//Generate_Painted( pLocalizationProvider, pEconItem );
+		//Generate_HolidayRestriction( pLocalizationProvider, pEconItem );	
+		//Generate_SaxxyAwardDesc( pLocalizationProvider, pEconItem );
+		//Generate_VisibleAttributes( pLocalizationProvider, pEconItem );
+		//Generate_QualityDesc( pLocalizationProvider, pEconItem );	
+
+		//Item description; based on CEconItemDescription::Generate_ItemDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1575
+		if i.item_description then
+			local item_desc = GetTFLanguageString(i.item_description)
+			if item_desc != "" then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
+		end
+		//This method also does a list of styles here
+		//TODO: get back to this once styles are implemented https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1607-L1622
+
+		//TODO: tf2 code does even more stuff here, go through these and see which ones we care about
+		//Generate_Bundle( pLocalizationProvider, pEconItem );
+		//Generate_GiftedBy( pLocalizationProvider, pEconItem );
+		//Generate_DuelingMedal( pLocalizationProvider, pEconItem );
+		//Generate_MapContributor( pLocalizationProvider, pEconItem );
+		//Generate_MapStampBundleTooltip( pLocalizationProvider, pEconItem );
+		//Generate_FriendlyHat( pLocalizationProvider, pEconItem );
+		//Generate_SquadSurplusClaimedBy( pLocalizationProvider, pEconItem );
+		//Generate_MvmChallenges( pLocalizationProvider, pEconItem );
+		//Generate_DynamicRecipe( pLocalizationProvider, pEconItem );
+		//Generate_XifierToolTargetItem( pLocalizationProvider, pEconItem );
+		//Generate_LootListDesc( pLocalizationProvider, pEconItem );
+		//Generate_EventDetail( pLocalizationProvider, pEconItem );
+		//Generate_ItemSetDesc( pLocalizationProvider, pEconItem );
+		//Generate_UnusualifierEffectList( pLocalizationProvider, pEconItem );
+		//Generate_CollectionDesc( pLocalizationProvider, pEconItem );
+		//Generate_BonusContentDesc( pLocalizationProvider, pEconItem );
+		//Generate_ExpirationDesc( pLocalizationProvider, pEconItem );
+		//Generate_DropPeriodDesc( pLocalizationProvider, pEconItem ); 
+		//Generate_MarketInformation( pLocalizationProvider, pEconItem );
+		//Generate_DirectX8Warning( pLocalizationProvider, pEconItem );
+
+		return desc
+
+	end
+
 	function PANEL:CreateMouseOverPanel()
 
 		if IsValid(TF2ItemBrowser.MouseOverPanel) then TF2ItemBrowser.MouseOverPanel:Remove() end
@@ -1001,9 +1099,9 @@ if CLIENT then
 			end
 		end
 		AddText(self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
-		//TODO: real level and description text
-		AddText("Level 7 Boxing Gloves", "TF2ItemBrowser_ItemDesc", desc_colors.level)
-		AddText("On Kill: 5 seconds of 100% critical chance\nAlso Here's Another Line", "TF2ItemBrowser_ItemDesc", desc_colors.positive)
+		for _, v in ipairs (self.itemdesc) do
+			AddText(v.str, "TF2ItemBrowser_ItemDesc", v.col)
+		end
 		pnl:SetSize(w,h)
 
 		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
