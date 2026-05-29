@@ -1,54 +1,62 @@
-local tf_lang = file.Read("resource/tf_english.txt", "tf")
-tf_lang = util.KeyValuesToTable(tf_lang, true, false).tokens
+local tf_lang, UpdateTFLanguageStrings, GetTFLanguageString
+if CLIENT then
+	UpdateTFLanguageStrings = function(lang)
+		tf_lang = file.Read("resource/tf_english.txt", "tf")
+		tf_lang = util.KeyValuesToTable(tf_lang, true, false).tokens
+		local langs = { //list of gmod-supported languages from https://wiki.facepunch.com/gmod/Addon_Localization#supportedlanguages
+			bg = "bulgarian",
+			cs = "czech",
+			da = "danish",
+			de = "german",
+			el = "greek",
+			//en = "english",
+			["en-PT"] = "pirate",
+			["es-ES"] = "spanish", //tf2 also has tf_latam
+			//et 	Estonian
+			fi = "finnish",
+			fr = "french",
+			//he 	Hebrew
+			//hr 	Croatian
+			hu = "hungarian",
+			it = "italian",
+			ja = "japanese",
+			ko = "korean", //tf2 has both tf_korean and tf_koreana translations available, what's the difference? is this the right one to use?
+			//lt 	Lithuanian
+			nl = "dutch",
+			no = "norwegian",
+			pl = "polish",
+			["pt-BR"] = "brazilian",
+			["pt-PT"] = "portuguese",
+			ru = "russian",
+			//sk 	Slovak
+			["sv-SE"] = "swedish",
+			th = "thai",
+			tr = "turkish",
+			uk = "ukrainian",
+			//vi 	Vietnamese
+			["zh-CN"] = "schinese",
+			["zh-TW"] = "tchinese"
+		}
+		if langs[lang] then
+			lang = file.Read("resource/tf_" .. langs[lang] ..".txt", "tf")
+			lang = util.KeyValuesToTable(lang, true, false).tokens
+			table.Merge(tf_lang, lang)
+		end
+		//MsgN("language is now ", lang)
+		//note: conveniently, the context menu and all of its contents are reset upon changing languages, so we don't have to worry 
+		//about resetting the browser to prevent odd behavior caused by controls still using values from the previous language
+	end
+	cvars.AddChangeCallback("gmod_language", function(_,_,new) UpdateTFLanguageStrings(new) end, "TF2ItemBrowser")
+	UpdateTFLanguageStrings(GetConVar("gmod_language"):GetString())
 
-local langs = { //list of gmod-supported languages from https://wiki.facepunch.com/gmod/Addon_Localization#supportedlanguages
-	bg = "bulgarian",
-	cs = "czech",
-	da = "danish",
-	de = "german",
-	el = "greek",
-	//en = "english",
-	["en-PT"] = "pirate",
-	["es-ES"] = "spanish", //tf2 also has tf_latam
-	//et 	Estonian
-	fi = "finnish",
-	fr = "french",
-	//he 	Hebrew
-	//hr 	Croatian
-	hu = "hungarian",
-	it = "italian",
-	ja = "japanese",
-	ko = "korean", //tf2 has both tf_korean and tf_koreana translations available, what's the difference? is this the right one to use?
-	//lt 	Lithuanian
-	nl = "dutch",
-	no = "norwegian",
-	pl = "polish",
-	["pt-BR"] = "brazilian",
-	["pt-PT"] = "portuguese",
-	ru = "russian",
-	//sk 	Slovak
-	["sv-SE"] = "swedish",
-	th = "thai",
-	tr = "turkish",
-	uk = "ukrainian",
-	//vi 	Vietnamese
-	["zh-CN"] = "schinese",
-	["zh-TW"] = "tchinese"
-}
-local lang = GetConVar("gmod_language"):GetString()
-if langs[lang] then
-	lang = file.Read("resource/tf_" .. langs[lang] ..".txt", "tf")
-	lang = util.KeyValuesToTable(lang, true, false).tokens
-	table.Merge(tf_lang, lang)
-end
+	GetTFLanguageString = function(str, return_str_on_fail)
+		local result = ""
+		if return_str_on_fail then result = str end
+		if !isstring(str) then return result end
 
-local function GetTFLanguageString(str, return_str_on_fail)
-	local result = ""
-	if return_str_on_fail then result = str end
-	if !isstring(str) then return result end
-
-	result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
-	return result
+		result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
+		return result
+	end
 end
 
 
