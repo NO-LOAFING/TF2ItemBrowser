@@ -518,7 +518,7 @@ if CLIENT then
 			search:SetTooltip("#spawnmenu.enter_search")
 			filters.search = search
 			search.OnEnter = function()
-				//TODO: update filters
+				window.RebuildIconList()
 			end
 			local searchbutton = search:Add("DImageButton")
 			searchbutton:SetImage("icon16/magnifier.png")
@@ -765,11 +765,20 @@ if CLIENT then
 				local function DoIncludeExcludeFilter(f, criteria)
 					return (f == 1 and !criteria) or (f == -1 and criteria)
 				end
+				local f = search:GetText()
+				if f then
+					if f == "" then
+						f = nil
+					else
+						f = f:lower()
+					end
+				end
 				for k, v in pairs (TF2Items.items) do
 					//this filter is on by default and catches >75% of items, so check this first
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
-					//TODO: search bar filter by name (+ other text too?)
+					//keep the search filter simple, only search by base name
+					if f and !(GetTFLanguageString(v.item_name, true):lower():find(f)) then continue end
 					
 					local _, f = filters.class:GetSelected()
 					if f != "(any)" and !v.used_by_classes[f] then continue end
