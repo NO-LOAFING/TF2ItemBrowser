@@ -778,7 +778,7 @@ if CLIENT then
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
 					//keep the search filter simple, only search by base name
-					if f and !(GetTFLanguageString(v.item_name, true):lower():find(f)) then continue end
+					if f and !(GetTFLanguageString(v.item_name, true):lower():find(f, 1, true)) then continue end
 					
 					local _, f = filters.class:GetSelected()
 					if f != "(any)" and !v.used_by_classes[f] then continue end
@@ -1093,7 +1093,7 @@ if CLIENT then
 
 		local pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 		pnl:DockPadding(pad,pad,pad,pad) 
-		local w, h = 420, pad*2
+		local w, h = 480, pad*2
 		local function AddText(text, font, col)
 			for _, v in ipairs (string.Explode("\n", textWrap(text, font, w-(pad*2)))) do
 				local label = pnl:Add("DLabel")
@@ -1115,12 +1115,25 @@ if CLIENT then
 
 		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
 		local b_w, b_h = TF2ItemBrowser:GetSize()
-		x = math.max(0,x-w/2) //center the panel with the icon, but don't let the left side of the panel go beyond the left side of the browser
-		if x+w > b_w then //if the right side of the panel goes beyond the right side of the browser, then move it left
-			x = x - ((x+w)-b_w)
+		x = x-(w/2) //by default, the panel is positioned below the icon
+		local is_on_side
+		if x < 0 then //if the left side of the panel goes beyond the left side of the browser, then move it to the right of the icon
+			x = x + (self:GetWide()/2)+(w/2)
+			y = y - (self:GetTall()/2)-(h/2)
+			is_on_side = true
+		elseif x+w > b_w then //if the right side of the panel goes beyond the right side of the browser, then move it to the left of the icon
+			x = x - (self:GetWide()/2)-(w/2)
+			y = y - (self:GetTall()/2)-(h/2)
+			is_on_side = true
 		end
-		if y+h > b_h then //if the bottom of the panel goes beyond the bottom of the browser, then move it above the item icon
-			y = y-self:GetTall()-h
+		if is_on_side and y < 0 then //if the top of the panel goes beyond the top of the browser, then push it downward
+			y = 0
+		elseif y+h > b_h then //if the bottom of the panel goes beyond the bottom of the browser...
+			if is_on_side then //...and we've moved it to the side of the icon, then push it upward
+				y = y-((y+h)-b_h)
+			else //and it's positioned below the icon, then reposition it above the icon
+				y = y-self:GetTall()-h
+			end
 		end
 		pnl:SetPos(x, y)
 		
