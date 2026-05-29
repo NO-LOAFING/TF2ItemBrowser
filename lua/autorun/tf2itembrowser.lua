@@ -71,7 +71,8 @@ end
 
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
-local s = util.KeyValuesToTable(_s)
+local s = util.KeyValuesToTable(_s, false, true)
+local s2 = util.KeyValuesToTablePreserveOrder(_s, false, true)
 
 
 //inject custom values into a few items
@@ -164,6 +165,7 @@ PrintTable(t)]]
 
 local bad_values = {"public_prefab", "qc_template", "triangle_budget_lod0", "triangle_budget_lod1", "triangle_budget_lod2"}
 local used_equip_regions = {}
+local items_by_name = {}
 
 for k, v in pairs (s.items) do
 	//clear useless items
@@ -226,16 +228,22 @@ for k, v in pairs (s.items) do
 		//MsgN("group 2: ", k, " ", v.name)
 		s.items[k] = nil
 	end
+
+
+	//Item sets and collections list items by name, not id, so they need to be able to retrieve the item id by name
+	items_by_name[v.name] = k
 end
 
 
 //s.equip_regions has multiple "shared" keys that are subtables filled with many different class-specific strings, but these get clobbered by util.KeyValuesToTable, 
 //so we have to rescue them. also use this chance to get the implementation order, because it makes the equip region list look nicer.
-local s2 = util.KeyValuesToTablePreserveOrder(_s)
 local tab = {}
 for _, class in ipairs (classes) do //sort these by class so we can filter them easily + print class-based ones in class order
 	tab[class.longname] = {}
 end
+//Also use this opportunity to process item sets and collections in implementation order
+local sets = {}
+local collections = {}
 
 for k, v in ipairs (s2) do
 	if v.Key == "equip_regions_list" then
@@ -254,7 +262,55 @@ for k, v in ipairs (s2) do
 				if used_equip_regions[v2.Key] then table.insert(tab["(any)"], v2.Key) end
 			end
 		end
-		break
+	elseif v.Key == "item_sets" then
+		for k2, v2 in ipairs (v.Value) do
+			local add_set = false //exclude sets that don't contain any spawnable items
+			for k3, _ in pairs (s.item_sets[v2.Key].items) do
+				if s.items[items_by_name[k3]] then
+					add_set = true
+					s.items[items_by_name[k3]]._item_set = v2.Key
+					//Also keep track of which classes we should show this set for
+					s.item_sets[v2.Key]._classes = s.item_sets[v2.Key]._classes or {}
+					for k, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
+						s.item_sets[v2.Key]._classes[k] = true
+					end
+				end
+			end
+			if add_set then table.insert(sets, v2.Key) end
+		end
+	elseif v.Key == "item_collections" then
+		for k2, v2 in ipairs (v.Value) do
+			local add_set = false //exclude sets that don't contain any spawnable items
+			for k3, v3 in pairs (s.item_collections[v2.Key].items) do
+				//collections are either formatted as a table of items like sets,
+				//or a table of item subtables sorted by rarity.
+				if istable(v3) then
+					for k4, _ in pairs (v3) do
+						if s.items[items_by_name[k4]] then
+							add_set = true
+							s.items[items_by_name[k4]]._item_collection = v2.Key
+							s.items[items_by_name[k4]]._rarity = k3
+							//Also keep track of which classes we should show this set for
+							s.item_collections[v2.Key]._classes = s.item_collections[v2.Key]._classes or {}
+							for k, _ in pairs (s.items[items_by_name[k4]].used_by_classes) do
+								s.item_collections[v2.Key]._classes[k] = true
+							end
+						end
+					end
+				else
+					if s.items[items_by_name[k3]] then
+						add_set = true
+						s.items[items_by_name[k3]]._item_collection = v2.Key
+						//Also keep track of which classes we should show this set for
+						s.item_collections[v2.Key]._classes = s.item_collections[v2.Key]._classes or {}
+						for k, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
+							s.item_collections[v2.Key]._classes[k] = true
+						end
+					end
+				end
+			end
+			if add_set then table.insert(collections, v2.Key) end
+		end
 	end
 end
 s.equip_regions_list = tab
@@ -505,18 +561,41 @@ if CLIENT then
 					if select_extras then select_extras() end
 					window.RebuildIconList()
 				end
+				function drop.Combo:OnMenuOpened(menu)
+					//Add a checkmark to the currently selected option.
+					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+					//non-spacer children to find the correct one.
+					local sel = drop.Combo:GetSelectedID()
+					local sel_read = 0
+					for i = 1, menu:ChildCount() do
+						local child = menu:GetChild(i)
+						if child:GetName() == "DMenuOption" then
+							sel_read = sel_read + 1
+							if sel_read == sel then
+								child:SetChecked(true)
+								break
+							end
+						end
+					end
+				end
 				return drop.Combo
 			end
 
 			filters.class = AddDropdownFilter("Class", function(self)
-				for _, v in ipairs (classes) do
+				for k, v in ipairs (classes) do
 					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
+					if k == 1 or k == 10 then self:AddSpacer() end
 				end
-			end, function() filters.equip_region:RebuildControls() end)
+			end, function() 
+				filters.equip_region:RebuildControls()
+				filters.item_set:RebuildControls()
+			end)
 
 			filters.item_type = AddDropdownFilter("Item Type", function(self) 
-				for _, v in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
+				for k, v in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
 					self:AddChoice(string.NiceName(v), v, v == "(any)")
+					if k == 1 then self:AddSpacer() end
 				end
 			end)
 
@@ -531,6 +610,7 @@ if CLIENT then
 					local _, selected_class = filters.class:GetSelected()
 					selected_class = selected_class or "(any)"
 					if selected_class == "(any)" or class.longname == "(any)" or selected_class == class.longname then
+						self:AddSpacer()
 						for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
 							self:AddChoice(string.NiceName(v), v, old_choice == v)
 						end
@@ -543,7 +623,38 @@ if CLIENT then
 			end
 			filters.equip_region = AddDropdownFilter("Equip Region", equip_regions_populate)
 			filters.equip_region.RebuildControls = equip_regions_populate //make this func externally accessible so we can rebuild it when picking a new class
-			filters.equip_region:GetParent():DockMargin(0,0,0,betweencategories)
+
+			local item_sets_populate = function(self)
+				local _, old_choice = self:GetSelected()
+				old_choice = old_choice or "(any)"
+				self.IsRebuilding = true
+				self:Clear()
+				self:AddChoice("(any)", "(any)", old_choice == "(any)")
+				//If we have a class selected, only show sets containing items for that class
+				local _, selected_class = filters.class:GetSelected()
+				selected_class = selected_class or "(any)"
+				local added_spacer = false
+				for _, v in ipairs (sets) do
+					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
+						if !added_spacer then self:AddSpacer() added_spacer = true end
+						self:AddChoice(GetTFLanguageString(TF2Items.item_sets[v].name, true) or v, v, old_choice == v)
+					end
+				end
+				added_spacer = false
+				for _, v in ipairs (collections) do
+					if selected_class == "(any)" or TF2Items.item_collections[v]._classes[selected_class] then
+						if !added_spacer then self:AddSpacer() added_spacer = true end
+						self:AddChoice(GetTFLanguageString(TF2Items.item_collections[v].name, true) or v, v, old_choice == v)
+					end
+				end
+				//if we had a class-specific set selected, and then switched to a class that doesn't have it, revert to "(any)"
+				local _, check = self:GetSelected()
+				if check == nil then self:ChooseOptionID(1) end
+				self.IsRebuilding = nil
+			end
+			filters.item_set = AddDropdownFilter("Set/Collection", item_sets_populate)
+			filters.item_set:GetParent():DockMargin(0,0,0,betweencategories)
+			filters.item_set.RebuildControls = item_sets_populate //make this func externally accessible so we can rebuild it when picking a new class
 			
 			local check = vgui.Create("DCheckBoxLabel", filters)
 			check:SetText("Hide conflicting items")
@@ -635,7 +746,7 @@ if CLIENT then
 
 
 			window.RebuildIconList = function(clicked)
-				if filters.equip_region.IsRebuilding then return end
+				if filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
 
 				window.icons = {}
 				window.icons_to_add = {}
@@ -669,6 +780,9 @@ if CLIENT then
 
 					local _, f = filters.equip_region:GetSelected()
 					if f != "(any)" and (!v.equip_regions or !v.equip_regions[f]) then continue end
+
+					local _, f = filters.item_set:GetSelected()
+					if f != "(any)" and (v._item_set != f and v._item_collection != f) then continue end
 
 					if DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
 					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
