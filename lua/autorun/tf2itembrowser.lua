@@ -398,8 +398,8 @@ if CLIENT then
 		ItemLimitedQuantity	= Color(225,209,0,255),
 	}
 	local snd_hover = "ui/item_info_mouseover.wav"
-	//local snd_click = "ui/buttonclick.wav" //TODO: wrong sound, this gets overridden by hl2 sound
-	//local snd_release = "ui/buttonclickrelease.wav" //TODO: wrong sound, this gets overridden by hl2 sound
+	local snd_click = "ui/tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
+	local snd_release = "ui/tf_buttonclickrelease.wav" //^
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
