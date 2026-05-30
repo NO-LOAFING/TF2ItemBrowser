@@ -397,6 +397,9 @@ if CLIENT then
 		ItemFlag		= Color(117,107,94,255),]]
 		ItemLimitedQuantity	= Color(225,209,0,255),
 	}
+	local snd_hover = "ui/item_info_mouseover.wav"
+	//local snd_click = "ui/buttonclick.wav" //TODO: wrong sound, this gets overridden by hl2 sound
+	//local snd_release = "ui/buttonclickrelease.wav" //TODO: wrong sound, this gets overridden by hl2 sound
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
@@ -880,7 +883,7 @@ if CLIENT then
 
 	local PANEL = {}
 
-	AccessorFunc(PANEL, "m_iItemID", "ItemID" )
+	AccessorFunc(PANEL, "m_iItemID", "ItemID")
 
 	function PANEL:Init()
 
@@ -890,6 +893,8 @@ if CLIENT then
 
 		self.quality = "unique"
 		self.rarity = nil
+		self.sound_pressed = "ui/item_default_pickup.wav"
+		self.sound_drop = "ui/item_default_drop.wav"
 
 	end
 
@@ -899,6 +904,8 @@ if CLIENT then
 		self.ImageToQueue = TF2Items.items[i].image_inventory
 		self.quality = TF2Items.items[i].item_quality or self.quality
 		self.rarity = TF2Items.items[i]._rarity or self.rarity
+		self.sound_pressed = TF2Items.items[i].mouse_pressed_sound or self.sound_pressed
+		self.sound_drop = TF2Items.items[i].drop_sound or self.sound_drop
 
 		self.itemname = self:UpdateItemName()
 		self.itemdesc = self:UpdateItemDescription()
@@ -1091,6 +1098,70 @@ if CLIENT then
 
 	end
 
+	local popup_w = 480 //keep the width consistent between popup panels, so that when we switch from mouseoverpanel to spawnpanel, the above func maintains the same horizontal position
+	local popup_pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
+
+	function PANEL:AddItemText(pnl, text, font, col)
+		
+		local h = 0
+		for _, v in ipairs (string.Explode("\n", textWrap(text, font, popup_w-(popup_pad*2)))) do
+			local label = pnl:Add("DLabel")
+			label:Dock(TOP)
+			label:SetFont(font)
+			label:SetText(v)
+			label:SetTextColor(col)
+			label:SetAutoStretchVertical(true)
+			label:SetContentAlignment(5)
+			local _, _h = surface.GetTextSize(v)
+			h = h + _h
+		end
+		return h
+
+	end
+
+	function PANEL:PositionPopupPanel(pnl)
+
+		//Keeps a popup panel contained within its parent TF2ItemBrowser, but also centered on this item icon
+		local w, h = pnl:GetSize()
+		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
+		local b_w, b_h = TF2ItemBrowser:GetSize()
+
+		x = x-(w/2) //by default, the panel is positioned below the icon
+		local is_on_side
+		if x < 0 then
+			//if the left side of the panel goes beyond the left side of the browser, then move it to the right of the icon
+			x = x + (self:GetWide()/2)+(w/2)
+			y = y - (self:GetTall()/2)-(h/2)
+			is_on_side = true
+		elseif x+w > b_w then 
+			//if the right side of the panel goes beyond the right side of the browser, then move it to the left of the icon
+			x = x - (self:GetWide()/2)-(w/2)
+			y = y - (self:GetTall()/2)-(h/2)
+			is_on_side = true
+		elseif y+h > b_h and (y-self:GetTall()-h) < 0 then
+			//if the panel is too tall to fit above or below the icon, then center it the browser over the icon (edge case for clicking on icons in middle of the browser)
+			y = (b_h/2)-(h/2)
+		end
+		
+		//if the bottom of the panel goes beyond the bottom of the browser...
+		if y+h > b_h then 
+			if is_on_side then
+				//...and we've moved it to the side of the icon, then push it upward
+				y = y-((y+h)-b_h)
+			else
+				//...and it's positioned below the icon, then reposition it above the icon
+				y = y-self:GetTall()-h
+			end
+		end
+		//if the top of the panel goes beyond the top of the browser, then push it downward
+		if y < 0 then 
+			y = 0
+		end
+
+		pnl:SetPos(x, y)
+
+	end
+
 	function PANEL:CreateMouseOverPanel()
 
 		if IsValid(TF2ItemBrowser.MouseOverPanel) then TF2ItemBrowser.MouseOverPanel:Remove() end
@@ -1099,51 +1170,13 @@ if CLIENT then
 		TF2ItemBrowser.MouseOverPanel = pnl
 		pnl.Owner = self
 
-		local pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
-		pnl:DockPadding(pad,pad,pad,pad) 
-		local w, h = 480, pad*2
-		local function AddText(text, font, col)
-			for _, v in ipairs (string.Explode("\n", textWrap(text, font, w-(pad*2)))) do
-				local label = pnl:Add("DLabel")
-				label:Dock(TOP)
-				label:SetFont(font)
-				label:SetText(v)
-				label:SetTextColor(col)
-				label:SetAutoStretchVertical(true)
-				label:SetContentAlignment(5)
-				local _, _h = surface.GetTextSize(v)
-				h = h + _h
-			end
-		end
-		AddText(self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
+		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
 		for _, v in ipairs (self.itemdesc) do
-			AddText(v.str, "TF2ItemBrowser_ItemDesc", v.col)
+			h = h + self:AddItemText(pnl, v.str, "TF2ItemBrowser_ItemDesc", v.col)
 		end
-		pnl:SetSize(w,h)
-
-		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
-		local b_w, b_h = TF2ItemBrowser:GetSize()
-		x = x-(w/2) //by default, the panel is positioned below the icon
-		local is_on_side
-		if x < 0 then //if the left side of the panel goes beyond the left side of the browser, then move it to the right of the icon
-			x = x + (self:GetWide()/2)+(w/2)
-			y = y - (self:GetTall()/2)-(h/2)
-			is_on_side = true
-		elseif x+w > b_w then //if the right side of the panel goes beyond the right side of the browser, then move it to the left of the icon
-			x = x - (self:GetWide()/2)-(w/2)
-			y = y - (self:GetTall()/2)-(h/2)
-			is_on_side = true
-		end
-		if is_on_side and y < 0 then //if the top of the panel goes beyond the top of the browser, then push it downward
-			y = 0
-		elseif y+h > b_h then //if the bottom of the panel goes beyond the bottom of the browser...
-			if is_on_side then //...and we've moved it to the side of the icon, then push it upward
-				y = y-((y+h)-b_h)
-			else //and it's positioned below the icon, then reposition it above the icon
-				y = y-self:GetTall()-h
-			end
-		end
-		pnl:SetPos(x, y)
+		pnl:SetSize(popup_w,h)
+		self:PositionPopupPanel(pnl)
 		
 		function pnl:Paint(w,h)
 			LoadoutItemPopupBorder(0,0,w,h)
@@ -1151,6 +1184,34 @@ if CLIENT then
 
 	end
 
+	function PANEL:CreateSpawnPanel()
+
+		if IsValid(TF2ItemBrowser.SpawnPanel) then
+			if TF2ItemBrowser.SpawnPanel.Owner == self then
+				return
+			else
+				TF2ItemBrowser.SpawnPanel:Remove()
+			end
+		end
+
+		local pnl = vgui.Create("DPanel", TF2ItemBrowser)
+		TF2ItemBrowser.SpawnPanel = pnl
+		pnl.Owner = self
+
+		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
+		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+		h = h + 400 //TODO: add contents
+
+		pnl:SetSize(popup_w, h)
+		self:PositionPopupPanel(pnl)
+		//pnl:SetZPos(10) //position above mouseover popups; commented out because this causes the spawnpanel to flicker every time a new mouseoverpanel is created??
+
+
+		function pnl:Paint(w,h)
+			GrayDialogBorder(0,0,w,h)
+		end
+
+	end
 
 	//dumb modified version of GWEN.CreateTextureBorder (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/derma/derma_gwen.lua#L6-L56),
 	//used to scale down the tf2 backpack textures to match our tiny backpack icons
@@ -1211,7 +1272,6 @@ if CLIENT then
 		end
 
 	end
-
 	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"), item_icon_scale)
 	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"), item_icon_scale)
 	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"), item_icon_scale)
@@ -1219,7 +1279,9 @@ if CLIENT then
 
 	function PANEL:Paint(w, h)
 
-		if self:IsHovered() then
+		local has_spawn_panel = IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self
+		
+		if self:IsHovered() and !has_spawn_panel then
 			if !IsValid(TF2ItemBrowser.MouseOverPanel) or TF2ItemBrowser.MouseOverPanel.Owner != self then
 				local time = CurTime()
 				self.HoverTime = self.HoverTime or time
@@ -1234,7 +1296,7 @@ if CLIENT then
 			end
 		end
 
-		if self:IsDown() then
+		if has_spawn_panel or IsValid(self.menu) or self:IsDown() then
 			BackpackItemSelectedBorder(0,0,w,h)
 		elseif self:IsHovered() then
 			BackpackItemMouseOverBorder(0,0,w,h)
@@ -1265,10 +1327,40 @@ if CLIENT then
 
 	function PANEL:DoClick()
 
-		//test
-		MsgN(self:GetItemID(), " ", TF2Items.items[self:GetItemID()].name)
-		PrintTable(TF2Items.items[self:GetItemID()])
-		MsgN("")
+		surface.PlaySound(self.sound_pressed)
+		self:CreateSpawnPanel()
+
+	end
+
+	function PANEL:DoRightClick()
+
+		//TODO: this is just a place to put this debug option for now; reformat this later? add more options?
+		local menu = DermaMenu()
+
+		local opt = menu:AddOption("Print item data in console", function()
+			MsgN(self:GetItemID(), " ", TF2Items.items[self:GetItemID()].name)
+			PrintTable(TF2Items.items[self:GetItemID()])
+			MsgN("")
+		end)
+		opt:SetIcon("icon16/page_copy.png")
+
+		self.menu = menu
+		menu:Open()
+		surface.PlaySound(self.sound_pressed)
+
+	end
+
+	function PANEL:OnCursorEntered()
+
+		surface.PlaySound(snd_hover)
+
+	end
+
+	function PANEL:OnRemove()
+
+		if IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self then
+			TF2ItemBrowser.SpawnPanel:Remove()
+		end
 
 	end
 
