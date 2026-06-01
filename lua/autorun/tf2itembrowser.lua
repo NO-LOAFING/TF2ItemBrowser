@@ -232,7 +232,7 @@ for k, v in pairs (s.items) do
 	if !v.used_by_classes then
 		//MsgN("group 1: ", k, " ", v.name)
 		s.items[k] = nil
-	elseif (!v.model_player and !v.model_player_per_class and !extra_wearable and !v.visuals and !v.taunt) then
+	elseif (!v.model_player and !v.model_player_per_class and !v.extra_wearable and !v.visuals and !v.taunt) then
 		//MsgN("group 2: ", k, " ", v.name)
 		s.items[k] = nil
 	end
