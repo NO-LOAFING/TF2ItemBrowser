@@ -464,6 +464,7 @@ if CLIENT then
 	local LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
 	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
+	local OutlinedGreyBox = GWEN.CreateTextureBorder(0, 0, 128, 64, 24, 24, 24, 0, Material("vgui/loadout_round_rect_selected.vmt"))
 	local item_icon_w = 64
 	local item_icon_scale = item_icon_w/121 //tf2 backpack panels are 121x94 (???); scale ours down proportionately
 	local item_icon_h = 94*item_icon_scale
@@ -601,7 +602,7 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 960,
+		width		= 940,
 		height		= 700,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
@@ -609,9 +610,12 @@ if CLIENT then
 			window:SetTitle("TF2 Item Browser")
 			window:SetIcon("games/16/tf.png")
 
-			local scroll = vgui.Create("DScrollPanel", window)
-			scroll:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
-			scroll:Dock(RIGHT)
+			local right_holder = vgui.Create("DPanel", window)
+			right_holder.Paint = function() end
+			local scroll = vgui.Create("DScrollPanel", right_holder)
+			right_holder:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
+			right_holder:Dock(RIGHT)
+			scroll:Dock(FILL)
 
 			local iconlist = vgui.Create("DPanel", scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
 			iconlist.Paint = function() end
@@ -970,6 +974,39 @@ if CLIENT then
 				//MsgN(#window.icons_to_add, " icons to add")
 			end
 			window.RebuildIconList()
+
+
+			local attached_holder = vgui.Create("DPanel", right_holder)
+			attached_holder:DockPadding(0,10,0,0)
+			attached_holder:Dock(BOTTOM)
+
+			function attached_holder:Paint(w,h)
+				OutlinedGreyBox(-24,0,w+48,h)
+			end
+
+			//This also has a scrollbar just in case some goofball wants to attach 11+ items to one model
+			local attached = vgui.Create("DHorizontalScroller", attached_holder)
+			attached:SetHeight(item_icon_h)
+			attached:SetOverlap(-item_icon_gap)
+			attached:Dock(BOTTOM)
+			window.attached = attached
+			attached.icons = {}
+
+			attached.Label = vgui.Create("DLabel", attached_holder)
+			attached.Label:SetText("Attached to heavy.mdl:")
+			attached.Label:SetWide(right_holder:GetWide())
+			attached.Label:SetPos(6,6)
+
+			attached_holder:SetTall(item_icon_h + attached.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
+
+			//test
+			for i = 1, 5 do
+				local item = attached:Add("TF2ItemIcon")
+				item:SetItemID(251)
+				attached:AddPanel(item)
+				table.insert(attached.icons, item)
+			end
+			
 
 			local old_Think = window.Think
 			window.ImageQueue = {}
