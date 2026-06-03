@@ -116,6 +116,8 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //30143 tw_demobot_armor (and the others) - placeholder white circle
 //
 //just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
+//all eyelander reskins have an australium style that doesn't do anything, get rid of these
+//maybe inject a value into most stock weapons to tell it to get rid of the team selector unless it's relevant (i.e. festivized)
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -439,6 +441,8 @@ local function GetItemModelVisuals(i, class, team, style)
 	end
 	if model then
 		skin = math.min(skin, util.GetModelInfo(model).SkinCount - 1)
+	else
+		model = ""
 	end
 
 	return model, skin, bg
@@ -594,12 +598,15 @@ if CLIENT then
 
 	
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
-		title		= "TF2 Item Browser",
-		icon		= "games/16/tf.png", //TODO: temp
-		width		= 960, //TODO: better values later
+		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
+		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
+		width		= 960,
 		height		= 700,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
+
+			window:SetTitle("TF2 Item Browser")
+			window:SetIcon("games/16/tf.png")
 
 			local scroll = vgui.Create("DScrollPanel", window)
 			scroll:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
@@ -676,7 +683,9 @@ if CLIENT then
 				search.OnEnter()
 			end
 
-			//make this use red/blu team icons later
+			//TODO: this is the wrong place for this; if we want to make it easy to change the team of the selected model and all attached models,
+			//then we should have a separate category for attach options somewhere
+			--[[//make this use red/blu team icons later
 			local check = vgui.Create("DCheckBoxLabel", filters)
 			check:SetText("BLU")
 			check:SetHeight(15)
@@ -685,7 +694,7 @@ if CLIENT then
 			filters.team = check
 			check.OnChange = function(_, val)
 				//TODO: if in equip mode, update skins of equipped items
-			end
+			end]]
 
 			local function AddDropdownFilter(label, populatefunc, select_extras)
 				local drop = vgui.Create("Panel", filters)
@@ -729,7 +738,7 @@ if CLIENT then
 			end
 
 			filters.class = AddDropdownFilter("Class", function(self)
-				for k, v in ipairs (classes) do
+				for k, v in ipairs (classes) do //add all classes in order
 					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
 					if k == 1 or k == 10 then self:AddSpacer() end
 				end
@@ -751,7 +760,7 @@ if CLIENT then
 				self.IsRebuilding = true
 				self:Clear()
 				self:AddChoice("(any)", "(any)", old_choice == "(any)")
-				for _, class in ipairs (classes) do
+				for _, class in ipairs (classes) do //add class-based equip regions in class order
 					//If we have a class selected, filter out equip regions for other classes
 					local _, selected_class = filters.class:GetSelected()
 					selected_class = selected_class or "(any)"
@@ -1341,11 +1350,11 @@ if CLIENT then
 		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
 		
 		local mdl_container = pnl:Add("DPanel")
-		mdl_container:SetSize(250,250)
-		side_margins = (popup_w-250-popup_pad-popup_pad)/2 //force this panel to stay a square
+		mdl_container:SetSize(300,300)
+		side_margins = (popup_w-300-popup_pad-popup_pad)/2 //force this panel to stay a square, and align all the other controls with it
 		mdl_container:DockMargin(side_margins,betweencategories-5,side_margins,betweencategories)
 		mdl_container:Dock(TOP)
-		h = h + 250 + betweenitems
+		h = h + 300 + betweencategories + betweencategories-5
 		function mdl_container:Paint(w,h)
 			GrayDialogBorder(0,0,w,h)
 		end
@@ -1357,43 +1366,44 @@ if CLIENT then
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		function mdl:Refresh()
 			local _, _class, _style = nil, 0, 0
-			if pnl.class then _, _class = pnl.class:GetSelected() end
+			_, _class = pnl.class:GetSelected()
 			if pnl.style then _, _style = pnl.style:GetSelected() end
 			local model, skin, bg = GetItemModelVisuals(_i, _class, pnl.team:GetChecked(), _style)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
-			self:SetModel(model or "")
+			self:SetModel(model)
 			local ent = self:GetEntity()
-			if !IsValid(ent) then return end
-			ent:SetSkin(skin)
-			if bg then
-				if ent:FindBodygroupByName(bg.name) == -1 then
-					bg = nil
-				else
-					ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index)
+			if IsValid(ent) then
+				ent:SetSkin(skin)
+				if bg then
+					if ent:FindBodygroupByName(bg.name) == -1 then
+						bg = nil //catch bodygroup setters that don't actually do anything; see further down this function
+					else
+						ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index)
+					end
 				end
-			end
 
-			//don't recenter the camera if the model didn't change
-			if model != self.old_model then
-				local pos = ent:GetPos()
-				local ang = ent:GetAngles()
+				//don't recenter the camera if the model didn't change
+				if model != self.old_model then
+					local pos = ent:GetPos()
+					local ang = ent:GetAngles()
 
-				local tab = PositionSpawnIcon(ent, pos, true)
+					local tab = PositionSpawnIcon(ent, pos, true)
 
-				ent:SetAngles(ang)
-				if tab then
-					self:SetCamPos(tab.origin)
-					self:SetFOV(tab.fov)
-					self:SetLookAng(tab.angles)
+					ent:SetAngles(ang)
+					if tab then
+						self:SetCamPos(tab.origin)
+						self:SetFOV(tab.fov)
+						self:SetLookAng(tab.angles)
+					end
 				end
+				self.old_model = model
 			end
-			self.old_model = model
 
 			//Hide the team selector if both teams use the same skin.
 			//This won't catch cases like the stock weapons that have a bunch of identical skins for
-			//botkiller reasons,but it should get rid of pointless team selectors on the most items.
-			//Also compare the model because of model_player_per_class_red/blue.
+			//botkiller reasons, but it should get rid of pointless team selectors on the most items.
+			//Also compare the models because of model_player_per_class_red/blue.
 			local model2, skin2, _ = GetItemModelVisuals(_i, _class, !pnl.team:GetChecked(), _style)
 			local should_show_team = (skin != skin2) or (model != model2)
 			if !should_show_team and pnl.team:IsVisible() then
@@ -1411,7 +1421,7 @@ if CLIENT then
 				for k, v in pairs (i.used_by_classes) do
 					if k != _class then 
 						local model2, _, bg2 = GetItemModelVisuals(_i, k, pnl.team:GetChecked(), _style)
-						if bg2 and ent:FindBodygroupByName(bg2.name) == -1 then bg2 = nil end //make sure this is changing a bodygroup that actually exists; a whole bunch of badges like the dueling badges have useless bodygroup setters for some reason
+						if bg2 and (!ent or ent:FindBodygroupByName(bg2.name) == -1) then bg2 = nil end //make sure this is changing a bodygroup that actually exists; a whole bunch of badges like the dueling badges have useless bodygroup setters for some reason
 						if (model != model2) or (bg and !bg2) or (!bg and bg2) then
 							should_show_class = true
 							break
@@ -1426,17 +1436,38 @@ if CLIENT then
 						end
 					end
 				end
-				local par = pnl.class:GetParent()
-				if !should_show_class and par:IsVisible() then
-					pnl:SetHeight(pnl:GetTall() - par:GetTall() - betweenitems)
-					par:SetVisible(false)
-				elseif should_show_team and !par:IsVisible() then
-					pnl:SetHeight(pnl:GetTall() + par:GetTall() + betweenitems)
-					par:SetVisible(true)
+				//Instead of hiding the class selector, keep it visible but grayed out, so that players can see what class an item belongs to
+				if table.Count(i.used_by_classes) > 1 then
+					//If there are multiple selectable classes that use the same model, change the display text on the dropdown to list them
+					if !should_show_class and pnl.class:IsEnabled() then
+						if table.Count(i.used_by_classes) == 9 then
+							//if it's used by all classes (i.e. medals), just show "(any)"
+							pnl.class:SetText("(any)")
+							
+						else
+							local text
+							for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
+								if i.used_by_classes[v.longname] then
+									if text then
+										text = text .. ", "
+									else
+										text = ""
+									end
+									text = text .. string.NiceName(v.longname)
+								end
+							end
+							pnl.class:SetText(text)
+						end
+					elseif should_show_class and !pnl.class:IsEnabled() then
+						pnl.class:SetText(string.NiceName(_class))
+					end
 				end
+				pnl.class:SetEnabled(should_show_class)
+				pnl.class:GetParent().Label:SetEnabled(should_show_class)
 			end
 		end
 
+		//make this use red/blu team icons later
 		local check = vgui.Create("DCheckBoxLabel", pnl)
 		check:SetText("BLU")
 		check:SetHeight(15)
@@ -1446,7 +1477,7 @@ if CLIENT then
 		check.OnChange = function(_, val)
 			mdl:Refresh()
 		end
-		h = h + 15 + betweencategories
+		h = h + 15 + betweenitems
 
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
@@ -1489,20 +1520,18 @@ if CLIENT then
 			return drop.Combo
 		end
 
-		if table.Count(i.used_by_classes) > 1 then
-			pnl.class = AddDropdown("Class", function(self)
-				local first = true
-				local _, f = TF2ItemBrowser.filters.class:GetSelected()
-				if f != "(any)" then first = nil end
-				for k, v in ipairs (classes) do
-					if i.used_by_classes[v.longname] then
-						self:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
-						first = nil
-					end
+		pnl.class = AddDropdown("Class", function(self)
+			local first = true
+			local _, f = TF2ItemBrowser.filters.class:GetSelected()
+			if f != "(any)" then first = nil end
+			for k, v in ipairs (classes) do //add class options in class order
+				if i.used_by_classes[v.longname] then
+					self:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
+					first = nil
 				end
-			end)
-			h = h + 25 + betweenitems
-		end
+			end
+		end)
+		h = h + 25 + betweenitems
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
 			pnl.style = AddDropdown("Style", function(self)
@@ -1516,6 +1545,35 @@ if CLIENT then
 			h = h + 25 + betweenitems
 		end
 
+		local button = vgui.Create("DButton", pnl)
+		button:SetText("Spawn!")
+		button:SetHeight(20)
+		button:Dock(TOP)
+		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
+		AddTFButtonSounds(button)
+		button.DoClick = function()
+			net.Start("TF2ItemBrowser_SpawnModel_SendToSv")
+				local _, _class, _style = nil, 0, 0
+				if pnl.class then
+					//translate class name back to id number
+					_, _class = pnl.class:GetSelected()
+					for k, class in ipairs (classes) do
+						if class.longname == _class then
+							_class = k
+							break
+						end
+					end
+				end
+				if pnl.style then _, _style = pnl.style:GetSelected() end
+				net.WriteUInt(self:GetItemID(), 15)
+				net.WriteUInt(_class, 4)
+				net.WriteBool(pnl.team:GetChecked())
+				net.WriteUInt(_style, 4)
+			net.SendToServer()
+			surface.PlaySound(self.sound_drop)
+			//pnl:Remove()
+		end
+		h = h + 20 + betweencategories-betweenitems
 		
 		pnl:SetSize(popup_w, h)
 		mdl:Refresh()
@@ -1534,6 +1592,8 @@ if CLIENT then
 		function close:DoClick()
 			pnl:Remove()
 		end
+
+		surface.PlaySound(self.sound_pressed)
 
 	end
 
@@ -1649,7 +1709,6 @@ if CLIENT then
 
 	function PANEL:DoClick()
 
-		surface.PlaySound(self.sound_pressed)
 		self:CreateSpawnPanel()
 
 	end
@@ -1668,13 +1727,9 @@ if CLIENT then
 
 		self.menu = menu
 		menu:Open()
-		//surface.PlaySound(self.sound_pressed)
 
 	end
 
-	//function PANEL:OnCursorEntered()
-	//	surface.PlaySound(snd_hover)
-	//end
 	AddTFButtonSounds(PANEL)
 
 	function PANEL:OnRemove()
@@ -1686,5 +1741,75 @@ if CLIENT then
 	end
 
 	vgui.Register("TF2ItemIcon", PANEL, "DButton")
+
+end
+
+
+
+
+
+
+
+
+
+
+if SERVER then
+
+	util.AddNetworkString("TF2ItemBrowser_SpawnModel_SendToSv")
+
+	net.Receive("TF2ItemBrowser_SpawnModel_SendToSv", function(_, ply)
+
+		local i = net.ReadUInt(15)
+		local class = net.ReadUInt(4)
+		local team = net.ReadBool()
+		local style = net.ReadUInt(4)
+		local model, skin, bg = GetItemModelVisuals(i, classes[class].longname, team, style)
+
+		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
+		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua)
+
+		//This is mostly just an emulation of sandbox's CCSpawn function and the various funcs it calls, duplicated here because a 
+		//few of these functions don't return the entity they create. () This is worth doing 
+		//because we get to reuse all of DoPlayerEntitySpawn's "spawn where the player's looking, then finagle it into place" code.
+
+		if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) then return end
+		//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
+		local is_effect = !util.IsValidProp(model)
+		if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, model)) then return end
+		local e = "prop_physics"
+		if is_effect then e = "prop_effect" end
+		e = DoPlayerEntitySpawn(ply, e, model, skin)
+		if !IsValid(e) then return end
+		if !is_effect then
+			gamemode.Call("PlayerSpawnedProp", ply, model, e)
+			FixInvalidPhysicsObject(e)
+			//DoPropSpawnedEffect(e)
+
+			undo.Create( "prop_physics" )
+				undo.SetPlayer(ply)
+				undo.AddEntity(e)
+			undo.Finish("#prop_physics (" .. tostring(model) .. ")")
+			ply:AddCleanup("props", e)
+		else
+			gamemode.Call("PlayerSpawnedEffect", ply, model, e)
+			//if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
+
+			undo.Create("prop_effect")
+				undo.SetPlayer(ply)
+				undo.AddEntity(e)
+			undo.Finish("#prop_effect (" .. tostring(model) .. ")")
+			ply:AddCleanup("effects", e)
+		end
+		if bg then
+			if IsValid(e.AttachedEntity) then
+				e.AttachedEntity:SetBodygroup(e.AttachedEntity:FindBodygroupByName(bg.name), bg.submodel_index)
+			else
+				e:SetBodygroup(e:FindBodygroupByName(bg.name), bg.submodel_index)
+			end
+		end
+
+		return e
+
+	end)
 
 end
