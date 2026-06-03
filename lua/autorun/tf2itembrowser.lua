@@ -105,8 +105,10 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //models/crafting/ticket_tough_break.mdl
 //models/player/items/crafting/bundle_of_taunts.mdl //eehh, broken materials
 //models/player/items/crafting/crate_variation.mdl //eehh, broken materials
-//
-//add some value to the tournament medal prefab that we can filter for
+//maybe change spy watches to use these instead, just because they spawn better; the default models are viewmodels so they aren't attachable either way
+//models/weapons/c_models/c_spy_watch.mdl
+//models/weapons/c_models/c_leather_watch/parts/c_leather_watch.mdl
+//models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl
 //
 //maybe better backpack icons for:
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon
@@ -435,6 +437,10 @@ local function GetItemModelVisuals(i, class, team, style)
 	if skin == nil then
 		if !team then skin = 0 else skin = 1 end //by default, red team uses skin 0, and blu team uses skin 1
 	end
+	if model then
+		skin = math.min(skin, util.GetModelInfo(model).SkinCount - 1)
+	end
+
 	return model, skin, bg
 
 end
@@ -457,6 +463,8 @@ if CLIENT then
 	local item_icon_scale = item_icon_w/121 //tf2 backpack panels are 121x94 (???); scale ours down proportionately
 	local item_icon_h = 94*item_icon_scale
 	local item_icon_gap = 5
+	local betweenitems = 8
+	local betweencategories = 20
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
 	local close_button = Material("vgui/close_button.vmt")
 	surface.CreateFont("TF2ItemBrowser_ItemName", {
@@ -515,8 +523,19 @@ if CLIENT then
 		ItemLimitedQuantity	= Color(225,209,0,255),
 	}
 	local snd_hover = "ui/item_info_mouseover.wav"
-	local snd_click = "ui/tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
-	local snd_release = "ui/tf_buttonclickrelease.wav" //^
+	local snd_click = "tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
+	local snd_release = "tf_buttonclickrelease.wav" //^
+	local function AddTFButtonSounds(pnl)
+		function pnl:OnCursorEntered()
+			surface.PlaySound(snd_hover)
+		end
+		function pnl:OnDepressed()
+			surface.PlaySound(snd_click)
+		end
+		function pnl:OnReleased()
+			surface.PlaySound(snd_release)
+		end
+	end
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
@@ -636,8 +655,6 @@ if CLIENT then
 
 
 			//ugly temporary filter options
-			local betweenitems = 8
-			local betweencategories = 20
 
 			local search = vgui.Create("DTextEntry", filters)
 			search:SetHeight(20)
@@ -1326,17 +1343,18 @@ if CLIENT then
 		local mdl_container = pnl:Add("DPanel")
 		mdl_container:SetSize(250,250)
 		side_margins = (popup_w-250-popup_pad-popup_pad)/2 //force this panel to stay a square
-		mdl_container:DockMargin(side_margins,betweenitems,side_margins,0)
+		mdl_container:DockMargin(side_margins,betweencategories-5,side_margins,betweencategories)
 		mdl_container:Dock(TOP)
 		h = h + 250 + betweenitems
 		function mdl_container:Paint(w,h)
-			TFThinLineBorder(0,0,w,h)
+			GrayDialogBorder(0,0,w,h)
 		end
 		local mdl = mdl_container:Add("DAdjustableModelPanel")
 		pnl.ModelPanel = mdl
 		mdl.FarZ = 32768
-		mdl:DockMargin(10,10,9,9) //set precisely to cut off the modelpanel at the edges of the TFThinLineBorder; ever-so-slightly uneven
+		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
 		mdl:Dock(FILL)
+		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		function mdl:Refresh()
 			local _, _class, _style = nil, 0, 0
 			if pnl.class then _, _class = pnl.class:GetSelected() end
@@ -1344,36 +1362,55 @@ if CLIENT then
 			local model, skin, bg = GetItemModelVisuals(_i, _class, pnl.team:GetChecked(), _style)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
-			self:SetModel(model)
+			self:SetModel(model or "")
 			local ent = self:GetEntity()
 			if !IsValid(ent) then return end
 			ent:SetSkin(skin)
 			if bg then ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index) end
 
-			local pos = ent:GetPos()
-			local ang = ent:GetAngles()
+			//don't recenter the camera if the model didn't change
+			if model != self.old_model then
+				local pos = ent:GetPos()
+				local ang = ent:GetAngles()
 
-			local tab = PositionSpawnIcon(ent, pos, true)
+				local tab = PositionSpawnIcon(ent, pos, true)
 
-			ent:SetAngles(ang)
-			if tab then
-				self:SetCamPos(tab.origin)
-				self:SetFOV(tab.fov)
-				self:SetLookAng(tab.angles)
+				ent:SetAngles(ang)
+				if tab then
+					self:SetCamPos(tab.origin)
+					self:SetFOV(tab.fov)
+					self:SetLookAng(tab.angles)
+				end
 			end
+			self.old_model = model
+
+			//Hide the team selector if both teams have the same skin.
+			//This won't catch cases like the stock weapons that have a bunch of identical skins for
+			//botkiller reasons,but it should get rid of pointless team selectors on the most items.
+			//Also compare the model because of model_player_per_class_red/blue.
+			local model2, skin2, _ = GetItemModelVisuals(_i, _class, !pnl.team:GetChecked(), _style)
+			local should_show_team = (skin != skin2) or (model != model2)
+			if !should_show_team and pnl.team:IsVisible() then
+				pnl:SetHeight(pnl:GetTall() - pnl.team:GetTall() - betweenitems)
+				pnl.team:SetVisible(false)
+			elseif should_show_team and !pnl.team:IsVisible() then
+				pnl:SetHeight(pnl:GetTall() + pnl.team:GetTall() + betweenitems)
+				pnl.team:SetVisible(true)
+			end
+
+			//TODO: do the above for class selector
 		end
 
 		local check = vgui.Create("DCheckBoxLabel", pnl)
 		check:SetText("BLU")
 		check:SetHeight(15)
 		check:Dock(TOP)
-		check:DockMargin(0,0,0,betweenitems)
+		check:DockMargin(side_margins,0,side_margins,betweenitems)
 		pnl.team = check
 		check.OnChange = function(_, val)
 			mdl:Refresh()
 		end
-		h = h + 15 + betweenitems
-		//TODO: i'd like to hide this if the item will look exactly the same on RED and BLU, but that's actually pretty complicated
+		h = h + 15 + betweencategories
 
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
@@ -1385,7 +1422,7 @@ if CLIENT then
 			drop.Combo:Dock(FILL)
 			drop:SetHeight(25)
 			drop:Dock(TOP)
-			drop:DockMargin(0,0,0,betweenitems)
+			drop:DockMargin(side_margins,0,side_margins,betweenitems)
 			function drop.PerformLayout(_, w, h)
 				drop.Label:SetWide(w / 2.4)
 			end
@@ -1443,13 +1480,13 @@ if CLIENT then
 			h = h + 25 + betweenitems
 		end
 
-		mdl:Refresh()
 		
 		pnl:SetSize(popup_w, h)
+		mdl:Refresh()
 		self:PositionPopupPanel(pnl)
 		//pnl:SetZPos(10) //position above mouseover popups; commented out because this causes the spawnpanel to flicker every time a new mouseoverpanel is created??
 		function pnl:Paint(w,h)
-			GrayDialogBorder(0,0,w,h)
+			LoadoutItemPopupBorder(0,0,w,h)
 		end
 
 		local close = vgui.Create("DImageButton", pnl)
@@ -1457,6 +1494,7 @@ if CLIENT then
 		close:SetPos(popup_w-25-10, 10)
 		close:SetMaterial(close_button)
 		close:SetColor(gui_colors.RedSolid)
+		AddTFButtonSounds(close)
 		function close:DoClick()
 			pnl:Remove()
 		end
@@ -1529,9 +1567,7 @@ if CLIENT then
 
 	function PANEL:Paint(w, h)
 
-		local has_spawn_panel = IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self
-		
-		if self:IsHovered() and !has_spawn_panel then
+		if self:IsHovered() and !IsValid(TF2ItemBrowser.SpawnPanel) then
 			if !IsValid(TF2ItemBrowser.MouseOverPanel) or TF2ItemBrowser.MouseOverPanel.Owner != self then
 				local time = CurTime()
 				self.HoverTime = self.HoverTime or time
@@ -1546,7 +1582,7 @@ if CLIENT then
 			end
 		end
 
-		if has_spawn_panel or IsValid(self.menu) or self:IsDown() then
+		if (IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self) or IsValid(self.menu) or self:IsDown() then
 			BackpackItemSelectedBorder(0,0,w,h)
 		elseif self:IsHovered() then
 			BackpackItemMouseOverBorder(0,0,w,h)
@@ -1596,15 +1632,14 @@ if CLIENT then
 
 		self.menu = menu
 		menu:Open()
-		surface.PlaySound(self.sound_pressed)
+		//surface.PlaySound(self.sound_pressed)
 
 	end
 
-	function PANEL:OnCursorEntered()
-
-		surface.PlaySound(snd_hover)
-
-	end
+	//function PANEL:OnCursorEntered()
+	//	surface.PlaySound(snd_hover)
+	//end
+	AddTFButtonSounds(PANEL)
 
 	function PANEL:OnRemove()
 
