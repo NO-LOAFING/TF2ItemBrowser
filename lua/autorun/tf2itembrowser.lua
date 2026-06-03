@@ -1366,7 +1366,13 @@ if CLIENT then
 			local ent = self:GetEntity()
 			if !IsValid(ent) then return end
 			ent:SetSkin(skin)
-			if bg then ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index) end
+			if bg then
+				if ent:FindBodygroupByName(bg.name) == -1 then
+					bg = nil
+				else
+					ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index)
+				end
+			end
 
 			//don't recenter the camera if the model didn't change
 			if model != self.old_model then
@@ -1384,7 +1390,7 @@ if CLIENT then
 			end
 			self.old_model = model
 
-			//Hide the team selector if both teams have the same skin.
+			//Hide the team selector if both teams use the same skin.
 			//This won't catch cases like the stock weapons that have a bunch of identical skins for
 			//botkiller reasons,but it should get rid of pointless team selectors on the most items.
 			//Also compare the model because of model_player_per_class_red/blue.
@@ -1398,7 +1404,37 @@ if CLIENT then
 				pnl.team:SetVisible(true)
 			end
 
-			//TODO: do the above for class selector
+			//Hide the class selector if all classes use the same model (i.e. medals)
+			//Also compare the bodygroups because of use_per_class_bodygroups.
+			if pnl.class then
+				local should_show_class = false
+				for k, v in pairs (i.used_by_classes) do
+					if k != _class then 
+						local model2, _, bg2 = GetItemModelVisuals(_i, k, pnl.team:GetChecked(), _style)
+						if bg2 and ent:FindBodygroupByName(bg2.name) == -1 then bg2 = nil end //make sure this is changing a bodygroup that actually exists; a whole bunch of badges like the dueling badges have useless bodygroup setters for some reason
+						if (model != model2) or (bg and !bg2) or (!bg and bg2) then
+							should_show_class = true
+							break
+						end
+						if bg and bg2 then
+							for k, v in pairs (bg) do
+								if bg[k] != bg[v] then
+									should_show_class = true 
+									break
+								end
+							end
+						end
+					end
+				end
+				local par = pnl.class:GetParent()
+				if !should_show_class and par:IsVisible() then
+					pnl:SetHeight(pnl:GetTall() - par:GetTall() - betweenitems)
+					par:SetVisible(false)
+				elseif should_show_team and !par:IsVisible() then
+					pnl:SetHeight(pnl:GetTall() + par:GetTall() + betweenitems)
+					par:SetVisible(true)
+				end
+			end
 		end
 
 		local check = vgui.Create("DCheckBoxLabel", pnl)
