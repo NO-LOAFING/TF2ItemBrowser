@@ -111,6 +111,7 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl
 //
 //maybe better backpack icons for:
+//28 TF_WEAPON_BUILDER - this is called "PDA" but its model is engi's toolbox
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon
 //1057 MvM GateBotLight Scout (and the others) - missing textures
 //30143 tw_demobot_armor (and the others) - placeholder white circle
@@ -1551,8 +1552,9 @@ if CLIENT then
 		button:Dock(TOP)
 		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
 		AddTFButtonSounds(button)
+		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
-			net.Start("TF2ItemBrowser_SpawnModel_SendToSv")
+			net.Start("TF2ItemBrowser_SpawnModel_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
 				local _, _class, _style = nil, 0, 0
 				if pnl.class then
 					//translate class name back to id number
@@ -1578,7 +1580,6 @@ if CLIENT then
 		pnl:SetSize(popup_w, h)
 		mdl:Refresh()
 		self:PositionPopupPanel(pnl)
-		//pnl:SetZPos(10) //position above mouseover popups; commented out because this causes the spawnpanel to flicker every time a new mouseoverpanel is created??
 		function pnl:Paint(w,h)
 			LoadoutItemPopupBorder(0,0,w,h)
 		end
