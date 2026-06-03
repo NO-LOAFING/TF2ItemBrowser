@@ -976,38 +976,6 @@ if CLIENT then
 			window.RebuildIconList()
 
 
-			local attached_holder = vgui.Create("DPanel", right_holder)
-			attached_holder:DockPadding(0,10,0,0)
-			attached_holder:Dock(BOTTOM)
-
-			function attached_holder:Paint(w,h)
-				OutlinedGreyBox(-24,0,w+48,h)
-			end
-
-			//This also has a scrollbar just in case some goofball wants to attach 11+ items to one model
-			local attached = vgui.Create("DHorizontalScroller", attached_holder)
-			attached:SetHeight(item_icon_h)
-			attached:SetOverlap(-item_icon_gap)
-			attached:Dock(BOTTOM)
-			window.attached = attached
-			attached.icons = {}
-
-			attached.Label = vgui.Create("DLabel", attached_holder)
-			attached.Label:SetText("Attached to heavy.mdl:")
-			attached.Label:SetWide(right_holder:GetWide())
-			attached.Label:SetPos(6,6)
-
-			attached_holder:SetTall(item_icon_h + attached.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
-
-			//test
-			for i = 1, 5 do
-				local item = attached:Add("TF2ItemIcon")
-				item:SetItemID(251)
-				attached:AddPanel(item)
-				table.insert(attached.icons, item)
-			end
-			
-
 			local old_Think = window.Think
 			window.ImageQueue = {}
 			//this one is global so it carries over between windows
@@ -1048,7 +1016,70 @@ if CLIENT then
 					end
 					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
 				end
+				//if our selected entity is deleted, then update the attached item list
+				if self.attached_holder and self.attached_holder:IsVisible() and !IsValid(self:GetEntity()) then
+					self:SetEntity(NULL)
+				end
 				old_Think(self, ...)
+			end
+
+
+			local attached_holder = vgui.Create("DPanel", right_holder)
+			attached_holder:DockPadding(0,10,0,0)
+			attached_holder:Dock(BOTTOM)
+			window.attached_holder = attached_holder
+			function attached_holder:Paint(w,h)
+				OutlinedGreyBox(-24,0,w+48,h) //no corners, just the top border
+			end
+
+			//This also has a scrollbar just in case some goofball wants to attach more than 10 items to one model
+			local attached = vgui.Create("DHorizontalScroller", attached_holder)
+			attached:SetHeight(item_icon_h)
+			attached:SetOverlap(-item_icon_gap)
+			attached:Dock(BOTTOM)
+			window.attached = attached
+			attached.icons = {}
+			attached.Label = vgui.Create("DLabel", attached_holder)
+			attached.Label:SetText("")
+			attached.Label:SetWide(right_holder:GetWide())
+			attached.Label:SetPos(6,6)
+			attached_holder:SetTall(item_icon_h + attached.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
+
+			function attached:AddItem(ent, data)
+				local item = attached:Add("TF2ItemIcon")
+				item:SetItemID(data.i)
+				//TODO: make the itemicon associate itself with the entity and use the rest of the data
+
+				attached:AddPanel(item)
+				table.insert(attached.icons, item)
+			end
+
+			AccessorFunc(window, "m_Entity", "Entity")
+			function window:SetEntity(ent)
+				window.m_Entity = ent
+				attached:Clear()
+
+				if IsValid(ent) then
+					attached_holder:SetVisible(true)
+					right_holder:InvalidateLayout()
+
+					local mdl = ent:GetModel()
+					//Try to figure out what class the model is, and set the class filter to match
+					for k, v in ipairs (classes) do
+						if k == 1 or k == 11 then continue end
+						if string.find(mdl, v.shortname, 1, true) then
+							filters.class:ChooseOptionID(k) //TODO: make sure this works
+						end
+					end
+					attached.Label:SetText("Attached to " .. string.GetFileFromFilename(mdl) .. ":")
+
+					net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
+						net.WriteEntity(ent)
+					net.SendToServer()
+				else
+					attached_holder:SetVisible(false)
+					right_holder:InvalidateLayout()
+				end
 			end
 
 		end
@@ -1591,7 +1622,7 @@ if CLIENT then
 		AddTFButtonSounds(button)
 		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
-			net.Start("TF2ItemBrowser_SpawnModel_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
+			net.Start("TF2ItemBrowser_SpawnItem_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
 				local _, _class, _style = nil, 0, 0
 				if pnl.class then
 					//translate class name back to id number
@@ -1793,15 +1824,18 @@ end
 
 if SERVER then
 
-	util.AddNetworkString("TF2ItemBrowser_SpawnModel_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_SpawnItem_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_AttachedItems_GetFromSv")
+	util.AddNetworkString("TF2ItemBrowser_AttachedItem_SendToCl")
 
-	net.Receive("TF2ItemBrowser_SpawnModel_SendToSv", function(_, ply)
-
-		local i = net.ReadUInt(15)
-		local class = net.ReadUInt(4)
-		local team = net.ReadBool()
-		local style = net.ReadUInt(4)
-		local model, skin, bg = GetItemModelVisuals(i, classes[class].longname, team, style)
+	net.Receive("TF2ItemBrowser_SpawnItem_SendToSv", function(_, ply)
+		local data = {
+			i = net.ReadUInt(15),
+			class = net.ReadUInt(4),
+			team = net.ReadBool(),
+			style = net.ReadUInt(4),
+		}
+		local model, skin, bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
 
 		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
 		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua)
@@ -1838,16 +1872,68 @@ if SERVER then
 			undo.Finish("#prop_effect (" .. tostring(model) .. ")")
 			ply:AddCleanup("effects", e)
 		end
+
+		if IsValid(e.AttachedEntity) then e = e.AttachedEntity end
 		if bg then
-			if IsValid(e.AttachedEntity) then
-				e.AttachedEntity:SetBodygroup(e.AttachedEntity:FindBodygroupByName(bg.name), bg.submodel_index)
-			else
-				e:SetBodygroup(e:FindBodygroupByName(bg.name), bg.submodel_index)
+			e:SetBodygroup(e:FindBodygroupByName(bg.name), bg.submodel_index)
+		end
+		duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
+	end)
+
+	//i don't *think* this is necessary?
+	//duplicator.RegisterEntityModifier("TF2ItemBrowser_Item", function(ply, ent, data)
+	//	duplicator.StoreEntityModifier(ent, "TF2ItemBrowser_Item", data)
+	//end)
+
+	net.Receive("TF2ItemBrowser_AttachedItems_GetFromSv", function(_, ply)
+		local ent = net.ReadEntity()
+		if !IsValid(ent) then return end
+		for _, ent2 in ipairs (ent:GetChildren()) do
+			if ent2.EntityMods and ent2.EntityMods.TF2ItemBrowser_Item then
+				local data = ent2.EntityMods.TF2ItemBrowser_Item
+				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
+					net.WriteEntity(ent2)
+					net.WriteUInt(data.i, 15)
+					net.WriteUInt(data.class, 4)
+					net.WriteBool(data.team)
+					net.WriteUInt(data.style, 4)
+				net.Send(ply)
 			end
 		end
+	end)
 
-		return e
+else
+	
+	net.Receive("TF2ItemBrowser_AttachedItem_SendToCl", function()
+		local ent = net.ReadEntity()
+		local data = {
+			i = net.ReadUInt(15),
+			class = net.ReadUInt(4),
+			team = net.ReadBool(),
+			style = net.ReadUInt(4),
+		}
+		if !IsValid(ent) or !IsValid(TF2ItemBrowser) then return end
+		local par = TF2ItemBrowser:GetEntity()
+		if !IsValid(par) or ent:GetParent() != par then return end
 
+		TF2ItemBrowser.attached:AddItem(ent, data)
 	end)
 
 end
+
+properties.Add("tf2itembrowser_select", {
+	MenuLabel = "Select with TF2 Item Browser",
+	Order = 2000,
+	MenuIcon = "games/16/tf.png",
+	
+	Filter = function(self, ent, ply)
+		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
+		if !(ent:LookupBone("bip_pelvis") or (IsValid(ent.AttachedEntity) and ent.AttachedEntity:LookupBone("bip_pelvis"))) then return false end //make sure it has the right skeleton to attach tf2 items to
+		if !gamemode.Call("CanProperty", ply, "tf2itembrowser_select", ent) then return false end
+		return true
+	end,
+
+	Action = function(self, ent)
+		TF2ItemBrowser:SetEntity(ent)
+	end
+})
