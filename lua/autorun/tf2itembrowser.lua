@@ -172,6 +172,7 @@ PrintTable(t)]]
 
 
 local bad_values = {"public_prefab", "qc_template", "triangle_budget_lod0", "triangle_budget_lod1", "triangle_budget_lod2"}
+local visuals_tabs = {"visuals", "visuals_red", "visuals_blu"}
 local used_equip_regions = {}
 local items_by_name = {}
 
@@ -189,6 +190,7 @@ for k, v in pairs (s.items) do
 		v[k] = nil
 	end
 
+
 	//Some items have a singular equip_region string instead of an equip_regions table; make these all uniform
 	if !v.equip_regions and isstring(v.equip_region) then //If equip_region (singular) is a table instead of a string, it isn't applied (example: 30238 Chicken Kiev) https://wiki.teamfortress.com/wiki/Equip_region#Bugs
 		v.equip_regions = {[v.equip_region] = 1}
@@ -201,6 +203,39 @@ for k, v in pairs (s.items) do
 		end
 	end
 
+
+	//1067 The Grandmaster has the unique item_class value "tf_wearable_levelable_item", which makes it cycle through bodygroups 
+	//as the player gets kills (https://wiki.teamfortress.com/wiki/Grandmaster); catch these and turn them into styles instead
+	if v.item_class == "tf_wearable_levelable_item" then
+		//dumb hard-coded silliness - this one item definition has a single defined style,
+		//so make our custom killstreak styles all variants of this one style
+		local base_style = table.Copy(v.visuals.styles[0])
+		for i = 0, 5 do
+			local tab = {
+				bodygroup = {name = "level", submodel_index = i}
+			}
+			if CLIENT then tab.name = GetTFLanguageString("TF_ScoreBoard_KillsLabel", true) .. " " .. i end
+			table.Merge(tab, base_style)
+			v.visuals.styles[i] = tab
+		end
+		//Note: 1899 World Traveler has unique value visuals.code_controlled_bodygroup which we could also convert to styles, but this is unused 
+		//in TF2 and the bodygroup submodels are a bit broken, so ignore this (https://wiki.teamfortress.com/wiki/World_Traveler%27s_Hat)
+	end
+	//Clear visuals tables that don't contain anything useful, so that we can clear out items with no useful visual 
+	//data at the end of this function (example: noisemakers have "visuals" tables containing only sound paths)
+	for _, v2 in pairs (visuals_tabs) do
+		if v[v2] then
+			if !(v[v2].attached_models or v[v2].attached_models_festive or v[v2].attached_particlesystems or v[v2].material_override 
+			or v[v2].playback_activity or v[v2].player_bodygroups or v[v2].player_poseparam or v[v2].skin or v[v2].styles 
+			or v[v2].use_per_class_bodygroups or v[v2].wm_bodygroup_override) then
+				v[v2] = nil
+			end
+		end
+		//Note: there's also a fourth table, visuals_mvm_boss, which contains overrides used only by 
+		//mvm giants, but the 2 instances of this only contain sounds, so we don't care about these
+	end
+
+
 	//TODO: handle extra_wearable and extra_wearable_vm:
 	//- if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (a few spellbooks)
 	//- if an item has an extra_wearable that's the same as its model_player, then get rid of it (sniper shields, maybe more)
@@ -208,18 +243,7 @@ for k, v in pairs (s.items) do
 
 
 	if v.model_player == "" then v.model_player = nil end
-	if v.model_player_per_class then //takes priority over v.model_player, not that anything has both except 378 The Team Captain
-		if v.model_player_per_class.basename then
-			for _, class in ipairs (classes) do
-				//if this table contains both basename and class-specific strings, the class-specific ones take priority
-				//(example: 987 The Merc's Muffler has a manually defined "engineer" path with ".../all_winter_scarf_engy.mdl",
-				//so it doesn't use basename to auto-generate one with ".../all_winter_scarf_engineer.mdl" like the other classes)
-				if v.used_by_classes[class.longname] and !v.model_player_per_class[class.longname] then
-					v.model_player_per_class[class.longname] = string.Replace(v.model_player_per_class.basename, "%s", class.shortname)
-				end
-			end
-	 	end
-	elseif v.model_player then
+	if v.model_player then
 		//Some items like cases have valid models to spawn but no class; dump these into a special "none" class category
 		//(all of these use model_player, none of them use model_player_per_class)
 		if !v.used_by_classes then 
@@ -335,9 +359,97 @@ TF2Items = s
 
 
 
+//Convenience funcs for accessing item info
+
+local function GetVisualsValue(i, team, val)
+	//note: some team-specific tables contain a "use_visualsblock_as_base" value but this doesn't seem to change anything; 
+	//judging by quickfix/vaccinator, the team-specific tables always fall back to using values from the main visuals table
+	if !team and i.visuals_red and i.visuals_red[val] then
+		return i.visuals_red[val]
+	elseif team and i.visuals_blu and i.visuals_blu[val] then
+		return i.visuals_blu[val]
+	elseif i.visuals and i.visuals[val] then
+		return i.visuals[val]
+	end
+end
+
+local function GetClassModelWithBasename(tab, class)
+	//note: if this table contains both basename and class-specific strings, the class-specific ones take priority
+	//(example: 987 The Merc's Muffler has a manually defined "engineer" path with ".../all_winter_scarf_engy.mdl",
+	//so it doesn't use basename to auto-generate one with ".../all_winter_scarf_engineer.mdl" like the other classes)
+	if !tab then
+		return
+	elseif tab[class] then
+		return tab[class]
+	elseif tab.basename then
+		for _, _class in ipairs (classes) do
+			if class == _class.longname then
+				return string.Replace(tab.basename, "%s", _class.shortname)
+			end
+		end
+	end
+end
+
+//Given an item id, class, team, and style, return the model, skin, and bodygroups to use.
+local function GetItemModelVisuals(i, class, team, style)
+
+	i = TF2Items.items[i]
+	local model, skin, bg = nil, nil, nil
+
+	//First go through standard values on the item
+	model = GetClassModelWithBasename(i.model_player_per_class, class) or i.model_player
+	skin = i.default_skin or GetVisualsValue(i, team, "skin")
+	local classbg = GetVisualsValue(i, team, "use_per_class_bodygroups")
+	if classbg and classbg == 1 then
+		classbg = {scout = 0, sniper = 1, soldier = 2, demoman = 3, medic = 4, heavy = 5, pyro = 6, spy = 7, engineer = 8}
+		bg = {name = "class", submodel_index = classbg[class]}
+	end
+
+	//Now get overrides from style
+	if i.visuals and i.visuals.styles then //this is never contained in visuals_red/visuals_blu
+		style = i.visuals.styles[style]
+		if !team and style.model_player_per_class_red then
+			model = GetClassModelWithBasename(style.model_player_per_class_red, class)
+		elseif team and style.model_player_per_class_blue then
+			model = GetClassModelWithBasename(style.model_player_per_class_blue, class)
+		elseif style.model_player_per_class then
+			model = GetClassModelWithBasename(style.model_player_per_class, class)
+		elseif style.model_player then
+			model = style.model_player
+		end
+		//note: 1033 The TF2VRH has a unique style.model_player_per_class_alt table for alternate models to use in vr mode, but 
+		//there's already a second style that uses these alternate models regardless, so this is useless, we don't care about it
+		if !team and style.skin_red then
+			skin = style.skin_red
+		elseif team and style.skin_blu then
+			skin = style.skin_blu
+		elseif style.skin then
+			skin = style.skin
+		end
+		if style.bodygroup then
+			//currently it's only possible to have to change one bodygroup at a time, so we can just return this for now
+			bg = style.bodygroup
+		end
+	end
+
+	if skin == nil then
+		if !team then skin = 0 else skin = 1 end //by default, red team uses skin 0, and blu team uses skin 1
+	end
+	return model, skin, bg
+
+end
+
+
+
+
+
+
+
+
+
+
 if CLIENT then
 
-	local bgcol = Color(42,39,37,255) //eyedropped from tf2 loadout screen, don't know what the material is
 	local LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
 	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
@@ -346,6 +458,7 @@ if CLIENT then
 	local item_icon_h = 94*item_icon_scale
 	local item_icon_gap = 5
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
+	local close_button = Material("vgui/close_button.vmt")
 	surface.CreateFont("TF2ItemBrowser_ItemName", {
 		font = "TF2 Build",
 		size = 20, //these are really wimpy units; this matches the size of the item names when spectating players
@@ -356,6 +469,10 @@ if CLIENT then
 		size = 18, //on the tf2 backpack screen, desc text is 15px high, but to match our smaller item name text, this is 11px high instead
 		extended = true
 	})
+	local gui_colors = {
+		bgcol		= Color(42,39,37,255), //eyedropped from tf2 loadout screen, don't know what the material is
+		RedSolid	= Color(192,28,0,255),
+	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
 		rarity1		= Color(77,116,85,255), //genuine
@@ -482,7 +599,7 @@ if CLIENT then
 				if !window.icons_to_add then return end
 
 				local w, h = scroll:GetSize()
-				surface.SetDrawColor(bgcol.r, bgcol.g, bgcol.b, 192)
+				surface.SetDrawColor(gui_colors.bgcol.r, gui_colors.bgcol.g, gui_colors.bgcol.b, 192)
 				surface.DrawRect(0,0,w,h)
 	
 				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_gap)/2, h/2
@@ -504,11 +621,12 @@ if CLIENT then
 
 			local filters = vgui.Create("DScrollPanel", filters_holder)
 			filters:Dock(FILL)
+			window.filters = filters
 
 
 			TF2ItemBrowser = window
 			function window:Paint(w, h)
-				surface.SetDrawColor(bgcol)
+				surface.SetDrawColor(gui_colors.bgcol)
 				surface.DrawRect(0,0,w,h)
 			end
 			window:SetSizable(true)
@@ -1186,6 +1304,10 @@ if CLIENT then
 
 	function PANEL:CreateSpawnPanel()
 
+		local _i = self:GetItemID()
+		local i = TF2Items.items[_i]
+		local betweenitems = 8
+
 		if IsValid(TF2ItemBrowser.SpawnPanel) then
 			if TF2ItemBrowser.SpawnPanel.Owner == self then
 				return
@@ -1200,15 +1322,143 @@ if CLIENT then
 
 		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
 		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
-		h = h + 400 //TODO: add contents
+		
+		local mdl_container = pnl:Add("DPanel")
+		mdl_container:SetSize(250,250)
+		side_margins = (popup_w-250-popup_pad-popup_pad)/2 //force this panel to stay a square
+		mdl_container:DockMargin(side_margins,betweenitems,side_margins,0)
+		mdl_container:Dock(TOP)
+		h = h + 250 + betweenitems
+		function mdl_container:Paint(w,h)
+			TFThinLineBorder(0,0,w,h)
+		end
+		local mdl = mdl_container:Add("DAdjustableModelPanel")
+		pnl.ModelPanel = mdl
+		mdl.FarZ = 32768
+		mdl:DockMargin(10,10,9,9) //set precisely to cut off the modelpanel at the edges of the TFThinLineBorder; ever-so-slightly uneven
+		mdl:Dock(FILL)
+		function mdl:Refresh()
+			local _, _class, _style = nil, 0, 0
+			if pnl.class then _, _class = pnl.class:GetSelected() end
+			if pnl.style then _, _style = pnl.style:GetSelected() end
+			local model, skin, bg = GetItemModelVisuals(_i, _class, pnl.team:GetChecked(), _style)
+			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
+			self:SetModel(model)
+			local ent = self:GetEntity()
+			if !IsValid(ent) then return end
+			ent:SetSkin(skin)
+			if bg then ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index) end
+
+			local pos = ent:GetPos()
+			local ang = ent:GetAngles()
+
+			local tab = PositionSpawnIcon(ent, pos, true)
+
+			ent:SetAngles(ang)
+			if tab then
+				self:SetCamPos(tab.origin)
+				self:SetFOV(tab.fov)
+				self:SetLookAng(tab.angles)
+			end
+		end
+
+		local check = vgui.Create("DCheckBoxLabel", pnl)
+		check:SetText("BLU")
+		check:SetHeight(15)
+		check:Dock(TOP)
+		check:DockMargin(0,0,0,betweenitems)
+		pnl.team = check
+		check.OnChange = function(_, val)
+			mdl:Refresh()
+		end
+		h = h + 15 + betweenitems
+		//TODO: i'd like to hide this if the item will look exactly the same on RED and BLU, but that's actually pretty complicated
+
+		local function AddDropdown(label, populatefunc, select_extras)
+			local drop = vgui.Create("Panel", pnl)
+			drop.Label = vgui.Create("DLabel", drop)
+			drop.Label:SetText(label)
+			drop.Label:Dock(LEFT)
+			drop.Combo = vgui.Create("DComboBox", drop)
+			drop.Combo:SetHeight(25)
+			drop.Combo:Dock(FILL)
+			drop:SetHeight(25)
+			drop:Dock(TOP)
+			drop:DockMargin(0,0,0,betweenitems)
+			function drop.PerformLayout(_, w, h)
+				drop.Label:SetWide(w / 2.4)
+			end
+			drop.Combo:SetSortItems(false)
+			populatefunc(drop.Combo)
+			function drop.Combo.OnSelect(_, index, value, data)
+				drop.Combo.value = data
+				mdl:Refresh()
+			end
+			function drop.Combo:OnMenuOpened(menu)
+				//Add a checkmark to the currently selected option.
+				//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+				//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+				//non-spacer children to find the correct one.
+				local sel = drop.Combo:GetSelectedID()
+				local sel_read = 0
+				for i = 1, menu:ChildCount() do
+					local child = menu:GetChild(i)
+					if child:GetName() == "DMenuOption" then
+						sel_read = sel_read + 1
+						if sel_read == sel then
+							child:SetChecked(true)
+							break
+						end
+					end
+				end
+			end
+			return drop.Combo
+		end
+
+		if table.Count(i.used_by_classes) > 1 then
+			pnl.class = AddDropdown("Class", function(self)
+				local first = true
+				local _, f = TF2ItemBrowser.filters.class:GetSelected()
+				if f != "(any)" then first = nil end
+				for k, v in ipairs (classes) do
+					if i.used_by_classes[v.longname] then
+						self:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
+						first = nil
+					end
+				end
+			end)
+			h = h + 25 + betweenitems
+		end
+
+		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
+			pnl.style = AddDropdown("Style", function(self)
+				local first = true
+				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+					local name = GetTFLanguageString(v.name, true)
+					self:AddChoice(name or "PLACEHOLDER " .. k, k, first)
+					first = nil
+				end
+			end)
+			h = h + 25 + betweenitems
+		end
+
+		mdl:Refresh()
+		
 		pnl:SetSize(popup_w, h)
 		self:PositionPopupPanel(pnl)
 		//pnl:SetZPos(10) //position above mouseover popups; commented out because this causes the spawnpanel to flicker every time a new mouseoverpanel is created??
-
-
 		function pnl:Paint(w,h)
 			GrayDialogBorder(0,0,w,h)
+		end
+
+		local close = vgui.Create("DImageButton", pnl)
+		close:SetSize(25,25)
+		close:SetPos(popup_w-25-10, 10)
+		close:SetMaterial(close_button)
+		close:SetColor(gui_colors.RedSolid)
+		function close:DoClick()
+			pnl:Remove()
 		end
 
 	end
