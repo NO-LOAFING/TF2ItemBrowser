@@ -1045,13 +1045,17 @@ if CLIENT then
 			attached.Label:SetPos(6,6)
 			attached_holder:SetTall(item_icon_h + attached.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
 
-			function attached:AddItem(ent, data)
-				local item = attached:Add("TF2ItemIcon")
+			function attached:AddItem(ent, data, forceopen)
+				local item = vgui.Create("TF2ItemIcon")
 				item:SetItemID(data.i)
 				//TODO: make the itemicon associate itself with the entity and use the rest of the data
 
 				attached:AddPanel(item)
 				table.insert(attached.icons, item)
+				if forceopen then
+					attached:ScrollToChild(item)
+					item.OpenNextFrame = true
+				end
 			end
 
 			AccessorFunc(window, "m_Entity", "Entity")
@@ -1615,35 +1619,59 @@ if CLIENT then
 		end
 
 		local button = vgui.Create("DButton", pnl)
-		button:SetText("Spawn!")
+		if IsValid(TF2ItemBrowser:GetEntity()) then
+			button:SetText("Attach!")
+		else
+			button:SetText("Spawn!")
+		end
 		button:SetHeight(20)
 		button:Dock(TOP)
 		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
 		AddTFButtonSounds(button)
 		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
-			net.Start("TF2ItemBrowser_SpawnItem_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
-				local _, _class, _style = nil, 0, 0
-				if pnl.class then
-					//translate class name back to id number
-					_, _class = pnl.class:GetSelected()
-					for k, class in ipairs (classes) do
-						if class.longname == _class then
-							_class = k
-							break
-						end
-					end
-				end
-				if pnl.style then _, _style = pnl.style:GetSelected() end
-				net.WriteUInt(self:GetItemID(), 15)
-				net.WriteUInt(_class, 4)
-				net.WriteBool(pnl.team:GetChecked())
-				net.WriteUInt(_style, 4)
-			net.SendToServer()
+			local mode = 0 //spawn item on ground
+			if IsValid(TF2ItemBrowser:GetEntity()) then
+				pnl.SendInputToServer(1) //spawn item and attach to entity
+			else
+				pnl.SendInputToServer(0) //spawn item on ground
+			end
 			surface.PlaySound(self.sound_drop)
 			//pnl:Remove()
 		end
 		h = h + 20 + betweencategories-betweenitems
+
+		function pnl.SendInputToServer(mode)
+			net.Start("TF2ItemBrowser_ItemInput_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
+				//mode 0: spawn item on ground
+				//mode 1: spawn item and attach to entity
+				//mode 2: modify attached item //TODO
+				//mode 3: delete attached item //TODO
+				net.WriteUInt(mode, 2)
+				if mode > 0 then
+					net.WriteEntity(TF2ItemBrowser:GetEntity())
+					if mode == 1 then net.WriteBool(false) end //TODO: add selector for bonemerge type! true = adv, false = easy
+				end
+				if mode < 3 then
+					local _, _class, _style = nil, 0, 0
+					if pnl.class then
+						//translate class name back to id number
+						_, _class = pnl.class:GetSelected()
+						for k, class in ipairs (classes) do
+							if class.longname == _class then
+								_class = k
+								break
+							end
+						end
+					end
+					if pnl.style then _, _style = pnl.style:GetSelected() end
+					net.WriteUInt(self:GetItemID(), 15)
+					net.WriteUInt(_class, 4)
+					net.WriteBool(pnl.team:GetChecked())
+					net.WriteUInt(_style, 4)
+				end
+			net.SendToServer()
+		end
 		
 		pnl:SetSize(popup_w, h)
 		mdl:Refresh()
@@ -1661,8 +1689,6 @@ if CLIENT then
 		function close:DoClick()
 			pnl:Remove()
 		end
-
-		surface.PlaySound(self.sound_pressed)
 
 	end
 
@@ -1732,6 +1758,11 @@ if CLIENT then
 
 	function PANEL:Paint(w, h)
 
+		if self.OpenNextFrame then
+			self:CreateSpawnPanel()
+			self.OpenNextFrame = nil
+		end
+
 		if self:IsHovered() and !IsValid(TF2ItemBrowser.SpawnPanel) then
 			if !IsValid(TF2ItemBrowser.MouseOverPanel) or TF2ItemBrowser.MouseOverPanel.Owner != self then
 				local time = CurTime()
@@ -1778,6 +1809,7 @@ if CLIENT then
 
 	function PANEL:DoClick()
 
+		surface.PlaySound(self.sound_pressed)
 		self:CreateSpawnPanel()
 
 	end
@@ -1824,60 +1856,97 @@ end
 
 if SERVER then
 
-	util.AddNetworkString("TF2ItemBrowser_SpawnItem_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_ItemInput_SendToSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItems_GetFromSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItem_SendToCl")
 
-	net.Receive("TF2ItemBrowser_SpawnItem_SendToSv", function(_, ply)
-		local data = {
-			i = net.ReadUInt(15),
-			class = net.ReadUInt(4),
-			team = net.ReadBool(),
-			style = net.ReadUInt(4),
-		}
-		local model, skin, bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
-
-		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
-		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua)
-
-		//This is mostly just an emulation of sandbox's CCSpawn function and the various funcs it calls, duplicated here because a 
-		//few of these functions don't return the entity they create. () This is worth doing 
-		//because we get to reuse all of DoPlayerEntitySpawn's "spawn where the player's looking, then finagle it into place" code.
-
-		if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) then return end
-		//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
-		local is_effect = !util.IsValidProp(model)
-		if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, model)) then return end
-		local e = "prop_physics"
-		if is_effect then e = "prop_effect" end
-		e = DoPlayerEntitySpawn(ply, e, model, skin)
-		if !IsValid(e) then return end
-		if !is_effect then
-			gamemode.Call("PlayerSpawnedProp", ply, model, e)
-			FixInvalidPhysicsObject(e)
-			//DoPropSpawnedEffect(e)
-
-			undo.Create( "prop_physics" )
-				undo.SetPlayer(ply)
-				undo.AddEntity(e)
-			undo.Finish("#prop_physics (" .. tostring(model) .. ")")
-			ply:AddCleanup("props", e)
-		else
-			gamemode.Call("PlayerSpawnedEffect", ply, model, e)
-			//if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
-
-			undo.Create("prop_effect")
-				undo.SetPlayer(ply)
-				undo.AddEntity(e)
-			undo.Finish("#prop_effect (" .. tostring(model) .. ")")
-			ply:AddCleanup("effects", e)
+	net.Receive("TF2ItemBrowser_ItemInput_SendToSv", function(_, ply)
+		local mode = net.ReadUInt(2)
+		local ent, use_advbone
+		if mode > 0 then
+			ent = net.ReadEntity()
+			if mode == 1 then use_advbone = net.ReadBool() end
 		end
+		if mode < 3 then
+			local data = {
+				i = net.ReadUInt(15),
+				class = net.ReadUInt(4),
+				team = net.ReadBool(),
+				style = net.ReadUInt(4),
+			}
+			local model, skin, bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
 
-		if IsValid(e.AttachedEntity) then e = e.AttachedEntity end
-		if bg then
-			e:SetBodygroup(e:FindBodygroupByName(bg.name), bg.submodel_index)
+			//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
+			//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
+			//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
+			//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
+			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) then return end
+			//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
+			local is_effect = !util.IsValidProp(model)
+			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, model)) then return end
+			local e = "prop_physics"
+			if is_effect then e = "prop_effect" end
+			e = DoPlayerEntitySpawn(ply, e, model, skin)
+			if !IsValid(e) then return end
+			if !is_effect then
+				gamemode.Call("PlayerSpawnedProp", ply, model, e)
+				FixInvalidPhysicsObject(e)
+				DoPropSpawnedEffect(e)
+
+				undo.Create( "prop_physics" )
+					undo.SetPlayer(ply)
+					undo.AddEntity(e)
+				undo.Finish("#prop_physics (" .. tostring(model) .. ")")
+				ply:AddCleanup("props", e)
+			else
+				gamemode.Call("PlayerSpawnedEffect", ply, model, e)
+				if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
+
+				undo.Create("prop_effect")
+					undo.SetPlayer(ply)
+					undo.AddEntity(e)
+				undo.Finish("#prop_effect (" .. tostring(model) .. ")")
+				ply:AddCleanup("effects", e)
+			end
+
+			local e2 = e
+			if IsValid(e.AttachedEntity) then e2 = e.AttachedEntity end
+			if bg then
+				e2:SetBodygroup(e2:FindBodygroupByName(bg.name), bg.submodel_index)
+			end
+			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
+
+			if mode == 1 then //attach to entity
+				if use_advbone then
+					local old_e = e
+					e = CreateAdvBonemergeEntity(e, ent, ply, false, false, true)
+					if !IsValid(e) then return end
+					local const = constraint.AdvBoneMerge(ent, e, ply)
+					undo.Create("AdvBonemerge")
+						undo.AddEntity(const)  //the constraint entity will unmerge newent upon being removed
+						undo.SetPlayer(ply)
+					undo.Finish("Adv. Bonemerge (" .. model .. ")")
+					old_e:Remove()
+				else
+					e = rb655_ApplyBonemerge(e2, ent) //unlike advbone, this one expects AttachedEntity for prop_effects
+					undo.Create("bonemerge")
+						undo.AddEntity(e)
+						undo.SetPlayer(ply)
+					undo.Finish()
+				end
+				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
+				//	if !IsValid(e) then return end
+					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
+						net.WriteEntity(e)
+						net.WriteBool(true) //open upon received
+						net.WriteUInt(data.i, 15)
+						net.WriteUInt(data.class, 4)
+						net.WriteBool(data.team)
+						net.WriteUInt(data.style, 4)
+					net.Send(ply)
+				//end
+			end
 		end
-		duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
 	end)
 
 	//i don't *think* this is necessary?
@@ -1893,6 +1962,7 @@ if SERVER then
 				local data = ent2.EntityMods.TF2ItemBrowser_Item
 				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
 					net.WriteEntity(ent2)
+					net.WriteBool(false) //don't open upon received
 					net.WriteUInt(data.i, 15)
 					net.WriteUInt(data.class, 4)
 					net.WriteBool(data.team)
@@ -1906,6 +1976,7 @@ else
 	
 	net.Receive("TF2ItemBrowser_AttachedItem_SendToCl", function()
 		local ent = net.ReadEntity()
+		local forceopen = net.ReadBool()
 		local data = {
 			i = net.ReadUInt(15),
 			class = net.ReadUInt(4),
@@ -1916,7 +1987,7 @@ else
 		local par = TF2ItemBrowser:GetEntity()
 		if !IsValid(par) or ent:GetParent() != par then return end
 
-		TF2ItemBrowser.attached:AddItem(ent, data)
+		TF2ItemBrowser.attached:AddItem(ent, data, forceopen)
 	end)
 
 end
