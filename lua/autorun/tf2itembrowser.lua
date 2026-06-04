@@ -599,11 +599,13 @@ if CLIENT then
 	end
 
 	
+	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
+
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 940,
-		height		= 700,
+		width		= 935,
+		height		= 650,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
@@ -642,15 +644,15 @@ if CLIENT then
 			scroll.OnChildAdded = old_OnChildAdded
 
 
-			local filters_holder = vgui.Create("DPanel", window)
-			filters_holder:DockPadding(24,24,24,24)
-			filters_holder:Dock(FILL)
+			local left_holder = vgui.Create("DPanel", window)
+			left_holder:DockPadding(24,24,24,24)
+			left_holder:Dock(FILL)
 
-			function filters_holder:Paint(w,h)
+			function left_holder:Paint(w,h)
 				TFThinLineBorder(0,0,w,h)
 			end
 
-			local filters = vgui.Create("DScrollPanel", filters_holder)
+			local filters = vgui.Create("DScrollPanel", left_holder)
 			filters:Dock(FILL)
 			window.filters = filters
 
@@ -662,7 +664,7 @@ if CLIENT then
 			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
-			local p3, _, p4, _ = filters_holder:GetDockPadding()
+			local p3, _, p4, _ = left_holder:GetDockPadding()
 			window:SetMinWidth(p1 + p2 + p3 + p4 + filters.VBar:GetWide() + scroll:GetWide())
 
 
@@ -687,19 +689,6 @@ if CLIENT then
 			searchbutton.DoClick = function()
 				search.OnEnter()
 			end
-
-			//TODO: this is the wrong place for this; if we want to make it easy to change the team of the selected model and all attached models,
-			//then we should have a separate category for attach options somewhere
-			--[[//make this use red/blu team icons later
-			local check = vgui.Create("DCheckBoxLabel", filters)
-			check:SetText("BLU")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweencategories)
-			filters.team = check
-			check.OnChange = function(_, val)
-				//TODO: if in equip mode, update skins of equipped items
-			end]]
 
 			local function AddDropdownFilter(label, populatefunc, select_extras)
 				local drop = vgui.Create("Panel", filters)
@@ -903,6 +892,7 @@ if CLIENT then
 			button.DoClick = function()
 				//TODO: open custom item dialog
 			end
+			AddTFButtonSounds(button)
 
 
 			window.RebuildIconList = function(clicked)
@@ -1017,57 +1007,113 @@ if CLIENT then
 					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
 				end
 				//if our selected entity is deleted, then update the attached item list
-				if self.attached_holder and self.attached_holder:IsVisible() and !IsValid(self:GetEntity()) then
+				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
 					self:SetEntity(NULL)
 				end
 				old_Think(self, ...)
 			end
 
 
-			local attached_holder = vgui.Create("DPanel", right_holder)
-			attached_holder:DockPadding(0,10,0,0)
-			attached_holder:Dock(BOTTOM)
-			window.attached_holder = attached_holder
-			function attached_holder:Paint(w,h)
+			local atticons_holder = vgui.Create("DPanel", right_holder)
+			atticons_holder:DockPadding(0,10,0,0)
+			atticons_holder:Dock(BOTTOM)
+			window.atticons_holder = atticons_holder
+			function atticons_holder:Paint(w,h)
 				OutlinedGreyBox(-24,0,w+48,h) //no corners, just the top border
 			end
 
 			//This also has a scrollbar just in case some goofball wants to attach more than 10 items to one model
-			local attached = vgui.Create("DHorizontalScroller", attached_holder)
-			attached:SetHeight(item_icon_h)
-			attached:SetOverlap(-item_icon_gap)
-			attached:Dock(BOTTOM)
-			window.attached = attached
-			attached.icons = {}
-			attached.Label = vgui.Create("DLabel", attached_holder)
-			attached.Label:SetText("")
-			attached.Label:SetWide(right_holder:GetWide())
-			attached.Label:SetPos(6,6)
-			attached_holder:SetTall(item_icon_h + attached.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
+			local atticons = vgui.Create("DHorizontalScroller", atticons_holder)
+			atticons:SetHeight(item_icon_h)
+			atticons:SetOverlap(-item_icon_gap)
+			atticons:Dock(BOTTOM)
+			window.atticons = atticons
+			atticons.icons = {}
+			atticons.Label = vgui.Create("DLabel", atticons_holder)
+			atticons.Label:SetText("")
+			atticons.Label:SetWide(right_holder:GetWide())
+			atticons.Label:SetPos(6,6)
+			atticons_holder:SetTall(item_icon_h + atticons.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
 
-			function attached:AddItem(ent, data, forceopen)
+			function atticons:AddItem(ent, data, forceopen)
 				local item = vgui.Create("TF2ItemIcon")
 				item:SetItemID(data.i)
 				//TODO: make the itemicon associate itself with the entity and use the rest of the data
 
-				attached:AddPanel(item)
-				table.insert(attached.icons, item)
+				atticons:AddPanel(item)
+				table.insert(atticons.icons, item)
 				if forceopen then
-					attached:ScrollToChild(item)
+					atticons:ScrollToChild(item)
 					item.OpenNextFrame = true
 				end
 			end
 
+			local attopts = vgui.Create("DPanel", left_holder)
+			attopts.Paint = function() end
+			attopts:Dock(BOTTOM)
+
+			local text = vgui.Create("DLabel", left_holder) //SizeToContents gets finicky with this one if we put it inside attopts
+			text:SetWrap(true)
+			text:SetContentAlignment(5)
+			text:SetAutoStretchVertical(true)
+			text:SetText("Right-click a model in the context menu to select it and attach items.")
+			text:Dock(BOTTOM)
+			text:DockMargin(0,0,0,betweenitems)
+			attopts.emptytext = text
+
+			local button = vgui.Create("DButton", attopts)
+			button:SetText("")
+			button:SetHeight(20)
+			button:Dock(TOP)
+			button:DockMargin(0,0,0,betweenitems)
+			attopts.deselect = button
+			button.DoClick = function()
+				window:SetEntity(NULL)
+			end
+			AddTFButtonSounds(button)
+
+			local drop = AddDropdownFilter("Attach with:", function(self)
+				local b = GetConVar("cl_tf2itembrowser_advbone"):GetBool()
+				self:AddChoice("Easy Bonemerge", false, !b)
+				self:AddChoice("Adv. Bonemerge", true, b)
+			end)
+			drop:GetParent():SetParent(attopts)
+			drop:GetParent():Dock(TOP)
+			function drop.OnSelect(_, index, value, data)
+				//is there really no easy number-to-bool func in glua?
+				local b = 0
+				if data then b = 1 end
+				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. b)
+			end
+
+			//make this use red/blu team icons later
+			local check = vgui.Create("DCheckBoxLabel", attopts)
+			check:SetText("BLU")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			check.OnChange = function(_, val)
+				//TOOD
+			end
+
+			attopts:InvalidateLayout(true)
+			attopts:SizeToChildren(false,true)
+
 			AccessorFunc(window, "m_Entity", "Entity")
 			function window:SetEntity(ent)
 				window.m_Entity = ent
-				attached:Clear()
+				atticons:Clear()
 
 				if IsValid(ent) then
-					attached_holder:SetVisible(true)
+					atticons_holder:SetVisible(true)
 					right_holder:InvalidateLayout()
 
-					local mdl = ent:GetModel()
+					attopts.emptytext:SetVisible(false)
+					attopts.deselect:SetVisible(true)
+					attopts:InvalidateLayout(true)
+					attopts:SizeToChildren(false,true)
+
+					local mdl = string.GetFileFromFilename(ent:GetModel())
 					//Try to figure out what class the model is, and set the class filter to match
 					for k, v in ipairs (classes) do
 						if k == 1 or k == 11 then continue end
@@ -1075,14 +1121,20 @@ if CLIENT then
 							filters.class:ChooseOptionID(k) //TODO: make sure this works
 						end
 					end
-					attached.Label:SetText("Attached to " .. string.GetFileFromFilename(mdl) .. ":")
+					atticons.Label:SetText("Attached to " .. mdl .. ":")
+					attopts.deselect:SetText("Deselect " .. mdl)
 
 					net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
 						net.WriteEntity(ent)
 					net.SendToServer()
 				else
-					attached_holder:SetVisible(false)
+					atticons_holder:SetVisible(false)
 					right_holder:InvalidateLayout()
+
+					attopts.emptytext:SetVisible(true)
+					attopts.deselect:SetVisible(false)
+					attopts:InvalidateLayout(true)
+					attopts:SizeToChildren(false,true)
 				end
 			end
 
@@ -1392,7 +1444,10 @@ if CLIENT then
 		for _, v in ipairs (self.itemdesc) do
 			h = h + self:AddItemText(pnl, v.str, "TF2ItemBrowser_ItemDesc", v.col)
 		end
-		pnl:SetSize(popup_w,h)
+		--[[pnl:SetWide(popup_w)
+		pnl:InvalidateLayout(true)
+		pnl:SizeToChildren(false,true)]]
+		pnl:SetSize(popup_w,h) //this returns better height for items with descriptions??
 		self:PositionPopupPanel(pnl)
 		
 		function pnl:Paint(w,h)
@@ -1420,14 +1475,13 @@ if CLIENT then
 		pnl.Owner = self
 
 		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
-		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+		self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
 		
 		local mdl_container = pnl:Add("DPanel")
 		mdl_container:SetSize(300,300)
 		side_margins = (popup_w-300-popup_pad-popup_pad)/2 //force this panel to stay a square, and align all the other controls with it
 		mdl_container:DockMargin(side_margins,betweencategories-5,side_margins,betweencategories)
 		mdl_container:Dock(TOP)
-		h = h + 300 + betweencategories + betweencategories-5
 		function mdl_container:Paint(w,h)
 			GrayDialogBorder(0,0,w,h)
 		end
@@ -1550,7 +1604,6 @@ if CLIENT then
 		check.OnChange = function(_, val)
 			mdl:Refresh()
 		end
-		h = h + 15 + betweenitems
 
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
@@ -1604,7 +1657,6 @@ if CLIENT then
 				end
 			end
 		end)
-		h = h + 25 + betweenitems
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
 			pnl.style = AddDropdown("Style", function(self)
@@ -1615,7 +1667,6 @@ if CLIENT then
 					first = nil
 				end
 			end)
-			h = h + 25 + betweenitems
 		end
 
 		local button = vgui.Create("DButton", pnl)
@@ -1639,7 +1690,6 @@ if CLIENT then
 			surface.PlaySound(self.sound_drop)
 			//pnl:Remove()
 		end
-		h = h + 20 + betweencategories-betweenitems
 
 		function pnl.SendInputToServer(mode)
 			net.Start("TF2ItemBrowser_ItemInput_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
@@ -1650,7 +1700,7 @@ if CLIENT then
 				net.WriteUInt(mode, 2)
 				if mode > 0 then
 					net.WriteEntity(TF2ItemBrowser:GetEntity())
-					if mode == 1 then net.WriteBool(false) end //TODO: add selector for bonemerge type! true = adv, false = easy
+					if mode == 1 then net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool()) end
 				end
 				if mode < 3 then
 					local _, _class, _style = nil, 0, 0
@@ -1673,7 +1723,9 @@ if CLIENT then
 			net.SendToServer()
 		end
 		
-		pnl:SetSize(popup_w, h)
+		pnl:SetWide(popup_w)
+		pnl:InvalidateLayout(true)
+		pnl:SizeToChildren(false,true)
 		mdl:Refresh()
 		self:PositionPopupPanel(pnl)
 		function pnl:Paint(w,h)
@@ -1987,7 +2039,7 @@ else
 		local par = TF2ItemBrowser:GetEntity()
 		if !IsValid(par) or ent:GetParent() != par then return end
 
-		TF2ItemBrowser.attached:AddItem(ent, data, forceopen)
+		TF2ItemBrowser.atticons:AddItem(ent, data, forceopen)
 	end)
 
 end
