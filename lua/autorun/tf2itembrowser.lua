@@ -1038,12 +1038,17 @@ if CLIENT then
 			atticons_holder:SetTall(item_icon_h + atticons.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
 
 			function atticons:AddItem(ent, data, forceopen)
-				local item = vgui.Create("TF2ItemIcon")
-				item:SetItemID(data.i)
-				//TODO: make the itemicon associate itself with the entity and use the rest of the data
+				local item
+				if !IsValid(atticons.icons[ent]) then
+				item = vgui.Create("TF2ItemIcon")
+					atticons.icons[ent] = item
+					item.entity = ent
+					atticons:AddPanel(item)
+				else item = atticons.icons[ent] end
 
-				atticons:AddPanel(item)
-				table.insert(atticons.icons, item)
+				item:SetItemID(data.i)
+				item.data = data
+				
 				if forceopen then
 					atticons:ScrollToChild(item)
 					item.OpenNextFrame = true
@@ -1097,9 +1102,6 @@ if CLIENT then
 			check:DockMargin(0,0,0,betweenitems)
 			attopts.team = check
 			check.OnChange = function(_, val)
-				if window.SpawnPanel and window.SpawnPanel.ModelPanel then
-					window.SpawnPanel.ModelPanel:Refresh()
-				end
 				local ent = window:GetEntity()
 				if IsValid(ent) then
 					local skintoset
@@ -1111,8 +1113,22 @@ if CLIENT then
 					if skintoset != nil then
 						window:DoInput("attach_skin", skintoset)
 					end
-					//TODO: set skin on all attached items
+
+					for ent, pnl in pairs (atticons.icons) do
+						if !IsValid(pnl) or !IsValid(ent) then
+							atticons.icons[ent] = nil 
+						else
+							if pnl.data.team != val then
+								pnl.data.team = val
+								TF2ItemBrowser:DoInput("attach_item_modify", ent, pnl.data)
+							end
+						end
+					end
 				end
+				if window.SpawnPanel and window.SpawnPanel.ModelPanel then
+					window.SpawnPanel.ModelPanel.Refresh()
+				end
+
 			end
 
 			attopts:InvalidateLayout(true)
@@ -1122,6 +1138,7 @@ if CLIENT then
 			function window:SetEntity(ent)
 				window.m_Entity = ent
 				atticons:Clear()
+				if IsValid(self.SpawnPanel) then self.SpawnPanel:Remove() end
 
 				if IsValid(ent) then
 					atticons_holder:SetVisible(true)
@@ -1183,11 +1200,12 @@ if CLIENT then
 
 					elseif input == "attach_item_modify" then
 
-						//TODO
+						net.WriteEntity(args[1]) //item ent to modify
+						WriteItemDataTable(args[2]) //item data table
 
 					elseif input == "attach_item_remove" then
 					
-						//TODO
+						net.WriteEntity(args[1]) //item ent to remove
 
 					elseif input == "attach_skin" then
 
@@ -1214,6 +1232,8 @@ if CLIENT then
 	local PANEL = {}
 
 	AccessorFunc(PANEL, "m_iItemID", "ItemID")
+
+	PANEL.data = {} //if this item icon is for an existing attached item, this tab will be populated with the item's settings. otherwise, this tab will be empty and the icon will use default values.
 
 	function PANEL:Init()
 
@@ -1552,15 +1572,17 @@ if CLIENT then
 		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
-		function mdl:Refresh()
+		function mdl.Refresh()
+			local _team = self.data.team //data.team and the selector are intended to always be the same, but could potentially get desynced i.e. if a player manually merges a mismatched item to something 
+			if _team == nil then _team = TF2ItemBrowser.attopts.team:GetChecked() end 
 			local _, _class = pnl.class:GetSelected()
 			local style = 0
 			if pnl.style then _, _style = pnl.style:GetSelected() end
-			local model, skin, bg = GetItemModelVisuals(_i, _class, TF2ItemBrowser.attopts.team:GetChecked(), _style)
+			local model, skin, bg = GetItemModelVisuals(_i, _class, _team, _style)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
-			self:SetModel(model)
-			local ent = self:GetEntity()
+			mdl:SetModel(model)
+			local ent = mdl:GetEntity()
 			if IsValid(ent) then
 				ent:SetSkin(skin)
 				if bg then
@@ -1572,7 +1594,7 @@ if CLIENT then
 				end
 
 				//don't recenter the camera if the model didn't change
-				if model != self.old_model then
+				if model != mdl.old_model then
 					local pos = ent:GetPos()
 					local ang = ent:GetAngles()
 
@@ -1580,12 +1602,12 @@ if CLIENT then
 
 					ent:SetAngles(ang)
 					if tab then
-						self:SetCamPos(tab.origin)
-						self:SetFOV(tab.fov)
-						self:SetLookAng(tab.angles)
+						mdl:SetCamPos(tab.origin)
+						mdl:SetFOV(tab.fov)
+						mdl:SetLookAng(tab.angles)
 					end
 				end
-				self.old_model = model
+				mdl.old_model = model
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -1659,7 +1681,8 @@ if CLIENT then
 			populatefunc(drop.Combo)
 			function drop.Combo.OnSelect(_, index, value, data)
 				drop.Combo.value = data
-				mdl:Refresh()
+				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, pnl.GetItemDataTable()) end
+				mdl.Refresh()
 			end
 			function drop.Combo:OnMenuOpened(menu)
 				//Add a checkmark to the currently selected option.
@@ -1682,31 +1705,43 @@ if CLIENT then
 			return drop.Combo
 		end
 
-		pnl.class = AddDropdown("Class", function(self)
-			local first = true
-			local _, f = TF2ItemBrowser.filters.class:GetSelected()
-			if f != "(any)" then first = nil end
+		pnl.class = AddDropdown("Class", function(drop)
+			local first, _, f = nil, nil, self.data.class
+			if f != nil then
+				f = classes[f].longname
+			else
+				_, f = TF2ItemBrowser.filters.class:GetSelected()
+				if f == "(any)" then f = nil end
+			end
+			if f == nil then first = true end
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
-					self:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
+					drop:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
 					first = nil
 				end
 			end
 		end)
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-			pnl.style = AddDropdown("Style", function(self)
-				local first = true
+			pnl.style = AddDropdown("Style", function(drop)
+				local first, f = nil, self.data.style
+				if f == nil then first = true end
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
-					self:AddChoice(name or "PLACEHOLDER " .. k, k, first)
+					drop:AddChoice(name or "PLACEHOLDER " .. k, k, first or f == k)
 					first = nil
 				end
 			end)
 		end
 
+		//TODO: currently we get the team value from the selector in TF2ItemBrowser because it's intended to always be the same, and 
+		//updates all attached items when it's changed, but what if they get desynced somehow? do we need to add handling for that?
+
 		local button = vgui.Create("DButton", pnl)
-		if IsValid(TF2ItemBrowser:GetEntity()) then
+		if IsValid(self.entity) then
+			button:SetText("Remove!")
+			button:SetColor(Color(255,100,100,255))
+		elseif IsValid(TF2ItemBrowser:GetEntity()) then
 			button:SetText("Attach!")
 		else
 			button:SetText("Spawn!")
@@ -1717,13 +1752,14 @@ if CLIENT then
 		AddTFButtonSounds(button)
 		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
-			if IsValid(TF2ItemBrowser:GetEntity()) then
+			if IsValid(self.entity) then
+				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
+			elseif IsValid(TF2ItemBrowser:GetEntity()) then
 				TF2ItemBrowser:DoInput("attach_item_spawn", pnl.GetItemDataTable())
 			else
 				TF2ItemBrowser:DoInput("item_spawn", pnl.GetItemDataTable())
 			end
 			surface.PlaySound(self.sound_drop)
-			//pnl:Remove()
 		end
 
 		function pnl.GetItemDataTable()
@@ -1737,18 +1773,23 @@ if CLIENT then
 			end
 			local _style = 0 
 			if pnl.style then _, _style = pnl.style:GetSelected() end
-			return {
+
+			local data = {
 				i = self:GetItemID(),
 				class = _class,
 				team = TF2ItemBrowser.attopts.team:GetChecked(),
 				style = _style,
 			}
+			if IsValid(self.entity) then self.data = data end
+			//MsgN("pnl.GetItemDataTable got table:")
+			//PrintTable(data)
+			return data
 		end
 		
 		pnl:SetWide(popup_w)
 		pnl:InvalidateLayout(true)
 		pnl:SizeToChildren(false,true)
-		mdl:Refresh()
+		mdl.Refresh()
 		self:PositionPopupPanel(pnl)
 		function pnl:Paint(w,h)
 			LoadoutItemPopupBorder(0,0,w,h)
@@ -1881,6 +1922,15 @@ if CLIENT then
 
 	end
 
+	function PANEL:Think()
+
+		if self.entity != nil and !IsValid(self.entity) then
+			self:Remove()
+			return
+		end
+
+	end
+
 	function PANEL:DoClick()
 
 		surface.PlaySound(self.sound_pressed)
@@ -1911,6 +1961,11 @@ if CLIENT then
 
 		if IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self then
 			TF2ItemBrowser.SpawnPanel:Remove()
+		end
+
+		if self.entity and TF2ItemBrowser.atticons.icons[self.entity] == self then
+			TF2ItemBrowser.atticons.icons[self.entity] = nil
+			TF2ItemBrowser.atticons:InvalidateLayout()
 		end
 
 	end
@@ -1999,7 +2054,7 @@ if SERVER then
 				FixInvalidPhysicsObject(e)
 				DoPropSpawnedEffect(e)
 
-				undo.Create( "prop_physics" )
+				undo.Create("prop_physics")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
 				undo.Finish("#prop_physics (" .. tostring(model) .. ")")
@@ -2020,6 +2075,7 @@ if SERVER then
 			if bg then
 				e2:SetBodygroup(e2:FindBodygroupByName(bg.name), bg.submodel_index)
 			end
+
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
 
 			if input == "attach_item_spawn" then
@@ -2050,7 +2106,41 @@ if SERVER then
 				//end
 			end
 
-		elseif input ==  "attach_skin"then
+		elseif input == "attach_item_modify" then
+
+			local e = net.ReadEntity()
+			local data = ReadItemDataTable()
+			local model, skin, bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
+
+			if !IsValid(e) or e:GetParent() != ent then return end
+
+			if model != e:GetModel() then
+				e:SetModel(model)
+				//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
+				if e.AdvBone_BoneInfo then
+					e.AdvBone_BoneInfo = nil
+					e.AdvBone_BoneInfo = CreateAdvBoneInfoTable(e, ent, false, true)
+					//Make sure the clients get the new boneinfo table
+					net.Start("AdvBone_EntBoneInfoTableUpdate_SendToCl")
+						net.WriteEntity(e)
+					net.Broadcast()
+				end
+			end
+			e:SetSkin(skin)
+
+			//TODO: bodygroup changes
+
+			duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
+
+		elseif input == "attach_item_remove" then
+
+			local e = net.ReadEntity()
+			if !IsValid(e) or e:GetParent() != ent or e:IsPlayer() then return end
+			if !hook.Run("CanTool", ply, {Entity = e}, "remover", ply:GetTool("remover"), 1) then return end
+			//TODO: what other hooks should we check to make sure this player is allowed to remove this entity? sandbox doesn't seem to have anything else obvious.
+			e:Remove()
+
+		elseif input ==  "attach_skin" then
 
 			ent:SetSkin(net.ReadUInt(8))
 
