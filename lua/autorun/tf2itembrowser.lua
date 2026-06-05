@@ -459,6 +459,8 @@ end
 
 
 
+local BrowserInputs, BrowserInputs_bits, WriteItemDataTable, ReadItemDataTable //define these here so that window/icon code can access them
+
 if CLIENT then
 
 	local LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
@@ -1051,6 +1053,7 @@ if CLIENT then
 			local attopts = vgui.Create("DPanel", left_holder)
 			attopts.Paint = function() end
 			attopts:Dock(BOTTOM)
+			window.attopts = attopts
 
 			local text = vgui.Create("DLabel", left_holder) //SizeToContents gets finicky with this one if we put it inside attopts
 			text:SetWrap(true)
@@ -1086,14 +1089,30 @@ if CLIENT then
 				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. b)
 			end
 
-			//make this use red/blu team icons later
+			//TODO: make this use red/blu team icons later
 			local check = vgui.Create("DCheckBoxLabel", attopts)
 			check:SetText("BLU")
 			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweenitems)
+			attopts.team = check
 			check.OnChange = function(_, val)
-				//TOOD
+				if window.SpawnPanel and window.SpawnPanel.ModelPanel then
+					window.SpawnPanel.ModelPanel:Refresh()
+				end
+				local ent = window:GetEntity()
+				if IsValid(ent) then
+					local skintoset
+					if ent:GetSkin() % 2 != 0 then
+						if !val then skintoset = ent:GetSkin()-1 end //don't change the skin if ent's skin got desynced
+					else
+						if val then skintoset = ent:GetSkin()+1 end
+					end
+					if skintoset != nil then
+						window:DoInput("attach_skin", skintoset)
+					end
+					//TODO: set skin on all attached items
+				end
 			end
 
 			attopts:InvalidateLayout(true)
@@ -1124,6 +1143,8 @@ if CLIENT then
 					atticons.Label:SetText("Attached to " .. mdl .. ":")
 					attopts.deselect:SetText("Deselect " .. mdl)
 
+					attopts.team:SetChecked(ent:GetSkin() % 2 != 0)
+
 					net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
 						net.WriteEntity(ent)
 					net.SendToServer()
@@ -1136,6 +1157,46 @@ if CLIENT then
 					attopts:InvalidateLayout(true)
 					attopts:SizeToChildren(false,true)
 				end
+			end
+
+
+			function window:DoInput(input, ...)
+
+				net.Start("TF2ItemBrowser_Input_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
+				
+					local args = {...}
+	
+					net.WriteUInt(BrowserInputs[input], BrowserInputs_bits)
+
+					if string.StartsWith(input, "attach_") then
+						net.WriteEntity(self:GetEntity())
+					end
+
+					if input == "item_spawn" then
+
+						WriteItemDataTable(args[1]) //item data table
+						
+					elseif input == "attach_item_spawn" then
+
+						WriteItemDataTable(args[1]) //item data table
+						net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool())
+
+					elseif input == "attach_item_modify" then
+
+						//TODO
+
+					elseif input == "attach_item_remove" then
+					
+						//TODO
+
+					elseif input == "attach_skin" then
+
+						net.WriteUInt(args[1], 8) //skin id
+
+					end
+
+				net.SendToServer()
+
 			end
 
 		end
@@ -1492,10 +1553,10 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		function mdl:Refresh()
-			local _, _class, _style = nil, 0, 0
-			_, _class = pnl.class:GetSelected()
+			local _, _class = pnl.class:GetSelected()
+			local style = 0
 			if pnl.style then _, _style = pnl.style:GetSelected() end
-			local model, skin, bg = GetItemModelVisuals(_i, _class, pnl.team:GetChecked(), _style)
+			local model, skin, bg = GetItemModelVisuals(_i, _class, TF2ItemBrowser.attopts.team:GetChecked(), _style)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
 			self:SetModel(model)
@@ -1527,27 +1588,13 @@ if CLIENT then
 				self.old_model = model
 			end
 
-			//Hide the team selector if both teams use the same skin.
-			//This won't catch cases like the stock weapons that have a bunch of identical skins for
-			//botkiller reasons, but it should get rid of pointless team selectors on the most items.
-			//Also compare the models because of model_player_per_class_red/blue.
-			local model2, skin2, _ = GetItemModelVisuals(_i, _class, !pnl.team:GetChecked(), _style)
-			local should_show_team = (skin != skin2) or (model != model2)
-			if !should_show_team and pnl.team:IsVisible() then
-				pnl:SetHeight(pnl:GetTall() - pnl.team:GetTall() - betweenitems)
-				pnl.team:SetVisible(false)
-			elseif should_show_team and !pnl.team:IsVisible() then
-				pnl:SetHeight(pnl:GetTall() + pnl.team:GetTall() + betweenitems)
-				pnl.team:SetVisible(true)
-			end
-
 			//Hide the class selector if all classes use the same model (i.e. medals)
 			//Also compare the bodygroups because of use_per_class_bodygroups.
 			if pnl.class then
 				local should_show_class = false
 				for k, v in pairs (i.used_by_classes) do
 					if k != _class then 
-						local model2, _, bg2 = GetItemModelVisuals(_i, k, pnl.team:GetChecked(), _style)
+						local model2, _, bg2 = GetItemModelVisuals(_i, k, TF2ItemBrowser.attopts.team:GetChecked(), _style)
 						if bg2 and (!ent or ent:FindBodygroupByName(bg2.name) == -1) then bg2 = nil end //make sure this is changing a bodygroup that actually exists; a whole bunch of badges like the dueling badges have useless bodygroup setters for some reason
 						if (model != model2) or (bg and !bg2) or (!bg and bg2) then
 							should_show_class = true
@@ -1592,17 +1639,6 @@ if CLIENT then
 				pnl.class:SetEnabled(should_show_class)
 				pnl.class:GetParent().Label:SetEnabled(should_show_class)
 			end
-		end
-
-		//make this use red/blu team icons later
-		local check = vgui.Create("DCheckBoxLabel", pnl)
-		check:SetText("BLU")
-		check:SetHeight(15)
-		check:Dock(TOP)
-		check:DockMargin(side_margins,0,side_margins,betweenitems)
-		pnl.team = check
-		check.OnChange = function(_, val)
-			mdl:Refresh()
 		end
 
 		local function AddDropdown(label, populatefunc, select_extras)
@@ -1681,46 +1717,32 @@ if CLIENT then
 		AddTFButtonSounds(button)
 		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
-			local mode = 0 //spawn item on ground
 			if IsValid(TF2ItemBrowser:GetEntity()) then
-				pnl.SendInputToServer(1) //spawn item and attach to entity
+				TF2ItemBrowser:DoInput("attach_item_spawn", pnl.GetItemDataTable())
 			else
-				pnl.SendInputToServer(0) //spawn item on ground
+				TF2ItemBrowser:DoInput("item_spawn", pnl.GetItemDataTable())
 			end
 			surface.PlaySound(self.sound_drop)
 			//pnl:Remove()
 		end
 
-		function pnl.SendInputToServer(mode)
-			net.Start("TF2ItemBrowser_ItemInput_SendToSv", true) //use unreliable channel; if network is clogged, better to not spawn one prop than to crash the server
-				//mode 0: spawn item on ground
-				//mode 1: spawn item and attach to entity
-				//mode 2: modify attached item //TODO
-				//mode 3: delete attached item //TODO
-				net.WriteUInt(mode, 2)
-				if mode > 0 then
-					net.WriteEntity(TF2ItemBrowser:GetEntity())
-					if mode == 1 then net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool()) end
+		function pnl.GetItemDataTable()
+			//translate class name back to id number
+			local _, _class = pnl.class:GetSelected()
+			for k, class in ipairs (classes) do
+				if class.longname == _class then
+					_class = k
+					break
 				end
-				if mode < 3 then
-					local _, _class, _style = nil, 0, 0
-					if pnl.class then
-						//translate class name back to id number
-						_, _class = pnl.class:GetSelected()
-						for k, class in ipairs (classes) do
-							if class.longname == _class then
-								_class = k
-								break
-							end
-						end
-					end
-					if pnl.style then _, _style = pnl.style:GetSelected() end
-					net.WriteUInt(self:GetItemID(), 15)
-					net.WriteUInt(_class, 4)
-					net.WriteBool(pnl.team:GetChecked())
-					net.WriteUInt(_style, 4)
-				end
-			net.SendToServer()
+			end
+			local _style = 0 
+			if pnl.style then _, _style = pnl.style:GetSelected() end
+			return {
+				i = self:GetItemID(),
+				class = _class,
+				team = TF2ItemBrowser.attopts.team:GetChecked(),
+				style = _style,
+			}
 		end
 		
 		pnl:SetWide(popup_w)
@@ -1906,26 +1928,58 @@ end
 
 
 
+//Networking for browser inputs
+BrowserInputs = {
+	[0] = "item_spawn",
+	"attach_item_spawn",
+	"attach_item_modify",
+	"attach_item_remove",
+	"attach_skin",
+}
+BrowserInputs_bits = 3 //max 7
+BrowserInputs = table.Flip(BrowserInputs)
+//How this works:
+//- table.Flip sets the table to {channel_sequence = 0}, and so on
+//- net.Write retrieves the corresponding number of a string with BrowserInputs[input], then sends that number
+//- net.Read gets the number, then retrieves its corresponding string with table.KeyFromValue(BrowserInputs, input)
+//This lets us add as many networkable strings to this table as we want, without having to manually assign each one a number.
+
+WriteItemDataTable = function(data)
+	net.WriteUInt(data.i, 15)
+	net.WriteUInt(data.class, 4)
+	net.WriteBool(data.team)
+	net.WriteUInt(data.style, 4)
+end
+
+ReadItemDataTable = function()
+	return {
+		i = net.ReadUInt(15),
+		class = net.ReadUInt(4),
+		team = net.ReadBool(),
+		style = net.ReadUInt(4),
+	}
+end
+
 if SERVER then
 
-	util.AddNetworkString("TF2ItemBrowser_ItemInput_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_Input_SendToSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItems_GetFromSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItem_SendToCl")
 
-	net.Receive("TF2ItemBrowser_ItemInput_SendToSv", function(_, ply)
-		local mode = net.ReadUInt(2)
-		local ent, use_advbone
-		if mode > 0 then
+	net.Receive("TF2ItemBrowser_Input_SendToSv", function(_, ply)
+
+		local input = net.ReadUInt(BrowserInputs_bits)
+		if !input then return end
+		input = table.KeyFromValue(BrowserInputs, input)
+
+		local ent
+		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
-			if mode == 1 then use_advbone = net.ReadBool() end
 		end
-		if mode < 3 then
-			local data = {
-				i = net.ReadUInt(15),
-				class = net.ReadUInt(4),
-				team = net.ReadBool(),
-				style = net.ReadUInt(4),
-			}
+
+		if input == "item_spawn" or input == "attach_item_spawn" then
+
+			local data = ReadItemDataTable()
 			local model, skin, bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
 
 			//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
@@ -1968,8 +2022,8 @@ if SERVER then
 			end
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
 
-			if mode == 1 then //attach to entity
-				if use_advbone then
+			if input == "attach_item_spawn" then
+				if net.ReadBool() then
 					local old_e = e
 					e = CreateAdvBonemergeEntity(e, ent, ply, false, false, true)
 					if !IsValid(e) then return end
@@ -1991,14 +2045,17 @@ if SERVER then
 					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
 						net.WriteEntity(e)
 						net.WriteBool(true) //open upon received
-						net.WriteUInt(data.i, 15)
-						net.WriteUInt(data.class, 4)
-						net.WriteBool(data.team)
-						net.WriteUInt(data.style, 4)
+						WriteItemDataTable(data)
 					net.Send(ply)
 				//end
 			end
+
+		elseif input ==  "attach_skin"then
+
+			ent:SetSkin(net.ReadUInt(8))
+
 		end
+
 	end)
 
 	//i don't *think* this is necessary?
@@ -2015,10 +2072,7 @@ if SERVER then
 				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
 					net.WriteEntity(ent2)
 					net.WriteBool(false) //don't open upon received
-					net.WriteUInt(data.i, 15)
-					net.WriteUInt(data.class, 4)
-					net.WriteBool(data.team)
-					net.WriteUInt(data.style, 4)
+					WriteItemDataTable(data)
 				net.Send(ply)
 			end
 		end
@@ -2029,12 +2083,7 @@ else
 	net.Receive("TF2ItemBrowser_AttachedItem_SendToCl", function()
 		local ent = net.ReadEntity()
 		local forceopen = net.ReadBool()
-		local data = {
-			i = net.ReadUInt(15),
-			class = net.ReadUInt(4),
-			team = net.ReadBool(),
-			style = net.ReadUInt(4),
-		}
+		local data = ReadItemDataTable()
 		if !IsValid(ent) or !IsValid(TF2ItemBrowser) then return end
 		local par = TF2ItemBrowser:GetEntity()
 		if !IsValid(par) or ent:GetParent() != par then return end
@@ -2046,8 +2095,9 @@ end
 
 properties.Add("tf2itembrowser_select", {
 	MenuLabel = "Select with TF2 Item Browser",
-	Order = 2000,
+	Order = 1,
 	MenuIcon = "games/16/tf.png",
+	AppendSpacer = true, //doesn't work, lame
 	
 	Filter = function(self, ent, ply)
 		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
