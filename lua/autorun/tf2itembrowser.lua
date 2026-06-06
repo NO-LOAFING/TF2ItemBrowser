@@ -399,7 +399,7 @@ end
 local function GetItemModelVisuals(i, class, team, style)
 
 	i = TF2Items.items[i]
-	local model, skin, bg = nil, nil, nil
+	local model, skin, bg = nil, nil, {}
 
 	//First go through standard values on the item
 	model = GetClassModelWithBasename(i.model_player_per_class, class) or i.model_player
@@ -407,7 +407,7 @@ local function GetItemModelVisuals(i, class, team, style)
 	local classbg = GetVisualsValue(i, team, "use_per_class_bodygroups")
 	if classbg and classbg == 1 then
 		classbg = {scout = 0, sniper = 1, soldier = 2, demoman = 3, medic = 4, heavy = 5, pyro = 6, spy = 7, engineer = 8}
-		bg = {name = "class", submodel_index = classbg[class]}
+		bg["class"] = classbg[class]
 	end
 
 	//Now get overrides from style
@@ -432,8 +432,8 @@ local function GetItemModelVisuals(i, class, team, style)
 			skin = style.skin
 		end
 		if style.bodygroup then
-			//currently it's only possible to have to change one bodygroup at a time, so we can just return this for now
-			bg = style.bodygroup
+			//currently it's only possible to have to change one bodygroup at a time
+			bg[style.bodygroup.name] = style.bodygroup.submodel_index
 		end
 	end
 
@@ -1585,12 +1585,8 @@ if CLIENT then
 			local ent = mdl:GetEntity()
 			if IsValid(ent) then
 				ent:SetSkin(skin)
-				if bg then
-					if ent:FindBodygroupByName(bg.name) == -1 then
-						bg = nil //catch bodygroup setters that don't actually do anything; see further down this function
-					else
-						ent:SetBodygroup(ent:FindBodygroupByName(bg.name), bg.submodel_index)
-					end
+				for k, v in pairs (bg) do
+					ent:SetBodygroup(ent:FindBodygroupByName(k), v)
 				end
 
 				//don't recenter the camera if the model didn't change
@@ -1617,18 +1613,17 @@ if CLIENT then
 				for k, v in pairs (i.used_by_classes) do
 					if k != _class then 
 						local model2, _, bg2 = GetItemModelVisuals(_i, k, TF2ItemBrowser.attopts.team:GetChecked(), _style)
-						if bg2 and (!ent or ent:FindBodygroupByName(bg2.name) == -1) then bg2 = nil end //make sure this is changing a bodygroup that actually exists; a whole bunch of badges like the dueling badges have useless bodygroup setters for some reason
-						if (model != model2) or (bg and !bg2) or (!bg and bg2) then
+						for k, v in pairs (bg2) do
+							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+							//badges like the dueling badges have useless bodygroup setters for some reason
+							if ent:FindBodygroupByName(k) != -1 and bg[k] != bg2[k] then
+								bg2 = true
+								break
+							end
+						end
+						if (model != model2) or isbool(bg2) then
 							should_show_class = true
 							break
-						end
-						if bg and bg2 then
-							for k, v in pairs (bg) do
-								if bg[k] != bg[v] then
-									should_show_class = true 
-									break
-								end
-							end
 						end
 					end
 				end
@@ -2072,8 +2067,8 @@ if SERVER then
 
 			local e2 = e
 			if IsValid(e.AttachedEntity) then e2 = e.AttachedEntity end
-			if bg then
-				e2:SetBodygroup(e2:FindBodygroupByName(bg.name), bg.submodel_index)
+			for k, v in pairs (bg) do
+				e2:SetBodygroup(e2:FindBodygroupByName(k), v)
 			end
 
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
@@ -2127,8 +2122,10 @@ if SERVER then
 				end
 			end
 			e:SetSkin(skin)
-
-			//TODO: bodygroup changes
+			for k, v in pairs (bg) do
+				e:SetBodygroup(e:FindBodygroupByName(k), v)
+				//don't worry about reverting unlisted bg's back to 0, no existing items that use this feature require us to check for these
+			end
 
 			duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
 
