@@ -2123,6 +2123,12 @@ if SERVER then
 
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
 
+			//test to make sure undo/entitymod stuff works properly with animprops; 
+			//TODO: reuse this when we implement features we actually need animprops for
+			--[[DisablePropCreateEffect = true
+			e = ConvertEntityToAnimprop(e, ply, true, false, false)
+			DisablePropCreateEffect = nil]]
+
 			if input == "attach_item_spawn" then
 				for k, v in pairs (ply_bg) do
 					//when attaching a new item, we can keep this simple, and just change the ply_bg's the item has listed
@@ -2134,18 +2140,17 @@ if SERVER then
 					e = CreateAdvBonemergeEntity(e, ent, ply, false, false, true)
 					if !IsValid(e) then return end
 					local const = constraint.AdvBoneMerge(ent, e, ply)
-					undo.Create("AdvBonemerge")
-						undo.AddEntity(const)  //the constraint entity will unmerge newent upon being removed
-						undo.SetPlayer(ply)
-					undo.Finish("Adv. Bonemerge (" .. model .. ")")
-					old_e:Remove()
+					if e != old_e then old_e:Remove() end
 				else
 					e = rb655_ApplyBonemerge(e2, ent) //unlike advbone, this one expects AttachedEntity for prop_effects
-					undo.Create("bonemerge")
-						undo.AddEntity(e)
-						undo.SetPlayer(ply)
-					undo.Finish()
 				end
+				//Use a one-size-fits-all undo instead of addon-specific undos;
+				//for advbone in particular, we want to remove the entity instead of unmerging it
+				undo.Create("TF2ItemBrowser_Item")
+					undo.AddEntity(e)
+					undo.SetPlayer(ply)
+				undo.Finish("Attached Item (" .. model .. ")")
+
 				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
 				//	if !IsValid(e) then return end
 					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
@@ -2229,7 +2234,27 @@ if SERVER then
 			if !hook.Run("CanTool", ply, {Entity = e}, "remover", ply:GetTool("remover"), 1) then return end
 			//TODO: what other hooks should we check to make sure this player is allowed to remove this entity? sandbox doesn't seem to have anything else obvious.
 
-			//Check if this item was applying any bodygroup changes to the parent ent that we want to revert
+			//Reverting bodygroup changes on the parent entity is handled by the entitymod function
+
+			e:Remove()
+
+		elseif input ==  "attach_skin" then
+
+			ent:SetSkin(net.ReadUInt(8))
+
+		end
+
+	end)
+
+	duplicator.RegisterEntityModifier("TF2ItemBrowser_Item", function(ply, e, data)
+
+		duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
+
+		//When removed, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
+		//This is handled here and not in the input receive func, so that we can also run it when removing the item with undo.
+		e:CallOnRemove("TF2ItemBrowser_AttachedItem_OnRemove", function(e)
+			local ent = e:GetParent()
+			if !IsValid(ent) then return end
 			local tab = e:GetTable()
 			if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
 				tab = tab.EntityMods.TF2ItemBrowser_Item
@@ -2254,21 +2279,9 @@ if SERVER then
 					break
 				end
 			end
-
-			e:Remove()
-
-		elseif input ==  "attach_skin" then
-
-			ent:SetSkin(net.ReadUInt(8))
-
-		end
+		end)
 
 	end)
-
-	//i don't *think* this is necessary?
-	//duplicator.RegisterEntityModifier("TF2ItemBrowser_Item", function(ply, ent, data)
-	//	duplicator.StoreEntityModifier(ent, "TF2ItemBrowser_Item", data)
-	//end)
 
 	net.Receive("TF2ItemBrowser_AttachedItems_GetFromSv", function(_, ply)
 		local ent = net.ReadEntity()
@@ -2286,6 +2299,8 @@ if SERVER then
 	end)
 
 else
+
+	language.Add("undone_TF2ItemBrowser_Item", "Undone Attached Item")
 	
 	net.Receive("TF2ItemBrowser_AttachedItem_SendToCl", function()
 		local ent = net.ReadEntity()
