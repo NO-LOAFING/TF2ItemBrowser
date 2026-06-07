@@ -82,6 +82,40 @@ local _s = file.Read("scripts/items/items_game.txt", "tf")
 local s = util.KeyValuesToTable(_s, false, true)
 local s2 = util.KeyValuesToTablePreserveOrder(_s, false, true)
 
+//some item defs contain multiple of the same subtable, but util.KeyValuesToTable squashes all but the last one, so we have to retrieve them using
+//util.KeyValuesToTablePreserveOrder. evidently, TF2 reads the information from all of them, example: 31553 El Gigante's Gunbelt, which has one 
+//"visuals" table containing only bodygroups, and another "visuals" table containing only styles, both of which are used in TF2.
+local done = 0
+for k, v in ipairs (s2) do
+	if v.Key == "items" or v.Key == "prefabs" then
+		local function ReadOrderedTableMergingSubTables(tab)
+			if !istable(tab) then
+				return tab
+			else
+				local res = {}
+				local stupid_zero_fix //KeyValuesToTablePreserveOrder breaks keys called "0" https://github.com/Facepunch/garrysmod-issues/issues/6891
+				for k, v in ipairs (tab) do
+					local res_v = ReadOrderedTableMergingSubTables(v.Value)
+					v.Key = tonumber(v.Key) or v.Key //these are all strings by default, even if they should be numbers
+					if v.Key == 1 and !stupid_zero_fix then
+						v.Key = 0
+						stupid_zero_fix = true
+					end
+					if !res[v.Key] or !istable(res_v) then
+						res[v.Key] = res_v
+					else
+						table.Merge(res[v.Key], res_v)
+					end
+				end
+				return res
+			end
+		end
+		s[v.Key] = ReadOrderedTableMergingSubTables(v.Value)
+		done = done + 1
+		if done == 2 then break end
+	end
+end
+
 
 //inject custom values into a few items
 s.prefabs.paintkit_base._paintkit = true //custom value for filter
