@@ -275,13 +275,39 @@ for k, v in pairs (s.items) do
 	end
 
 
-	//TODO: handle extra_wearable and extra_wearable_vm:
-	//- if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (a few spellbooks)
-	//- if an item has an extra_wearable that's the same as its model_player, then get rid of it (sniper shields, maybe more)
-	//- if an item has an extra_wearable_vm, then get rid of its extra_wearable and convert the _vm to visuals.attached_models (botkillers)
-
-
 	if v.model_player == "" then v.model_player = nil end
+	//if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (base jumper, diary, spellbook)
+	if v.extra_wearable and !v.model_player and !v.model_player_per_class then
+		v.model_player = v.extra_wearable
+		v.extra_wearable = nil
+	end
+	//if an item has an extra_wearable that's the same as its model_player, then get rid of it (sniper shields and thruster)
+	if v.extra_wearable and v.extra_wearable == v.model_player then
+		v.extra_wearable = nil
+	end
+	//if an item has an extra_wearable_vm, then it's actually treated like a visuals.attached_models entry, so convert it to one (botkillers) 
+	//(https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weaponbase.cpp#L1018-L1022) if i remember correctly,
+	//this is a contrivance to get around the fact that in tf2, attached_models don't support jigglebones or something like that
+	if v.extra_wearable_vm then
+		local attach = {model = v.extra_wearable or v.extra_wearable_vm}
+		if v.visuals_red and v.visuals_red.attached_models then
+			table.insert(v.visuals_red.attached_models, table.Count(v.visuals_red.attached_models), attach) //the table.Count thing is an awkward way of sorting these into a sequential table starting with 0, which lua doesn't do by default
+			table.insert(v.visuals_blu.attached_models, table.Count(v.visuals_blu.attached_models), attach)
+		else
+			v.visuals = v.visuals or {}
+			v.visuals.attached_models = v.visuals.attached_models or {}
+			table.insert(v.visuals.attached_models, table.Count(v.visuals.attached_models), attach)
+		end
+	end
+	//Taunts: I'd like to use animprops to play these animations (especially to sync up big taunt props like the chair, or a second playermodel for
+	//partner taunts), but all the animation references use .vcd scene paths, which are all compiled into a single large scenes.image file, which 
+	//means we'd have to either:
+	//A: write an entire scenes.image file parser, which would be quite the undertaking
+	//or B: manually hard-code every past and future taunt item, forever.
+	//For now, let's just use these to spawn taunt props.
+	if v.taunt and !v.taunt.custom_taunt_prop_per_class then v.taunt = nil end
+
+
 	if v.model_player then
 		//Some items like cases have valid models to spawn but no class; dump these into a special "none" class category
 		//(all of these use model_player, none of them use model_player_per_class)
@@ -794,7 +820,7 @@ if CLIENT then
 			end)
 
 			filters.item_type = AddDropdownFilter("Item Type", function(self) 
-				for k, v in ipairs ({"(any)", "weapon", "cosmetic", "taunt", "other"}) do
+				for k, v in ipairs ({"(any)", "weapon", "cosmetic", --[["taunt",]] "other"}) do
 					self:AddChoice(string.NiceName(v), v, v == "(any)")
 					if k == 1 then self:AddSpacer() end
 				end
@@ -962,7 +988,7 @@ if CLIENT then
 					building = "weapon",
 					head = "cosmetic", 
 					misc = "cosmetic",
-					taunt = "taunt"
+					//taunt = "taunt"
 				}
 				local function DoIncludeExcludeFilter(f, criteria)
 					return (f == 1 and !criteria) or (f == -1 and criteria)
