@@ -699,6 +699,7 @@ if CLIENT then
 
 			local right_holder = vgui.Create("DPanel", window)
 			right_holder.Paint = function() end
+			window.Right = right_holder
 			local scroll = vgui.Create("DScrollPanel", right_holder)
 			right_holder:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
 			right_holder:Dock(RIGHT)
@@ -1583,41 +1584,33 @@ if CLIENT then
 
 	function PANEL:PositionPopupPanel(pnl)
 
-		//Keeps a popup panel contained within its parent TF2ItemBrowser, but also centered on this item icon
+		//Keeps a popup panel contained within the right side of TF2ItemBrowser (never cover up the options list 
+		//on the left side) but also centered on this item icon to the extent it can without going out-of-bounds.
 		local w, h = pnl:GetSize()
-		local x, y = TF2ItemBrowser:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
-		local b_w, b_h = TF2ItemBrowser:GetSize()
+		local x, y = TF2ItemBrowser.Right:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
+		local b_w, b_h = TF2ItemBrowser.Right:GetSize()
 
-		x = x-(w/2) //by default, the panel is positioned below the icon
-		local is_on_side
-		if x < 0 then
-			//if the left side of the panel goes beyond the left side of the browser, then move it to the right of the icon
-			x = x + (self:GetWide()/2)+(w/2)
-			y = y - (self:GetTall()/2)-(h/2)
-			is_on_side = true
-		elseif x+w > b_w then 
-			//if the right side of the panel goes beyond the right side of the browser, then move it to the left of the icon
-			x = x - (self:GetWide()/2)-(w/2)
-			y = y - (self:GetTall()/2)-(h/2)
-			is_on_side = true
-		elseif y+h > b_h and (y-self:GetTall()-h) < 0 then
-			//if the panel is too tall to fit above or below the icon, then center it the browser over the icon (edge case for clicking on icons in middle of the browser)
-			y = (b_h/2)-(h/2)
-		end
+		//by default, the panel is positioned below the icon, but won't go past the left side of the browser
+		x = math.max(0,x-(w/2)) 
+		//if the right side of the panel goes past the right side of the browser, then move it left
+		if x+w > b_w then x = x - (x+w-b_w) end
 		
-		//if the bottom of the panel goes beyond the bottom of the browser...
-		if y+h > b_h then 
-			if is_on_side then
-				//...and we've moved it to the side of the icon, then push it upward
-				y = y-((y+h)-b_h)
+		//if the icon is scrolled below the bottom of the list, then move the panel to the bottom of the browser
+		if y > b_h then
+			y = b_h-h
+		//if the icon is scrolled above the top of the list, then move the panel to the top of the browser
+		elseif y < 0 then
+			y = 0
+		//if the icon is visible, but the bottom of the panel goes beyond the bottom of the browser...
+		elseif y+h > b_h then
+			//...and it's too tall to fit above or below the icon, then center it the browser over the icon 
+			//(edge case for clicking on icons in middle of the browser)
+			if (y-self:GetTall()-h) < 0 then 
+				y = (b_h/2)-(h/2)
+			//...and it can fit above the icon, then reposition it above the icon
 			else
-				//...and it's positioned below the icon, then reposition it above the icon
 				y = y-self:GetTall()-h
 			end
-		end
-		//if the top of the panel goes beyond the top of the browser, then push it downward
-		if y < 0 then 
-			y = 0
 		end
 
 		pnl:SetPos(x, y)
@@ -1628,9 +1621,10 @@ if CLIENT then
 
 		if IsValid(TF2ItemBrowser.MouseOverPanel) then TF2ItemBrowser.MouseOverPanel:Remove() end
 
-		local pnl = vgui.Create("DPanel", TF2ItemBrowser)
+		local pnl = vgui.Create("DPanel", TF2ItemBrowser.Right)
 		TF2ItemBrowser.MouseOverPanel = pnl
 		pnl.Owner = self
+		pnl:SetMouseInputEnabled(false)
 
 		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
 		local h = popup_pad*2 + self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
@@ -1642,8 +1636,10 @@ if CLIENT then
 		pnl:SizeToChildren(false,true)]]
 		pnl:SetSize(popup_w,h) //this returns better height for items with descriptions??
 		self:PositionPopupPanel(pnl)
+		self.popup = pnl
 		
 		function pnl:Paint(w,h)
+			self.Owner:PositionPopupPanel(self)
 			LoadoutItemPopupBorder(0,0,w,h)
 		end
 
@@ -1662,7 +1658,7 @@ if CLIENT then
 			end
 		end
 
-		local pnl = vgui.Create("DPanel", TF2ItemBrowser)
+		local pnl = vgui.Create("DPanel", TF2ItemBrowser.Right)
 		TF2ItemBrowser.SpawnPanel = pnl
 		pnl.Owner = self
 
@@ -1858,7 +1854,9 @@ if CLIENT then
 		pnl:SizeToChildren(false,true)
 		mdl.Refresh()
 		self:PositionPopupPanel(pnl)
+		self.popup = pnl
 		function pnl:Paint(w,h)
+			self.Owner:PositionPopupPanel(self)
 			LoadoutItemPopupBorder(0,0,w,h)
 		end
 
@@ -1872,7 +1870,7 @@ if CLIENT then
 			pnl:Remove()
 		end
 
-		//If this itemicon doesn't correspond to an entity, then reset any changes when we close the spawn panel
+		//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
 		function pnl.OnRemove()
 			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
 		end
@@ -2034,9 +2032,7 @@ if CLIENT then
 
 	function PANEL:OnRemove()
 
-		if IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self then
-			TF2ItemBrowser.SpawnPanel:Remove()
-		end
+		if IsValid(self.popup) then self.popup:Remove() end
 
 		if self.entity and TF2ItemBrowser.atticons.icons[self.entity] == self then
 			TF2ItemBrowser.atticons.icons[self.entity] = nil
