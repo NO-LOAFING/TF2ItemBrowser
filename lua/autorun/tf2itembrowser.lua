@@ -455,74 +455,81 @@ local function GetClassModelWithBasename(tab, class)
 	end
 end
 
-//Given an item id, class, team, and style, return the model, skin, and bodygroups to use.
-local function GetItemModelVisuals(i, class, team, style)
+//Given an item data table with i, class, team, style, returns a table with the model, skin, and bodygroups to use.
+local function GetItemModelVisuals(data)
 
-	i = TF2Items.items[i]
-	local model, skin, item_bg, ply_bg = nil, nil, {}, {}
+	local i = TF2Items.items[data.i]
+	local vis = {
+		model = nil,
+		skin = nil,
+		item_bg = {},
+		ply_bg = {}
+	}
 
 	//First go through standard values on the item
-	model = GetClassModelWithBasename(i.model_player_per_class, class) or i.model_player
-	skin = i.default_skin or GetVisualsValue(i, team, "skin")
-	local classbg = GetVisualsValue(i, team, "use_per_class_bodygroups")
+	vis.model = GetClassModelWithBasename(i.model_player_per_class, data.class) or i.model_player
+	vis.skin = i.default_skin or GetVisualsValue(i, data.team, "skin")
+	local classbg = GetVisualsValue(i, data.team, "use_per_class_bodygroups")
 	if classbg and classbg == 1 then
 		classbg = {scout = 0, sniper = 1, soldier = 2, demoman = 3, medic = 4, heavy = 5, pyro = 6, spy = 7, engineer = 8}
-		item_bg["class"] = classbg[class]
+		vis.item_bg["class"] = classbg[data.class]
 	end
-	for k, v in pairs (GetVisualsValue(i, team, "player_bodygroups") or {}) do
-		ply_bg[k] = v //v can be 0, such as in prefab item_bak_fear_monger
+	for k, v in pairs (GetVisualsValue(i, data.team, "player_bodygroups") or {}) do
+		vis.ply_bg[k] = v //v can be 0, such as in prefab item_bak_fear_monger
 	end
-	local num_bg_k, num_bg_v = GetVisualsValue(i, team, "wm_bodygroup_override"), GetVisualsValue(i, team, "wm_bodygroup_state_override")
+	local num_bg_k, num_bg_v = GetVisualsValue(i, data.team, "wm_bodygroup_override"), GetVisualsValue(i, data.team, "wm_bodygroup_state_override")
 	if num_bg_k and num_bg_v then
 		//only used by 528 The Short Circuit and 524 The Purity Fist; this key is a bodygroup id number instead
 		//of a bodygroup name, so we'll have to add special handling just for these two items, oh boy!
-		ply_bg[num_bg_k] = num_bg_v
+		vis.ply_bg[num_bg_k] = num_bg_v
 	end
 	//note: there's also visuals.show_player_bodygroup_name, only used by 1098 The Classic with value "bullets"; 
 	//i don't think this does anything, because if it did, it would make the classic show the sleeper's darts
 
 	//Now get overrides from style
 	if i.visuals and i.visuals.styles then //this is never contained in visuals_red/visuals_blu
-		style = i.visuals.styles[style]
-		if !team and style.model_player_per_class_red then
-			model = GetClassModelWithBasename(style.model_player_per_class_red, class)
-		elseif team and style.model_player_per_class_blue then
-			model = GetClassModelWithBasename(style.model_player_per_class_blue, class)
+		local style = i.visuals.styles[data.style]
+		if !data.team and style.model_player_per_class_red then
+			vis.model = GetClassModelWithBasename(style.model_player_per_class_red, data.class)
+		elseif data.team and style.model_player_per_class_blue then
+			vis.model = GetClassModelWithBasename(style.model_player_per_class_blue, data.class)
 		elseif style.model_player_per_class then
-			model = GetClassModelWithBasename(style.model_player_per_class, class)
+			vis.model = GetClassModelWithBasename(style.model_player_per_class, data.class)
 		elseif style.model_player then
-			model = style.model_player
+			vis.model = style.model_player
 		end
 		//note: 1033 The TF2VRH has a unique style.model_player_per_class_alt table for alternate models to use in vr mode, but 
 		//there's already a second style that uses these alternate models regardless, so this is useless, we don't care about it
-		if !team and style.skin_red then
-			skin = style.skin_red
-		elseif team and style.skin_blu then
-			skin = style.skin_blu
+		if !data.team and style.skin_red then
+			vis.skin = style.skin_red
+		elseif data.team and style.skin_blu then
+			vis.skin = style.skin_blu
 		elseif style.skin then
-			skin = style.skin
+			vis.skin = style.skin
 		end
 		if style.bodygroup then
 			//currently it's only possible to have to change one bodygroup at a time
-			item_bg[style.bodygroup.name] = style.bodygroup.submodel_index
+			vis.item_bg[style.bodygroup.name] = style.bodygroup.submodel_index
 		end
 		if style.additional_hidden_bodygroups then
 			for k, v in pairs (style.additional_hidden_bodygroups) do
-				ply_bg[k] = v
+				vis.ply_bg[k] = v
 			end
 		end
 	end
 
-	if skin == nil then
-		if !team then skin = 0 else skin = 1 end //by default, red team uses skin 0, and blu team uses skin 1
+	if vis.skin == nil then
+		//by default, red team uses skin 0, and blu team uses skin 1
+		if !data.team then vis.skin = 0 else vis.skin = 1 end 
 	end
-	if model then
-		skin = math.min(skin, util.GetModelInfo(model).SkinCount - 1)
+	if vis.model then
+		//clamp vis.skin at the number of skins the model actually has
+		vis.skin = math.min(vis.skin, util.GetModelInfo(vis.model).SkinCount - 1)
 	else
-		model = ""
+		vis.model = ""
 	end
 
-	return model, skin, item_bg, ply_bg
+	return vis
 
 end
 
@@ -1615,8 +1622,7 @@ if CLIENT then
 
 	function PANEL:CreateSpawnPanel()
 
-		local _i = self:GetItemID()
-		local i = TF2Items.items[_i]
+		local i = TF2Items.items[self:GetItemID()]
 		local betweenitems = 8
 
 		if IsValid(TF2ItemBrowser.SpawnPanel) then
@@ -1649,24 +1655,30 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		function mdl.Refresh()
-			local _team = self.data.team //data.team and the selector are intended to always be the same, but could potentially get desynced i.e. if a player manually merges a mismatched item to something 
-			if _team == nil then _team = TF2ItemBrowser.attopts.team:GetChecked() end 
-			local _, _class = pnl.class:GetSelected()
-			local style = 0
-			if pnl.style then _, _style = pnl.style:GetSelected() end
-			local model, skin, item_bg = GetItemModelVisuals(_i, _class, _team, _style)
+			local data = self.data
+			if table.IsEmpty(data) then 
+				local _, _class = pnl.class:GetSelected()
+				data = {
+					i = self:GetItemID(), 
+					class = _class, 
+					team = TF2ItemBrowser.attopts.team:GetChecked(),
+					style = 0
+				}
+				if pnl.style then _, data.style = pnl.style:GetSelected() end
+			end
+			local vis = GetItemModelVisuals(data)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
-			mdl:SetModel(model)
+			mdl:SetModel(vis.model)
 			local ent = mdl:GetEntity()
 			if IsValid(ent) then
-				ent:SetSkin(skin)
-				for k, v in pairs (item_bg) do
+				ent:SetSkin(vis.skin)
+				for k, v in pairs (vis.item_bg) do
 					ent:SetBodygroup(ent:FindBodygroupByName(k), v)
 				end
 
 				//don't recenter the camera if the model didn't change
-				if model != mdl.old_model then
+				if vis.model != mdl.old_model then
 					local pos = ent:GetPos()
 					local ang = ent:GetAngles()
 
@@ -1679,7 +1691,7 @@ if CLIENT then
 						mdl:SetLookAng(tab.angles)
 					end
 				end
-				mdl.old_model = model
+				mdl.old_model = vis.model
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -1687,17 +1699,18 @@ if CLIENT then
 			if pnl.class then
 				local should_show_class = false
 				for k, v in pairs (i.used_by_classes) do
-					if k != _class then 
-						local model2, _, item_bg2 = GetItemModelVisuals(_i, k, TF2ItemBrowser.attopts.team:GetChecked(), _style)
-						for k, v in pairs (item_bg2) do
+					if k != data.class then
+						local vis2 = GetItemModelVisuals({i = data.i, class = k, team = data.team, style = data.style})
+						for k, v in pairs (vis2.item_bg) do
 							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
 							//badges like the dueling badges have useless bodygroup setters for some reason
-							if ent:FindBodygroupByName(k) != -1 and item_bg[k] != item_bg2[k] then
-								item_bg2 = true
+							if ent:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
+								should_show_class = true
 								break
 							end
 						end
-						if (model != model2) or isbool(item_bg2) then
+						if should_show_class then break end
+						if vis.model != vis2.model then
 							should_show_class = true
 							break
 						end
@@ -1726,7 +1739,7 @@ if CLIENT then
 							pnl.class:SetText(text)
 						end
 					elseif should_show_class and !pnl.class:IsEnabled() then
-						pnl.class:SetText(string.NiceName(_class))
+						pnl.class:SetText(string.NiceName(data.class))
 					end
 				end
 				pnl.class:SetEnabled(should_show_class)
@@ -1778,9 +1791,7 @@ if CLIENT then
 
 		pnl.class = AddDropdown("Class", function(drop)
 			local first, _, f = nil, nil, self.data.class
-			if f != nil then
-				f = classes[f].longname
-			else
+			if f == nil then
 				_, f = TF2ItemBrowser.filters.class:GetSelected()
 				if f == "(any)" then f = nil end
 			end
@@ -1834,14 +1845,7 @@ if CLIENT then
 		end
 
 		function pnl.GetItemDataTable()
-			//translate class name back to id number
 			local _, _class = pnl.class:GetSelected()
-			for k, class in ipairs (classes) do
-				if class.longname == _class then
-					_class = k
-					break
-				end
-			end
 			local _style = 0 
 			if pnl.style then _, _style = pnl.style:GetSelected() end
 
@@ -2072,7 +2076,13 @@ BrowserInputs = table.Flip(BrowserInputs)
 
 WriteItemDataTable = function(data)
 	net.WriteUInt(data.i, 15)
-	net.WriteUInt(data.class, 4)
+	//translate class name back to id number
+	for k, class in ipairs (classes) do
+		if class.longname == data.class then
+			net.WriteUInt(k, 4)
+			break
+		end
+	end
 	net.WriteBool(data.team)
 	net.WriteUInt(data.style, 4)
 end
@@ -2080,7 +2090,7 @@ end
 ReadItemDataTable = function()
 	return {
 		i = net.ReadUInt(15),
-		class = net.ReadUInt(4),
+		class = classes[net.ReadUInt(4)].longname,
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),
 	}
@@ -2106,44 +2116,44 @@ if SERVER then
 		if input == "item_spawn" or input == "attach_item_spawn" then
 
 			local data = ReadItemDataTable()
-			local model, skin, item_bg, ply_bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
+			local vis = GetItemModelVisuals(data)
 
 			//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
 			//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
 			//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
 			//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
-			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) then return end
+			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, vis.model, vis.skin) or !util.IsValidModel(vis.model) then return end
 			//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
-			local is_effect = !util.IsValidProp(model)
-			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, model)) then return end
+			local is_effect = !util.IsValidProp(vis.model)
+			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, vis.model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, vis.model)) then return end
 			local e = "prop_physics"
 			if is_effect then e = "prop_effect" end
-			e = DoPlayerEntitySpawn(ply, e, model, skin)
+			e = DoPlayerEntitySpawn(ply, e, vis.model, vis.skin)
 			if !IsValid(e) then return end
 			if !is_effect then
-				gamemode.Call("PlayerSpawnedProp", ply, model, e)
+				gamemode.Call("PlayerSpawnedProp", ply, vis.model, e)
 				FixInvalidPhysicsObject(e)
 				DoPropSpawnedEffect(e)
 
 				undo.Create("prop_physics")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_physics (" .. tostring(model) .. ")")
+				undo.Finish("#prop_physics (" .. tostring(vis.model) .. ")")
 				ply:AddCleanup("props", e)
 			else
-				gamemode.Call("PlayerSpawnedEffect", ply, model, e)
+				gamemode.Call("PlayerSpawnedEffect", ply, vis.model, e)
 				if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
 
 				undo.Create("prop_effect")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_effect (" .. tostring(model) .. ")")
+				undo.Finish("#prop_effect (" .. tostring(vis.model) .. ")")
 				ply:AddCleanup("effects", e)
 			end
 
 			local e2 = e
 			if IsValid(e.AttachedEntity) then e2 = e.AttachedEntity end
-			for k, v in pairs (item_bg) do
+			for k, v in pairs (vis.item_bg) do
 				e2:SetBodygroup(e2:FindBodygroupByName(k), v)
 			end
 
@@ -2156,7 +2166,7 @@ if SERVER then
 			DisablePropCreateEffect = nil]]
 
 			if input == "attach_item_spawn" then
-				for k, v in pairs (ply_bg) do
+				for k, v in pairs (vis.ply_bg) do
 					//when attaching a new item, we can keep this simple, and just change the ply_bg's the item has listed
 					if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 					ent:SetBodygroup(k, v)
@@ -2175,7 +2185,7 @@ if SERVER then
 				undo.Create("TF2ItemBrowser_Item")
 					undo.AddEntity(e)
 					undo.SetPlayer(ply)
-				undo.Finish("Attached Item (" .. model .. ")")
+				undo.Finish("Attached Item (" .. vis.model .. ")")
 
 				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
 				//	if !IsValid(e) then return end
@@ -2191,12 +2201,12 @@ if SERVER then
 
 			local e = net.ReadEntity()
 			local data = ReadItemDataTable()
-			local model, skin, item_bg, ply_bg = GetItemModelVisuals(data.i, classes[data.class].longname, data.team, data.style)
+			local vis = GetItemModelVisuals(data)
 
 			if !IsValid(e) or e:GetParent() != ent then return end
 
-			if model != e:GetModel() then
-				e:SetModel(model)
+			if vis.model != e:GetModel() then
+				e:SetModel(vis.model)
 				//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
 				if e.AdvBone_BoneInfo then
 					e.AdvBone_BoneInfo = nil
@@ -2207,8 +2217,8 @@ if SERVER then
 					net.Broadcast()
 				end
 			end
-			e:SetSkin(skin)
-			for k, v in pairs (item_bg) do
+			e:SetSkin(vis.skin)
+			for k, v in pairs (vis.item_bg) do
 				e:SetBodygroup(e:FindBodygroupByName(k), v)
 				//don't worry about reverting unlisted item_bg's back to 0, no existing items that use this feature require us to check for these
 			end
@@ -2216,13 +2226,12 @@ if SERVER then
 			//Check if the bodygroup changes this item applies to the parent ent were modified
 			local tab = e:GetTable()
 			if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-				tab = tab.EntityMods.TF2ItemBrowser_Item
-				local _, _, _, ply_bg_old = GetItemModelVisuals(tab.i, classes[tab.class].longname, tab.team, tab.style)
+				local old_ply_bg = GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg
 				local all_keys = {}
-				table.Merge(all_keys, ply_bg)
-				table.Merge(all_keys, ply_bg_old)
+				table.Merge(all_keys, vis.ply_bg)
+				table.Merge(all_keys, old_ply_bg)
 				for k, _ in pairs (all_keys) do
-					if ent:FindBodygroupByName(k) != -1 and ply_bg[k] != ply_bg_old[k] then
+					if ent:FindBodygroupByName(k) != -1 and vis.ply_bg[k] != old_ply_bg[k] then
 						//If this item's ply_bg's have changed, then we need to reset the parent ent's bodygroups from scratch. 
 						//For example, even if this item no longer disables one bodygroup, some other attached item may still 
 						//be disabling it. Instead, we have to go through every attached item, and apply their ply_bg's again 
@@ -2234,11 +2243,10 @@ if SERVER then
 							tab = child:GetTable()
 							if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
 								local child_ply_bg
-								if child == e then 
-									child_ply_bg = ply_bg 
+								if child == e then
+									child_ply_bg = vis.ply_bg 
 								else 
-									tab = tab.EntityMods.TF2ItemBrowser_Item
-									_, _, _, child_ply_bg = GetItemModelVisuals(tab.i, classes[tab.class].longname, tab.team, tab.style)
+									child_ply_bg = GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg
 								end
 								for k, v in pairs (child_ply_bg) do
 									if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
@@ -2283,9 +2291,7 @@ if SERVER then
 			if !IsValid(ent) then return end
 			local tab = e:GetTable()
 			if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-				tab = tab.EntityMods.TF2ItemBrowser_Item
-				local _, _, _, ply_bg = GetItemModelVisuals(tab.i, classes[tab.class].longname, tab.team, tab.style)
-				for k, _ in pairs (ply_bg) do
+				for k, _ in pairs (GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg) do
 					//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
 					//item other than the one we're removing, and apply their ply_bg's again to a blank slate parent ent.
 					for i = 0, ent:GetNumBodyGroups() do
@@ -2294,9 +2300,7 @@ if SERVER then
 					for k, child in ipairs (ent:GetChildren()) do
 						tab = child:GetTable()
 						if child != e and tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-							tab = tab.EntityMods.TF2ItemBrowser_Item
-							_, _, _, ply_bg = GetItemModelVisuals(tab.i, classes[tab.class].longname, tab.team, tab.style)
-							for k, v in pairs (ply_bg) do
+							for k, v in pairs (GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg) do
 								if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 								ent:SetBodygroup(k, v)
 							end
