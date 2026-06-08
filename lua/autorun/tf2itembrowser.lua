@@ -455,10 +455,10 @@ local function GetClassModelWithBasename(tab, class)
 	end
 end
 
-//Given an item data table with i, class, team, style, returns a table with the model, skin, and bodygroups to use.
+//Given an item data table with id, class, team, style, returns a table with the model, skin, and bodygroups to use.
 local function GetItemModelVisuals(data)
 
-	local i = TF2Items.items[data.i]
+	local i = TF2Items.items[data.id]
 	local vis = {
 		model = nil,
 		skin = nil,
@@ -1129,7 +1129,7 @@ if CLIENT then
 					atticons:AddPanel(item)
 				else item = atticons.icons[ent] end
 
-				item:SetItemID(data.i)
+				item:SetItemID(data.id)
 				item.data = data
 				
 				if forceopen then
@@ -1331,14 +1331,14 @@ if CLIENT then
 
 	end
 
-	function PANEL:SetItemID(i)
+	function PANEL:SetItemID(id)
 
-		self.m_iItemID = i
-		self.ImageToQueue = TF2Items.items[i].image_inventory
-		self.quality = TF2Items.items[i].item_quality or self.quality
-		self.rarity = TF2Items.items[i]._rarity or self.rarity
-		self.sound_pressed = TF2Items.items[i].mouse_pressed_sound or self.sound_pressed
-		self.sound_drop = TF2Items.items[i].drop_sound or self.sound_drop
+		self.m_iItemID = id
+		self.ImageToQueue = TF2Items.items[id].image_inventory
+		self.quality = TF2Items.items[id].item_quality or self.quality
+		self.rarity = TF2Items.items[id]._rarity or self.rarity
+		self.sound_pressed = TF2Items.items[id].mouse_pressed_sound or self.sound_pressed
+		self.sound_drop = TF2Items.items[id].drop_sound or self.sound_drop
 
 		self.itemname = self:UpdateItemName()
 		self.itemdesc = self:UpdateItemDescription()
@@ -1659,7 +1659,7 @@ if CLIENT then
 			if table.IsEmpty(data) then 
 				local _, _class = pnl.class:GetSelected()
 				data = {
-					i = self:GetItemID(), 
+					id = self:GetItemID(), 
 					class = _class, 
 					team = TF2ItemBrowser.attopts.team:GetChecked(),
 					style = 0
@@ -1700,7 +1700,7 @@ if CLIENT then
 				local should_show_class = false
 				for k, v in pairs (i.used_by_classes) do
 					if k != data.class then
-						local vis2 = GetItemModelVisuals({i = data.i, class = k, team = data.team, style = data.style})
+						local vis2 = GetItemModelVisuals({id = data.id, class = k, team = data.team, style = data.style})
 						for k, v in pairs (vis2.item_bg) do
 							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
 							//badges like the dueling badges have useless bodygroup setters for some reason
@@ -1850,7 +1850,7 @@ if CLIENT then
 			if pnl.style then _, _style = pnl.style:GetSelected() end
 
 			local data = {
-				i = self:GetItemID(),
+				id = self:GetItemID(),
 				class = _class,
 				team = TF2ItemBrowser.attopts.team:GetChecked(),
 				style = _style,
@@ -2075,7 +2075,7 @@ BrowserInputs = table.Flip(BrowserInputs)
 //This lets us add as many networkable strings to this table as we want, without having to manually assign each one a number.
 
 WriteItemDataTable = function(data)
-	net.WriteUInt(data.i, 15)
+	net.WriteUInt(data.id, 15)
 	//translate class name back to id number
 	for k, class in ipairs (classes) do
 		if class.longname == data.class then
@@ -2089,7 +2089,7 @@ end
 
 ReadItemDataTable = function()
 	return {
-		i = net.ReadUInt(15),
+		id = net.ReadUInt(15),
 		class = classes[net.ReadUInt(4)].longname,
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),
