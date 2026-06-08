@@ -1065,7 +1065,7 @@ if CLIENT then
 							local col = (k-1)%10
 							local row = math.floor((k-1)/10)
 							item:SetPos(col*(item_icon_w+item_icon_gap), row*(item_icon_h+item_icon_gap))
-							item:SetItemID(v)
+							item.data = v //this will be populated with the default data table for this item once the icon renders
 							self.icons[v] = item
 						else
 							//We've gone through the whole table, so we're done here, get rid of it
@@ -1129,8 +1129,7 @@ if CLIENT then
 					atticons:AddPanel(item)
 				else item = atticons.icons[ent] end
 
-				item:SetItemID(data.id)
-				item.data = data
+				item:SetData(data)
 				
 				if forceopen then
 					atticons:ScrollToChild(item)
@@ -1314,35 +1313,65 @@ if CLIENT then
 
 	local PANEL = {}
 
-	AccessorFunc(PANEL, "m_iItemID", "ItemID")
-
-	PANEL.data = {} //if this item icon is for an existing attached item, this tab will be populated with the item's settings. otherwise, this tab will be empty and the icon will use default values.
-
 	function PANEL:Init()
 
 		self:SetSize(item_icon_w, item_icon_h)
 		self:SetDoubleClickingEnabled(false)
 		self:SetText("")
 
-		self.quality = "unique"
-		self.rarity = nil
-		self.sound_pressed = "ui/item_default_pickup.wav"
-		self.sound_drop = "ui/item_default_drop.wav"
-
 	end
 
-	function PANEL:SetItemID(id)
+	function PANEL:SetData(data)
 
-		self.m_iItemID = id
+		self.data = data
+
+		local id = data.id
 		self.ImageToQueue = TF2Items.items[id].image_inventory
-		self.quality = TF2Items.items[id].item_quality or self.quality
-		self.rarity = TF2Items.items[id]._rarity or self.rarity
-		self.sound_pressed = TF2Items.items[id].mouse_pressed_sound or self.sound_pressed
-		self.sound_drop = TF2Items.items[id].drop_sound or self.sound_drop
+		self.quality = TF2Items.items[id].item_quality or "unique"
+		self.rarity = TF2Items.items[id]._rarity or nil
+		self.sound_pressed = TF2Items.items[id].mouse_pressed_sound or "ui/item_default_pickup.wav"
+		self.sound_drop = TF2Items.items[id].drop_sound or "ui/item_default_drop.wav"
 
 		self.itemname = self:UpdateItemName()
 		self.itemdesc = self:UpdateItemDescription()
-		
+
+	end
+
+	function PANEL:SetDefaultData()
+
+		//When the icon is first created, it's only assigned an id number, and then when the icon becomes visible, Paint calls this func
+		//to populate the data table. This is so we don't have to run all this a thousand times at once for icons we might not even use.
+		local id = self.data
+		if istable(id) then id = self.data.id end
+		local i = TF2Items.items[id]
+
+		local _, class = TF2ItemBrowser.filters.class:GetSelected()
+		if class == "(any)" then
+			//go through classes in order, default to the first one that can use this item
+			for k, v in ipairs (classes) do 
+				if i.used_by_classes[v.longname] then
+					class = v.longname
+					break
+				end
+			end
+		end
+
+		local style = 0
+		if i.visuals and i.visuals.styles then
+			//default to the first style listed; i THINK this is always 0 but let's make extra sure
+			for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+				style = k
+				break
+			end
+		end
+
+		self:SetData({
+			id = id, 
+			class = class, 
+			team = TF2ItemBrowser.attopts.team:GetChecked(),
+			style = style,
+		})
+
 	end
 
 	function PANEL:UpdateItemName()
@@ -1350,7 +1379,7 @@ if CLIENT then
 		//based on https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L610, it's a whopper
 		//this is probably way overengineered for our use case, but oh well!
 
-		local i = TF2Items.items[self:GetItemID()]
+		local i = TF2Items.items[self.data.id]
 		if !i then return "Unknown Item" end
 
 		local useProperName = true
@@ -1439,7 +1468,7 @@ if CLIENT then
 		//based on CEconItemDescription::GenerateDescriptionLines https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L347
 
 		local desc = {}
-		local i = TF2Items.items[self:GetItemID()]
+		local i = TF2Items.items[self.data.id]
 		if !i then return desc end
 
 		if i._rarity then
@@ -1622,7 +1651,7 @@ if CLIENT then
 
 	function PANEL:CreateSpawnPanel()
 
-		local i = TF2Items.items[self:GetItemID()]
+		local i = TF2Items.items[self.data.id]
 		local betweenitems = 8
 
 		if IsValid(TF2ItemBrowser.SpawnPanel) then
@@ -1655,18 +1684,8 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		function mdl.Refresh()
-			local data = self.data
-			if table.IsEmpty(data) then 
-				local _, _class = pnl.class:GetSelected()
-				data = {
-					id = self:GetItemID(), 
-					class = _class, 
-					team = TF2ItemBrowser.attopts.team:GetChecked(),
-					style = 0
-				}
-				if pnl.style then _, data.style = pnl.style:GetSelected() end
-			end
-			local vis = GetItemModelVisuals(data)
+			if !IsValid(ent) then self.data.team = TF2ItemBrowser.attopts.team:GetChecked() end //update this every time we open or refresh the panel, since it can change after the icon has been created
+			local vis = GetItemModelVisuals(self.data)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
 			mdl:SetModel(vis.model)
@@ -1696,55 +1715,53 @@ if CLIENT then
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
 			//Also compare the bodygroups because of use_per_class_bodygroups.
-			if pnl.class then
-				local should_show_class = false
-				for k, v in pairs (i.used_by_classes) do
-					if k != data.class then
-						local vis2 = GetItemModelVisuals({id = data.id, class = k, team = data.team, style = data.style})
-						for k, v in pairs (vis2.item_bg) do
-							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
-							//badges like the dueling badges have useless bodygroup setters for some reason
-							if ent:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
-								should_show_class = true
-								break
-							end
-						end
-						if should_show_class then break end
-						if vis.model != vis2.model then
+			local should_show_class = false
+			for k, v in pairs (i.used_by_classes) do
+				if k != self.data.class then
+					local vis2 = GetItemModelVisuals({id = self.data.id, class = k, team = self.data.team, style = self.data.style})
+					for k, v in pairs (vis2.item_bg) do
+						//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+						//badges like the dueling badges have useless bodygroup setters for some reason
+						if ent:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
 							should_show_class = true
 							break
 						end
 					end
-				end
-				//Instead of hiding the class selector, keep it visible but grayed out, so that players can see what class an item belongs to
-				if table.Count(i.used_by_classes) > 1 then
-					//If there are multiple selectable classes that use the same model, change the display text on the dropdown to list them
-					if !should_show_class and pnl.class:IsEnabled() then
-						if table.Count(i.used_by_classes) == 9 then
-							//if it's used by all classes (i.e. medals), just show "(any)"
-							pnl.class:SetText("(any)")
-							
-						else
-							local text
-							for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
-								if i.used_by_classes[v.longname] then
-									if text then
-										text = text .. ", "
-									else
-										text = ""
-									end
-									text = text .. string.NiceName(v.longname)
-								end
-							end
-							pnl.class:SetText(text)
-						end
-					elseif should_show_class and !pnl.class:IsEnabled() then
-						pnl.class:SetText(string.NiceName(data.class))
+					if should_show_class then break end
+					if vis.model != vis2.model then
+						should_show_class = true
+						break
 					end
 				end
-				pnl.class:SetEnabled(should_show_class)
-				pnl.class:GetParent().Label:SetEnabled(should_show_class)
 			end
+			//Instead of hiding the class selector, keep it visible but grayed out, so that players can see what class an item belongs to
+			if table.Count(i.used_by_classes) > 1 then
+				//If there are multiple selectable classes that use the same model, change the display text on the dropdown to list them
+				if !should_show_class and pnl.class:IsEnabled() then
+					if table.Count(i.used_by_classes) == 9 then
+						//if it's used by all classes (i.e. medals), just show "(any)"
+						pnl.class:SetText("(any)")
+						
+					else
+						local text
+						for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
+							if i.used_by_classes[v.longname] then
+								if text then
+									text = text .. ", "
+								else
+									text = ""
+								end
+								text = text .. string.NiceName(v.longname)
+							end
+						end
+						pnl.class:SetText(text)
+					end
+				elseif should_show_class and !pnl.class:IsEnabled() then
+					pnl.class:SetText(string.NiceName(self.data.class))
+				end
+			end
+			pnl.class:SetEnabled(should_show_class)
+			pnl.class:GetParent().Label:SetEnabled(should_show_class)
 		end
 
 		local function AddDropdown(label, populatefunc, select_extras)
@@ -1764,8 +1781,9 @@ if CLIENT then
 			drop.Combo:SetSortItems(false)
 			populatefunc(drop.Combo)
 			function drop.Combo.OnSelect(_, index, value, data)
+				if select_extras then select_extras(data) end
 				drop.Combo.value = data
-				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, pnl.GetItemDataTable()) end
+				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
 				mdl.Refresh()
 			end
 			function drop.Combo:OnMenuOpened(menu)
@@ -1790,34 +1808,25 @@ if CLIENT then
 		end
 
 		pnl.class = AddDropdown("Class", function(drop)
-			local first, _, f = nil, nil, self.data.class
-			if f == nil then
-				_, f = TF2ItemBrowser.filters.class:GetSelected()
-				if f == "(any)" then f = nil end
-			end
-			if f == nil then first = true end
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
-					drop:AddChoice(string.NiceName(v.longname), v.longname, first or f == v.longname)
-					first = nil
+					drop:AddChoice(string.NiceName(v.longname), v.longname, self.data.class == v.longname)
 				end
 			end
+		end, function(data)
+			self.data.class = data
 		end)
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
 			pnl.style = AddDropdown("Style", function(drop)
-				local first, f = nil, self.data.style
-				if f == nil then first = true end
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
-					drop:AddChoice(name or "PLACEHOLDER " .. k, k, first or f == k)
-					first = nil
+					drop:AddChoice(name or "PLACEHOLDER " .. k, k, self.data.style == k) //TODO: replace placeholders for nameless styles eventually (australiums, campaign stamp ranks)
 				end
+			end, function(data)
+				self.data.style = data
 			end)
 		end
-
-		//TODO: currently we get the team value from the selector in TF2ItemBrowser because it's intended to always be the same, and 
-		//updates all attached items when it's changed, but what if they get desynced somehow? do we need to add handling for that?
 
 		local button = vgui.Create("DButton", pnl)
 		if IsValid(self.entity) then
@@ -1837,28 +1846,11 @@ if CLIENT then
 			if IsValid(self.entity) then
 				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
 			elseif IsValid(TF2ItemBrowser:GetEntity()) then
-				TF2ItemBrowser:DoInput("attach_item_spawn", pnl.GetItemDataTable())
+				TF2ItemBrowser:DoInput("attach_item_spawn", self.data)
 			else
-				TF2ItemBrowser:DoInput("item_spawn", pnl.GetItemDataTable())
+				TF2ItemBrowser:DoInput("item_spawn", self.data)
 			end
 			surface.PlaySound(self.sound_drop)
-		end
-
-		function pnl.GetItemDataTable()
-			local _, _class = pnl.class:GetSelected()
-			local _style = 0 
-			if pnl.style then _, _style = pnl.style:GetSelected() end
-
-			local data = {
-				id = self:GetItemID(),
-				class = _class,
-				team = TF2ItemBrowser.attopts.team:GetChecked(),
-				style = _style,
-			}
-			if IsValid(self.entity) then self.data = data end
-			//MsgN("pnl.GetItemDataTable got table:")
-			//PrintTable(data)
-			return data
 		end
 		
 		pnl:SetWide(popup_w)
@@ -1878,6 +1870,11 @@ if CLIENT then
 		AddTFButtonSounds(close)
 		function close:DoClick()
 			pnl:Remove()
+		end
+
+		//If this itemicon doesn't correspond to an entity, then reset any changes when we close the spawn panel
+		function pnl.OnRemove()
+			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
 		end
 
 	end
@@ -1947,6 +1944,9 @@ if CLIENT then
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
 	function PANEL:Paint(w, h)
+
+		//This is a newly created icon being drawn for the first time, populate its data table
+		if isnumber(self.data) then self:SetDefaultData() end
 
 		if self.OpenNextFrame then
 			self:CreateSpawnPanel()
@@ -2019,8 +2019,8 @@ if CLIENT then
 		local menu = DermaMenu()
 
 		local opt = menu:AddOption("Print item data in console", function()
-			MsgN(self:GetItemID(), " ", TF2Items.items[self:GetItemID()].name)
-			PrintTable(TF2Items.items[self:GetItemID()])
+			MsgN(self.data.id, " ", TF2Items.items[self.data.id].name)
+			PrintTable(TF2Items.items[self.data.id])
 			MsgN("")
 		end)
 		opt:SetIcon("icon16/page_copy.png")
