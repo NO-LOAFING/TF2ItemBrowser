@@ -2605,37 +2605,39 @@ if SERVER then
 	//Constraint used to keep submodels associated with the main item entity between dupes/saves
 	function constraint.TF2ItemBrowser_Item_SubModel(Ent1, Ent2, Role, Attach_Num, ply)
 
-		if !Ent1 or !Ent2 then return end
+		timer.Simple(0, function() //wait a frame, because otherwise easy bonemerge can break this constraint when loaded from a dupe/save
+			if !Ent1 or !Ent2 then return end
 
-		Ent1.TF2ItemBrowser_Item_SubModels = Ent1.TF2ItemBrowser_Item_SubModels or {}
-		if Attach_Num != nil then
-			Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent1.TF2ItemBrowser_Item_SubModels[Role] or {}
-			Ent1.TF2ItemBrowser_Item_SubModels[Role][Attach_Num] = Ent2
-		else
-			Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
-		end
-		Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
-		Ent1:DeleteOnRemove(Ent2)
-		
-		//create a dummy ent for the constraint functions to use
-		local const = ents.Create("info_target")
-		const:Spawn()
-		const:Activate()
+			Ent1.TF2ItemBrowser_Item_SubModels = Ent1.TF2ItemBrowser_Item_SubModels or {}
+			if Attach_Num != nil then
+				Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent1.TF2ItemBrowser_Item_SubModels[Role] or {}
+				Ent1.TF2ItemBrowser_Item_SubModels[Role][Attach_Num] = Ent2
+			else
+				Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
+			end
+			Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
+			Ent1:DeleteOnRemove(Ent2)
+			
+			//create a dummy ent for the constraint functions to use
+			local const = ents.Create("info_target")
+			const:Spawn()
+			const:Activate()
 
-		constraint.AddConstraintTable(Ent1, const, Ent2)
+			constraint.AddConstraintTable(Ent1, const, Ent2)
+			
+			local ctable = {
+				Type = "TF2ItemBrowser_Item_SubModel",
+				Ent1 = Ent1,
+				Ent2 = Ent2,
+				Role = Role,
+				Attach_Num = Attach_Num,
+				ply = ply,
+			}
 		
-		local ctable = {
-			Type = "TF2ItemBrowser_Item_SubModel",
-			Ent1 = Ent1,
-			Ent2 = Ent2,
-			Role = Role,
-			Attach_Num = Attach_Num,
-			ply = ply,
-		}
-	
-		const:SetTable(ctable)
-	
-		return const
+			const:SetTable(ctable)
+		
+			return const
+		end)
 
 	end
 	duplicator.RegisterConstraint("TF2ItemBrowser_Item_SubModel", constraint.TF2ItemBrowser_Item_SubModel, "Ent1", "Ent2", "Role", "Attach_Num", "ply")
