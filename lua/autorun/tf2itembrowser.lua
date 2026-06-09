@@ -1313,11 +1313,7 @@ if CLIENT then
 						net.WriteEntity(self:GetEntity())
 					end
 
-					if input == "item_spawn" then
-
-						WriteItemDataTable(args[1]) //item data table
-						
-					elseif input == "attach_item_spawn" then
+					if input == "item_spawn" or input == "attach_item_spawn" then
 
 						WriteItemDataTable(args[1]) //item data table
 						net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool())
@@ -1862,15 +1858,17 @@ if CLIENT then
 			for k, v in pairs (i.used_by_classes) do
 				if k != self.data.class then
 					local vis2 = GetItemModelVisuals({id = self.data.id, class = k, team = self.data.team, style = self.data.style})
-					for k, v in pairs (vis2.item_bg) do
-						//make sure this is changing a bodygroup that actually exists; a whole bunch of 
-						//badges like the dueling badges have useless bodygroup setters for some reason
-						if ent:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
-							should_show_class = true
-							break
+					if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
+						for k, v in pairs (vis2.item_bg) do
+							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+							//badges like the dueling badges have useless bodygroup setters for some reason
+							if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
+								should_show_class = true
+								break
+							end
 						end
+						if should_show_class then break end
 					end
-					if should_show_class then break end
 					for k, v in pairs (vis2.models) do
 						if vis.models[k] != v then
 							should_show_class = true
@@ -1886,7 +1884,6 @@ if CLIENT then
 					if table.Count(i.used_by_classes) == 9 then
 						//if it's used by all classes (i.e. medals), just show "(any)"
 						pnl.class:SetText("(any)")
-						
 					else
 						local text
 						for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
@@ -2314,53 +2311,53 @@ if SERVER then
 		if !input then return end
 		input = table.KeyFromValue(BrowserInputs, input)
 
-		local ent
+		local ent, data, merge_type
 		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
 		end
 
-		if input == "item_spawn" or input == "attach_item_spawn" then
+		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
+		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
+		//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
+		//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
+		local function CreateItemEntity(model, skin, item_bg, parent)
 
-			local data = ReadItemDataTable()
-			local vis = GetItemModelVisuals(data)
-
-			//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
-			//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
-			//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
-			//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
-			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, vis.models.item, vis.skin) or !util.IsValidModel(vis.models.item) then return end
+			if !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) 
+			or (parent != nil and !IsValid(parent)) then return end
 			//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
-			local is_effect = !util.IsValidProp(vis.models.item)
-			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, vis.models.item)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, vis.models.item)) then return end
+			local is_effect = !util.IsValidProp(model)
+			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, model)) then return end
 			local e = "prop_physics"
 			if is_effect then e = "prop_effect" end
-			e = DoPlayerEntitySpawn(ply, e, vis.models.item, vis.skin)
+			e = DoPlayerEntitySpawn(ply, e, model, skin)
 			if !IsValid(e) then return end
 			if !is_effect then
-				gamemode.Call("PlayerSpawnedProp", ply, vis.models.item, e)
+				gamemode.Call("PlayerSpawnedProp", ply, model, e)
 				FixInvalidPhysicsObject(e)
-				DoPropSpawnedEffect(e)
+				//DoPropSpawnedEffect(e)
 
 				undo.Create("prop_physics")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_physics (" .. tostring(vis.models.item) .. ")")
+				undo.Finish("#prop_physics (" .. tostring(model) .. ")")
 				ply:AddCleanup("props", e)
 			else
-				gamemode.Call("PlayerSpawnedEffect", ply, vis.models.item, e)
-				if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
+				gamemode.Call("PlayerSpawnedEffect", ply, model, e)
+				//if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
 
 				undo.Create("prop_effect")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_effect (" .. tostring(vis.models.item) .. ")")
+				undo.Finish("#prop_effect (" .. tostring(model) .. ")")
 				ply:AddCleanup("effects", e)
 			end
 
 			local e2 = e
 			if IsValid(e.AttachedEntity) then e2 = e.AttachedEntity end
-			for k, v in pairs (vis.item_bg) do
-				e2:SetBodygroup(e2:FindBodygroupByName(k), v)
+			if item_bg then
+				for k, v in pairs (item_bg) do
+					e2:SetBodygroup(e2:FindBodygroupByName(k), v)
+				end
 			end
 
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
@@ -2370,33 +2367,88 @@ if SERVER then
 			--[[DisablePropCreateEffect = true
 			e = ConvertEntityToAnimprop(e, ply, true, false, false)
 			DisablePropCreateEffect = nil]]
+			
+			if IsValid(parent) then
+				if merge_type then
+					local old_e = e
+					e = CreateAdvBonemergeEntity(e, parent, ply, false, false, true)
+					if !IsValid(e) then return end
+					local const = constraint.AdvBoneMerge(parent, e, ply)
+					if e != old_e then old_e:Remove() end
+				else
+					e = rb655_ApplyBonemerge(e2, parent) //unlike advbone, this one expects AttachedEntity for prop_effects
+				end
+			end
 
-			if input == "attach_item_spawn" then
+			return e
+
+		end
+
+		if input == "item_spawn" or input == "attach_item_spawn" then
+
+			data = ReadItemDataTable()
+			local vis = GetItemModelVisuals(data)
+			merge_type = net.ReadBool()
+
+			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) then return end
+
+			local models = {}
+			if data.models.item then
+				table.insert(models, {model = vis.models.item, is_main = true})
+				for k, v in ipairs (vis.models.attached or {}) do
+					table.insert(models, {model = v, merge = true})
+				end
+				if data.models.attached_festive then
+					for k, v in ipairs (vis.models.attached_festive) do
+						table.insert(models, {model = v, merge = true})
+					end
+				end
+			end
+			if data.models.wearable then table.insert(models, {model = vis.models.wearable}) end
+			if data.models.wearable_2 then table.insert(models, {model = vis.models.wearable_2}) end
+			if data.models.taunt_prop then table.insert(models, {model = vis.models.taunt_prop}) end
+
+			local spawned_models = {}
+			for k, v in ipairs (models) do
+				local parent = ent
+				if v.merge and IsValid(spawned_models[1]) then parent = spawned_models[1] end
+				local item_bg
+				if v.is_main then item_bg = vis.item_bg end
+
+				local e = CreateItemEntity(v.model, vis.skin, item_bg, parent)
+				if !IsValid(e) then continue end
+
+				table.insert(spawned_models, e)
+			end
+			if !IsValid(spawned_models[1]) then return end
+
+			//TODO: constraints to associate wearables and attachments with the main entity for modify inputs
+
+			if IsValid(ent) then
+				//Use a one-size-fits-all undo instead of addon-specific undos;
+				//for advbone in particular, we want to remove the entity instead of unmerging it
+				undo.Create("TF2ItemBrowser_Item")
+					for _, e in ipairs (spawned_models) do
+						undo.AddEntity(e)
+						if e:GetClass() == "prop_physics" then
+							ply:AddCleanup("props", e)
+						elseif e:GetClass() == "prop_effect" then
+							ply:AddCleanup("effects", e)
+						end
+					end
+					undo.SetPlayer(ply)
+				undo.Finish("Attached Item (" .. TF2Items.items[data.id].name .. ")") //item name instead of model name because this can change
+
 				for k, v in pairs (vis.ply_bg) do
 					//when attaching a new item, we can keep this simple, and just change the ply_bg's the item has listed
 					if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 					ent:SetBodygroup(k, v)
 				end
-				if net.ReadBool() then
-					local old_e = e
-					e = CreateAdvBonemergeEntity(e, ent, ply, false, false, true)
-					if !IsValid(e) then return end
-					local const = constraint.AdvBoneMerge(ent, e, ply)
-					if e != old_e then old_e:Remove() end
-				else
-					e = rb655_ApplyBonemerge(e2, ent) //unlike advbone, this one expects AttachedEntity for prop_effects
-				end
-				//Use a one-size-fits-all undo instead of addon-specific undos;
-				//for advbone in particular, we want to remove the entity instead of unmerging it
-				undo.Create("TF2ItemBrowser_Item")
-					undo.AddEntity(e)
-					undo.SetPlayer(ply)
-				undo.Finish("Attached Item (" .. vis.models.item .. ")")
 
 				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
 				//	if !IsValid(e) then return end
 					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
-						net.WriteEntity(e)
+						net.WriteEntity(spawned_models[1])
 						net.WriteBool(true) //open upon received
 						WriteItemDataTable(data)
 					net.Send(ply)
@@ -2406,8 +2458,8 @@ if SERVER then
 		elseif input == "attach_item_modify" then
 
 			local e = net.ReadEntity()
-			local data = ReadItemDataTable()
-			local vis = GetItemModelVisuals(data)
+			data = ReadItemDataTable()
+			vis = GetItemModelVisuals(data)
 
 			if !IsValid(e) or e:GetParent() != ent then return end
 
