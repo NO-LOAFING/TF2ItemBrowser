@@ -349,7 +349,7 @@ for k, v in pairs (s.items) do
 	if !v.used_by_classes then
 		//MsgN("group 1: ", k, " ", v.name)
 		s.items[k] = nil
-	elseif (!v.model_player and !v.model_player_per_class and !v.extra_wearable and !v.visuals and !v.taunt) then
+	elseif (!v.model_player and !v.model_player_per_class and !v.visuals and !v.taunt) then
 		//MsgN("group 2: ", k, " ", v.name)
 		s.items[k] = nil
 	end
@@ -488,14 +488,15 @@ local function GetItemModelVisuals(data)
 
 	local i = TF2Items.items[data.id]
 	local vis = {
-		model = nil,
+		models = {},
 		skin = nil,
 		item_bg = {},
 		ply_bg = {}
 	}
+	local model
 
 	//First go through standard values on the item
-	vis.model = GetClassModelWithBasename(i.model_player_per_class, data.class) or i.model_player
+	model = GetClassModelWithBasename(i.model_player_per_class, data.class) or i.model_player
 	vis.skin = i.default_skin or GetVisualsValue(i, data.team, "skin")
 	local classbg = GetVisualsValue(i, data.team, "use_per_class_bodygroups")
 	if classbg and classbg == 1 then
@@ -518,13 +519,13 @@ local function GetItemModelVisuals(data)
 	if i.visuals and i.visuals.styles then //this is never contained in visuals_red/visuals_blu
 		local style = i.visuals.styles[data.style]
 		if !data.team and style.model_player_per_class_red then
-			vis.model = GetClassModelWithBasename(style.model_player_per_class_red, data.class)
+			model = GetClassModelWithBasename(style.model_player_per_class_red, data.class)
 		elseif data.team and style.model_player_per_class_blue then
-			vis.model = GetClassModelWithBasename(style.model_player_per_class_blue, data.class)
+			model = GetClassModelWithBasename(style.model_player_per_class_blue, data.class)
 		elseif style.model_player_per_class then
-			vis.model = GetClassModelWithBasename(style.model_player_per_class, data.class)
+			model = GetClassModelWithBasename(style.model_player_per_class, data.class)
 		elseif style.model_player then
-			vis.model = style.model_player
+			model = style.model_player
 		end
 		//note: 1033 The TF2VRH has a unique style.model_player_per_class_alt table for alternate models to use in vr mode, but 
 		//there's already a second style that uses these alternate models regardless, so this is useless, we don't care about it
@@ -550,7 +551,24 @@ local function GetItemModelVisuals(data)
 		//by default, red team uses skin 0, and blu team uses skin 1
 		if !data.team then vis.skin = 0 else vis.skin = 1 end 
 	end
-	if !vis.model then vis.model = "" end
+	vis.models.item = model //can be nil
+	local att = GetVisualsValue(i, data.team, "attached_models")
+	if att then
+		vis.models.attached = {}
+		for k, v in SortedPairs (att) do
+			table.insert(vis.models.attached, v.model)
+		end
+	end
+	local att = GetVisualsValue(i, data.team, "attached_models_festive")
+	if att then
+		vis.models.attached_festive = {}
+		for k, v in SortedPairs (att) do
+			table.insert(vis.models.attached_festive, v.model)
+		end
+	end
+	vis.models.wearable = i.extra_wearable
+	vis.models.wearable_2 = i.extra_wearable_2
+	if i.taunt and i.taunt.custom_taunt_prop_per_class then vis.models.taunt_prop = i.taunt.custom_taunt_prop_per_class[data.class] end
 
 	return vis
 
@@ -1351,18 +1369,19 @@ if CLIENT then
 		local i = TF2Items.items[data.id]
 
 		//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
-		if GetItemModelVisuals(data).model == "" then data.submodels.item = nil end
-		if !i.extra_wearable then data.submodels.wearable = nil end
-		if !i.extra_wearable_2 then data.submodels.wearable_2 = nil end
-		if !i.taunt or !i.taunt.custom_taunt_prop_per_class then data.submodels.taunt_prop = nil 
-		elseif data.submodels.item == nil then data.submodels.taunt_prop = true end
+		local vis = GetItemModelVisuals(data)
+		if !vis.models.item then data.models.item = nil end
+		if !vis.models.wearable then data.models.wearable = nil end
+		if !vis.models.wearable_2 then data.models.wearable_2 = nil end
+		if !vis.models.taunt_prop then data.models.taunt_prop = nil
+		elseif !vis.models.item then data.models.taunt_prop = true end
+		if !vis.models.attached_festive then data.models.attached_festive = nil end
 
-		local id = data.id
-		self.ImageToQueue = TF2Items.items[id].image_inventory
-		self.quality = TF2Items.items[id].item_quality or "unique"
-		self.rarity = TF2Items.items[id]._rarity or nil
-		self.sound_pressed = TF2Items.items[id].mouse_pressed_sound or "ui/item_default_pickup.wav"
-		self.sound_drop = TF2Items.items[id].drop_sound or "ui/item_default_drop.wav"
+		self.ImageToQueue = i.image_inventory
+		self.quality = i.item_quality or "unique"
+		self.rarity = i._rarity or nil
+		self.sound_pressed = i.mouse_pressed_sound or "ui/item_default_pickup.wav"
+		self.sound_drop = i.drop_sound or "ui/item_default_drop.wav"
 
 		self.itemname = self:UpdateItemName()
 		self.itemdesc = self:UpdateItemDescription()
@@ -1403,11 +1422,12 @@ if CLIENT then
 			team = TF2ItemBrowser.attopts.team:GetChecked(),
 			style = style,
 
-			submodels = {
+			models = {
 				item = true,
 				wearable = true,
 				wearable_2 = false,
-				taunt_prop = false
+				taunt_prop = false,
+				attached_festive = false,
 			},
 		})
 
@@ -1731,18 +1751,22 @@ if CLIENT then
 			mdl.models = {}
 
 			local models = {}
-			if self.data.submodels.item then
-				table.insert(models, {model = vis.model, is_main = true})
-				for k, v in SortedPairs (GetVisualsValue(i, self.data.team, "attached_models") or {}) do
-					table.insert(models, {model = v.model, merge = true})
+			if self.data.models.item then
+				table.insert(models, {model = vis.models.item, is_main = true})
+				for k, v in ipairs (vis.models.attached or {}) do
+					table.insert(models, {model = v, merge = true})
 				end
-				//TODO: do festivizers here too
+				if self.data.models.attached_festive then
+					for k, v in ipairs (vis.models.attached_festive) do
+						table.insert(models, {model = v, merge = true})
+					end
+				end
 			end
-			if self.data.submodels.wearable then table.insert(models, {model = i.extra_wearable}) end
-			if self.data.submodels.wearable_2 then table.insert(models, {model = i.extra_wearable_2}) end
-			if self.data.submodels.taunt_prop then table.insert(models, {model = i.taunt.custom_taunt_prop_per_class[self.data.class]}) end
+			if self.data.models.wearable then table.insert(models, {model = vis.models.wearable}) end
+			if self.data.models.wearable_2 then table.insert(models, {model = vis.models.wearable_2}) end
+			if self.data.models.taunt_prop then table.insert(models, {model = vis.models.taunt_prop}) end
 			local offset_height_base, offset_height
-			for k, v in pairs (models) do
+			for k, v in ipairs (models) do
 				local ent = ClientsideModel(v.model, RENDERGROUP_OTHER)
 				if !IsValid(ent) then return end
 
@@ -1847,9 +1871,11 @@ if CLIENT then
 						end
 					end
 					if should_show_class then break end
-					if vis.model != vis2.model then
-						should_show_class = true
-						break
+					for k, v in pairs (vis2.models) do
+						if vis.models[k] != v then
+							should_show_class = true
+							break
+						end
 					end
 				end
 			end
@@ -1893,27 +1919,42 @@ if CLIENT then
 		checks:SetHeight(15)
 		checks:Dock(TOP)
 		checks.checks = {}
-		for k, v in SortedPairs (self.data.submodels) do
+		for k, v in SortedPairs (self.data.models) do
 			local check = vgui.Create("DCheckBoxLabel", checks)
-			check:SetText(string.NiceName(k))
+			check.model = k
+			local text = string.NiceName(k)
+			if k == "attached_festive" then text = "Festivize" end
+			check:SetText(text)
 			check:SetHeight(15)
 			check:Dock(LEFT)
 			check:SetChecked(v)
 			check.OnChange = function(_, val)
-				self.data.submodels[k] = val
+				self.data.models[k] = val
 				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
 				mdl.Refresh()
 			end
 			table.insert(checks.checks, check)
 		end
-		checks:DockMargin(side_margins,0,side_margins,betweenitems)
+		checks:DockMargin(side_margins,0,side_margins,betweencategories)
 		function checks:PerformLayout(w, h)
 			for _, v in ipairs (checks.checks) do
 				v:SetWide(w / #checks.checks) //draw these side-by-side so as to not take up too much space
 			end
 		end
 		checks:InvalidateLayout()
-		if #checks.checks < 2 then checks:Remove() end //if there's only one submodel then we don't need these
+		if #checks.checks < 2 then
+			//if there's only one submodel then we don't need these
+			checks:Remove()
+		elseif self.data.models.wearable == nil and self.data.models.wearable_2 == nil and self.data.models.taunt_prop == nil then
+			//if we only have the base item and optional attachments, then we don't need the option for the base item
+			for k, v in ipairs (checks.checks) do
+				if v.model == "item" then
+					table.remove(checks.checks, k)
+					v:Remove()
+					break
+				end
+			end
+		end	
 
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
@@ -2237,10 +2278,11 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.team)
 	net.WriteUInt(data.style, 4)
 
-	net.WriteBool(data.submodels.item)
-	net.WriteBool(data.submodels.wearable)
-	net.WriteBool(data.submodels.wearable_2)
-	net.WriteBool(data.submodels.taunt_prop)
+	net.WriteBool(data.models.item)
+	net.WriteBool(data.models.wearable)
+	net.WriteBool(data.models.wearable_2)
+	net.WriteBool(data.models.taunt_prop)
+	net.WriteBool(data.models.attached_festive)
 end
 
 ReadItemDataTable = function()
@@ -2250,11 +2292,12 @@ ReadItemDataTable = function()
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),
 
-		submodels = {
+		models = {
 			item = net.ReadBool(),
 			wearable = net.ReadBool(),
 			wearable_2 = net.ReadBool(),
 			taunt_prop = net.ReadBool(),
+			attached_festive = net.ReadBool()
 		},
 	}
 end
@@ -2285,32 +2328,32 @@ if SERVER then
 			//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
 			//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
 			//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
-			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, vis.model, vis.skin) or !util.IsValidModel(vis.model) then return end
+			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) or !gamemode.Call("PlayerSpawnObject", ply, vis.models.item, vis.skin) or !util.IsValidModel(vis.models.item) then return end
 			//emulate GMODSpawnProp for props, GMODSpawnEffect for effects; these are very similar
-			local is_effect = !util.IsValidProp(vis.model)
-			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, vis.model)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, vis.model)) then return end
+			local is_effect = !util.IsValidProp(vis.models.item)
+			if (is_effect and !gamemode.Call("PlayerSpawnEffect", ply, vis.models.item)) or (!is_effect and !gamemode.Call("PlayerSpawnProp", ply, vis.models.item)) then return end
 			local e = "prop_physics"
 			if is_effect then e = "prop_effect" end
-			e = DoPlayerEntitySpawn(ply, e, vis.model, vis.skin)
+			e = DoPlayerEntitySpawn(ply, e, vis.models.item, vis.skin)
 			if !IsValid(e) then return end
 			if !is_effect then
-				gamemode.Call("PlayerSpawnedProp", ply, vis.model, e)
+				gamemode.Call("PlayerSpawnedProp", ply, vis.models.item, e)
 				FixInvalidPhysicsObject(e)
 				DoPropSpawnedEffect(e)
 
 				undo.Create("prop_physics")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_physics (" .. tostring(vis.model) .. ")")
+				undo.Finish("#prop_physics (" .. tostring(vis.models.item) .. ")")
 				ply:AddCleanup("props", e)
 			else
-				gamemode.Call("PlayerSpawnedEffect", ply, vis.model, e)
+				gamemode.Call("PlayerSpawnedEffect", ply, vis.models.item, e)
 				if IsValid(e.AttachedEntity) then DoPropSpawnedEffect(e.AttachedEntity) end
 
 				undo.Create("prop_effect")
 					undo.SetPlayer(ply)
 					undo.AddEntity(e)
-				undo.Finish("#prop_effect (" .. tostring(vis.model) .. ")")
+				undo.Finish("#prop_effect (" .. tostring(vis.models.item) .. ")")
 				ply:AddCleanup("effects", e)
 			end
 
@@ -2348,7 +2391,7 @@ if SERVER then
 				undo.Create("TF2ItemBrowser_Item")
 					undo.AddEntity(e)
 					undo.SetPlayer(ply)
-				undo.Finish("Attached Item (" .. vis.model .. ")")
+				undo.Finish("Attached Item (" .. vis.models.item .. ")")
 
 				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
 				//	if !IsValid(e) then return end
@@ -2368,8 +2411,8 @@ if SERVER then
 
 			if !IsValid(e) or e:GetParent() != ent then return end
 
-			if vis.model != e:GetModel() then
-				e:SetModel(vis.model)
+			if vis.models.item != e:GetModel() then
+				e:SetModel(vis.models.item)
 				//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
 				if e.AdvBone_BoneInfo then
 					e.AdvBone_BoneInfo = nil
