@@ -257,8 +257,34 @@ for k, v in pairs (s.items) do
 			table.Merge(tab, base_style)
 			v.visuals.styles[i] = tab
 		end
-		//Note: 1899 World Traveler has unique value visuals.code_controlled_bodygroup which we could also convert to styles, but this is unused 
-		//in TF2 and the bodygroup submodels are a bit broken, so ignore this (https://wiki.teamfortress.com/wiki/World_Traveler%27s_Hat)
+	//Note: 1899 World Traveler has unique value visuals.code_controlled_bodygroup which we could also convert to styles, but this is unused 
+	//in TF2 and the bodygroup submodels are a bit broken, so ignore this (https://wiki.teamfortress.com/wiki/World_Traveler%27s_Hat)
+	//Add submodels for soldier banners
+	elseif v.item_class == "tf_weapon_buff_item" then
+		local banners = { //banner models are hard-coded by buff type (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weapon_buff_item.cpp#L40-L46)
+			[1] = "models/weapons/c_models/c_buffbanner/c_buffbanner.mdl",
+			[2] = "models/workshop/weapons/c_models/c_battalion_buffbanner/c_battalion_buffbanner.mdl",
+			[3] = "models/workshop_partner/weapons/c_models/c_shogun_warbanner/c_shogun_warbanner.mdl",
+		}
+		v.extra_wearable_2 = banners[v.attributes["mod soldier buff type"].value] //silly custom "extra_wearable_2" value for additional wearable
+	//Add submodel and selectable closed/open styles for 1101 The B.A.S.E. Jumper
+	elseif v.item_class == "tf_weapon_parachute" then
+		v.visuals = v.visuals or {}
+		v.visuals.styles = {
+			[0] = {
+				name = "#TF_sbox2014_knight_helmet_style1" //closed
+			},
+			[1] = {
+				name = "#TF_sbox2014_knight_helmet_style0", //open
+				model_player = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_pack_open.mdl" //parachute model paths seem to be hard-coded as well (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weapon_buff_item.cpp#L45-L49)
+				//TODO: some sort of custom value here to play the deployed animation on the attached_model when this style is selected
+			}
+		}
+		v.visuals.attached_models = {
+			[0] = {
+				model = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_parachute.mdl"
+			}
+		}
 	end
 	//Clear visuals tables that don't contain anything useful, so that we can clear out items with no useful visual 
 	//data at the end of this function (example: noisemakers have "visuals" tables containing only sound paths)
@@ -298,6 +324,8 @@ for k, v in pairs (s.items) do
 			v.visuals.attached_models = v.visuals.attached_models or {}
 			table.insert(v.visuals.attached_models, table.Count(v.visuals.attached_models), attach)
 		end
+		v.extra_wearable = nil
+		v.extra_wearable_vm = nil
 	end
 	//Taunts: I'd like to use animprops to play these animations (especially to sync up big taunt props like the chair, or a second playermodel for
 	//partner taunts), but all the animation references use .vcd scene paths, which are all compiled into a single large scenes.image file, which 
@@ -522,12 +550,7 @@ local function GetItemModelVisuals(data)
 		//by default, red team uses skin 0, and blu team uses skin 1
 		if !data.team then vis.skin = 0 else vis.skin = 1 end 
 	end
-	if vis.model then
-		//clamp vis.skin at the number of skins the model actually has
-		vis.skin = math.min(vis.skin, util.GetModelInfo(vis.model).SkinCount - 1)
-	else
-		vis.model = ""
-	end
+	if !vis.model then vis.model = "" end
 
 	return vis
 
@@ -1325,6 +1348,14 @@ if CLIENT then
 	function PANEL:SetData(data)
 
 		self.data = data
+		local i = TF2Items.items[data.id]
+
+		//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
+		if GetItemModelVisuals(data).model == "" then data.submodels.item = nil end
+		if !i.extra_wearable then data.submodels.wearable = nil end
+		if !i.extra_wearable_2 then data.submodels.wearable_2 = nil end
+		if !i.taunt or !i.taunt.custom_taunt_prop_per_class then data.submodels.taunt_prop = nil 
+		elseif data.submodels.item == nil then data.submodels.taunt_prop = true end
 
 		local id = data.id
 		self.ImageToQueue = TF2Items.items[id].image_inventory
@@ -1371,6 +1402,13 @@ if CLIENT then
 			class = class, 
 			team = TF2ItemBrowser.attopts.team:GetChecked(),
 			style = style,
+
+			submodels = {
+				item = true,
+				wearable = true,
+				wearable_2 = false,
+				taunt_prop = false
+			},
 		})
 
 	end
@@ -1760,6 +1798,31 @@ if CLIENT then
 			pnl.class:GetParent().Label:SetEnabled(should_show_class)
 		end
 
+		local checks = vgui.Create("Panel", pnl) //container for submodel controls
+		checks:SetHeight(15)
+		checks:Dock(TOP)
+		checks.checks = {}
+		for k, v in SortedPairs (self.data.submodels) do
+			local check = vgui.Create("DCheckBoxLabel", checks)
+			check:SetText(string.NiceName(k))
+			check:SetHeight(15)
+			check:Dock(LEFT)
+			check:SetChecked(v)
+			check.OnChange = function(_, val)
+				self.data.submodels[k] = val
+				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
+			end
+			table.insert(checks.checks, check)
+		end
+		checks:DockMargin(side_margins,0,side_margins,betweenitems)
+		function checks:PerformLayout(w, h)
+			for _, v in ipairs (checks.checks) do
+				v:SetWide(w / #checks.checks) //draw these side-by-side so as to not take up too much space
+			end
+		end
+		checks:InvalidateLayout()
+		if #checks.checks < 2 then checks:Remove() end //if there's only one submodel then we don't need these
+
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
 			drop.Label = vgui.Create("DLabel", drop)
@@ -1814,7 +1877,7 @@ if CLIENT then
 		end)
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-			pnl.style = AddDropdown("Style", function(drop)
+			AddDropdown("Style", function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
 					drop:AddChoice(name or "PLACEHOLDER " .. k, k, self.data.style == k) //TODO: replace placeholders for nameless styles eventually (australiums, campaign stamp ranks)
@@ -2081,6 +2144,11 @@ WriteItemDataTable = function(data)
 	end
 	net.WriteBool(data.team)
 	net.WriteUInt(data.style, 4)
+
+	net.WriteBool(data.submodels.item)
+	net.WriteBool(data.submodels.wearable)
+	net.WriteBool(data.submodels.wearable_2)
+	net.WriteBool(data.submodels.taunt_prop)
 end
 
 ReadItemDataTable = function()
@@ -2089,6 +2157,13 @@ ReadItemDataTable = function()
 		class = classes[net.ReadUInt(4)].longname,
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),
+
+		submodels = {
+			item = net.ReadBool(),
+			wearable = net.ReadBool(),
+			wearable_2 = net.ReadBool(),
+			taunt_prop = net.ReadBool(),
+		},
 	}
 end
 
