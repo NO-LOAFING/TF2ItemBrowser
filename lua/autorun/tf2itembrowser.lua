@@ -1320,8 +1320,9 @@ if CLIENT then
 
 					elseif input == "attach_item_modify" then
 
-						net.WriteEntity(args[1]) //item ent to modify
 						WriteItemDataTable(args[2]) //item data table
+						net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool())
+						net.WriteEntity(args[1]) //item ent to modify
 
 					elseif input == "attach_item_remove" then
 					
@@ -2311,9 +2312,31 @@ if SERVER then
 		if !input then return end
 		input = table.KeyFromValue(BrowserInputs, input)
 
-		local ent, data, merge_type
+		local ent, data, vis, merge_type, submodels
 		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
+		end
+
+		if input == "item_spawn" or input == "attach_item_spawn" or input == "attach_item_modify" then
+			data = ReadItemDataTable()
+			vis = GetItemModelVisuals(data)
+			merge_type = net.ReadBool()
+
+			submodels = {}
+			if data.models.item then
+				table.insert(submodels, {role = "item"})
+				for k, v in ipairs (vis.models.attached or {}) do
+					table.insert(submodels, {role = "attached", attach_num = k})
+				end
+				if data.models.attached_festive then
+					for k, v in ipairs (vis.models.attached_festive) do
+						table.insert(submodels, {role = "attached_festive", attach_num = k})
+					end
+				end
+			end
+			if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
+			if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
+			if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
 		end
 
 		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
@@ -2386,43 +2409,29 @@ if SERVER then
 
 		if input == "item_spawn" or input == "attach_item_spawn" then
 
-			data = ReadItemDataTable()
-			local vis = GetItemModelVisuals(data)
-			merge_type = net.ReadBool()
-
 			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) then return end
 
-			local models = {}
-			if data.models.item then
-				table.insert(models, {model = vis.models.item, is_main = true})
-				for k, v in ipairs (vis.models.attached or {}) do
-					table.insert(models, {model = v, merge = true})
-				end
-				if data.models.attached_festive then
-					for k, v in ipairs (vis.models.attached_festive) do
-						table.insert(models, {model = v, merge = true})
-					end
-				end
-			end
-			if data.models.wearable then table.insert(models, {model = vis.models.wearable}) end
-			if data.models.wearable_2 then table.insert(models, {model = vis.models.wearable_2}) end
-			if data.models.taunt_prop then table.insert(models, {model = vis.models.taunt_prop}) end
-
 			local spawned_models = {}
-			for k, v in ipairs (models) do
+			for k, v in ipairs (submodels) do
 				local parent = ent
-				if v.merge and IsValid(spawned_models[1]) then parent = spawned_models[1] end
+				local model = vis.models[v.role]
+				if v.attach_num then
+					model = model[v.attach_num]
+					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
+				end
 				local item_bg
-				if v.is_main then item_bg = vis.item_bg end
+				if v.role == "item" then item_bg = vis.item_bg end
 
-				local e = CreateItemEntity(v.model, vis.skin, item_bg, parent)
+				local e = CreateItemEntity(model, vis.skin, item_bg, parent)
 				if !IsValid(e) then continue end
 
 				table.insert(spawned_models, e)
+
+				if e != spawned_models[1] then
+					constraint.TF2ItemBrowser_Item_SubModel(spawned_models[1], e, v.role, v.attach_num, ply)
+				end
 			end
 			if !IsValid(spawned_models[1]) then return end
-
-			//TODO: constraints to associate wearables and attachments with the main entity for modify inputs
 
 			if IsValid(ent) then
 				//Use a one-size-fits-all undo instead of addon-specific undos;
@@ -2458,33 +2467,89 @@ if SERVER then
 		elseif input == "attach_item_modify" then
 
 			local e = net.ReadEntity()
-			data = ReadItemDataTable()
-			vis = GetItemModelVisuals(data)
 
-			if !IsValid(e) or e:GetParent() != ent then return end
-
-			if vis.models.item != e:GetModel() then
-				e:SetModel(vis.models.item)
-				//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
-				if e.AdvBone_BoneInfo then
-					e.AdvBone_BoneInfo = nil
-					e.AdvBone_BoneInfo = CreateAdvBoneInfoTable(e, ent, false, true)
-					//Make sure the clients get the new boneinfo table
-					net.Start("AdvBone_EntBoneInfoTableUpdate_SendToCl")
-						net.WriteEntity(e)
-					net.Broadcast()
+			if !IsValid(e) or e:GetParent() != ent or e.TF2ItemBrowser_Item_IsSubModelOf then return end
+			
+			local submodels_to_remove = table.Copy(e.TF2ItemBrowser_Item_SubModels) or {}
+			for k, v in ipairs (submodels) do
+				local model = vis.models[v.role]
+				local parent = ent
+				if v.attach_num then
+					model = model[v.attach_num]
+					parent = e
 				end
+
+				local e2
+				if k == 1 then
+					e2 = e
+
+					//Update bodygroups on base item model
+					for k, v in pairs (vis.item_bg) do
+						e:SetBodygroup(e:FindBodygroupByName(k), v)
+						//don't worry about reverting unlisted item_bg's back to 0, no existing items that use this feature require us to check for these
+					end
+				else
+					if v.role == "item" then MsgN("ERROR: TF2ItemBrowser_Input_SendToSv attach_item_modify tried to add 'item' as submodel, this shouldn't happen!") continue end
+
+					e.TF2ItemBrowser_Item_SubModels = e.TF2ItemBrowser_Item_SubModels or {}
+					if v.attach_num then
+						e.TF2ItemBrowser_Item_SubModels[v.role] = e.TF2ItemBrowser_Item_SubModels[v.role] or {}
+						e2 = e.TF2ItemBrowser_Item_SubModels[v.role][v.attach_num]
+					else
+						e2 = e.TF2ItemBrowser_Item_SubModels[v.role]
+					end
+
+					//If the input enabled a submodel, then create a new entity to use for it
+					if !IsValid(e2) then
+						e2 = CreateItemEntity(model, vis.skin, nil, parent)
+						if !IsValid(e2) then continue end
+
+						constraint.TF2ItemBrowser_Item_SubModel(e, e2, v.role, v.attach_num, ply)
+					end
+					if submodels_to_remove[v.role] then //TODO: remove debug stuff once dupe issues have been fixed
+						if istable(submodels_to_remove[v.role]) then
+							MsgN("not removing submodels in role ", v.role)
+						else
+							MsgN("not removing submodel in role ", v.role, " ", submodels_to_remove[v.role]:GetModel())
+						end
+					end
+					submodels_to_remove[v.role] = nil
+				end
+				
+
+				//Update the model and skin of each submodel
+				if model != e2:GetModel() then
+					e2:SetModel(model)
+					//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
+					if e2.AdvBone_BoneInfo then
+						e2.AdvBone_BoneInfo = nil
+						e2.AdvBone_BoneInfo = CreateAdvBoneInfoTable(e2, e2:GetParent(), false, true)
+						//Make sure the clients get the new boneinfo table
+						net.Start("AdvBone_EntBoneInfoTableUpdate_SendToCl")
+							net.WriteEntity(e2)
+						net.Broadcast()
+					end
+				end
+				e2:SetSkin(vis.skin)
 			end
-			e:SetSkin(vis.skin)
-			for k, v in pairs (vis.item_bg) do
-				e:SetBodygroup(e:FindBodygroupByName(k), v)
-				//don't worry about reverting unlisted item_bg's back to 0, no existing items that use this feature require us to check for these
+			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
+			for role, v in pairs (submodels_to_remove) do
+				if istable(v) then
+					MsgN("removing submodels in role ", role)
+					for k2, v2 in pairs (v) do
+						v2:Remove()
+					end
+				else
+					MsgN("removing submodel in role ", role, " ", v:GetModel())
+					v:Remove()
+				end
+				e.TF2ItemBrowser_Item_SubModels[role] = nil
 			end
+			
 
 			//Check if the bodygroup changes this item applies to the parent ent were modified
-			local tab = e:GetTable()
-			if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-				local old_ply_bg = GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg
+			if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item then
+				local old_ply_bg = GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg
 				local all_keys = {}
 				table.Merge(all_keys, vis.ply_bg)
 				table.Merge(all_keys, old_ply_bg)
@@ -2498,13 +2563,12 @@ if SERVER then
 							ent:SetBodygroup(i, 0)
 						end
 						for k, child in ipairs (ent:GetChildren()) do
-							tab = child:GetTable()
-							if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
+							if child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
 								local child_ply_bg
 								if child == e then
 									child_ply_bg = vis.ply_bg 
 								else 
-									child_ply_bg = GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg
+									child_ply_bg = GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg
 								end
 								for k, v in pairs (child_ply_bg) do
 									if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
@@ -2538,6 +2602,44 @@ if SERVER then
 
 	end)
 
+	//Constraint used to keep submodels associated with the main item entity between dupes/saves
+	function constraint.TF2ItemBrowser_Item_SubModel(Ent1, Ent2, Role, Attach_Num, ply)
+
+		if !Ent1 or !Ent2 then return end
+
+		Ent1.TF2ItemBrowser_Item_SubModels = Ent1.TF2ItemBrowser_Item_SubModels or {}
+		if Attach_Num != nil then
+			Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent1.TF2ItemBrowser_Item_SubModels[Role] or {}
+			Ent1.TF2ItemBrowser_Item_SubModels[Role][Attach_Num] = Ent2
+		else
+			Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
+		end
+		Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
+		Ent1:DeleteOnRemove(Ent2)
+		
+		//create a dummy ent for the constraint functions to use
+		local const = ents.Create("info_target")
+		const:Spawn()
+		const:Activate()
+
+		constraint.AddConstraintTable(Ent1, const, Ent2)
+		
+		local ctable = {
+			Type = "TF2ItemBrowser_Item_SubModel",
+			Ent1 = Ent1,
+			Ent2 = Ent2,
+			Role = Role,
+			Attach_Num = Attach_Num,
+			ply = ply,
+		}
+	
+		const:SetTable(ctable)
+	
+		return const
+
+	end
+	duplicator.RegisterConstraint("TF2ItemBrowser_Item_SubModel", constraint.TF2ItemBrowser_Item_SubModel, "Ent1", "Ent2", "Role", "Attach_Num", "ply")
+
 	duplicator.RegisterEntityModifier("TF2ItemBrowser_Item", function(ply, e, data)
 
 		duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
@@ -2547,18 +2649,16 @@ if SERVER then
 		e:CallOnRemove("TF2ItemBrowser_AttachedItem_OnRemove", function(e)
 			local ent = e:GetParent()
 			if !IsValid(ent) then return end
-			local tab = e:GetTable()
-			if tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-				for k, _ in pairs (GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg) do
+			if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item and !e.TF2ItemBrowser_Item_IsSubModelOf then
+				for k, _ in pairs (GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg) do
 					//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
 					//item other than the one we're removing, and apply their ply_bg's again to a blank slate parent ent.
 					for i = 0, ent:GetNumBodyGroups() do
 						ent:SetBodygroup(i, 0)
 					end
 					for k, child in ipairs (ent:GetChildren()) do
-						tab = child:GetTable()
-						if child != e and tab.EntityMods and tab.EntityMods.TF2ItemBrowser_Item then
-							for k, v in pairs (GetItemModelVisuals(tab.EntityMods.TF2ItemBrowser_Item).ply_bg) do
+						if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
+							for k, v in pairs (GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg) do
 								if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 								ent:SetBodygroup(k, v)
 							end
@@ -2575,7 +2675,7 @@ if SERVER then
 		local ent = net.ReadEntity()
 		if !IsValid(ent) then return end
 		for _, ent2 in ipairs (ent:GetChildren()) do
-			if ent2.EntityMods and ent2.EntityMods.TF2ItemBrowser_Item then
+			if ent2.EntityMods and ent2.EntityMods.TF2ItemBrowser_Item and !ent2.TF2ItemBrowser_Item_IsSubModelOf then
 				local data = ent2.EntityMods.TF2ItemBrowser_Item
 				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
 					net.WriteEntity(ent2)
