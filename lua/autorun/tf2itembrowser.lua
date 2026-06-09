@@ -2506,13 +2506,6 @@ if SERVER then
 
 						constraint.TF2ItemBrowser_Item_SubModel(e, e2, v.role, v.attach_num, ply)
 					end
-					if submodels_to_remove[v.role] then //TODO: remove debug stuff once dupe issues have been fixed
-						if istable(submodels_to_remove[v.role]) then
-							MsgN("not removing submodels in role ", v.role)
-						else
-							MsgN("not removing submodel in role ", v.role, " ", submodels_to_remove[v.role]:GetModel())
-						end
-					end
 					submodels_to_remove[v.role] = nil
 				end
 				
@@ -2535,12 +2528,10 @@ if SERVER then
 			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
 			for role, v in pairs (submodels_to_remove) do
 				if istable(v) then
-					MsgN("removing submodels in role ", role)
 					for k2, v2 in pairs (v) do
 						v2:Remove()
 					end
 				else
-					MsgN("removing submodel in role ", role, " ", v:GetModel())
 					v:Remove()
 				end
 				e.TF2ItemBrowser_Item_SubModels[role] = nil
