@@ -152,7 +152,7 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //
 //just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
 //all eyelander reskins have an australium style that doesn't do anything, get rid of these
-//maybe inject a value into most stock weapons to tell it to get rid of the team selector unless it's relevant (i.e. festivized)
+//1149 Festive SMG 2014 has an australium style, WHOOPS
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -1717,34 +1717,119 @@ if CLIENT then
 		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
+		mdl.models = {}
 		function mdl.Refresh()
 			if !IsValid(ent) then self.data.team = TF2ItemBrowser.attopts.team:GetChecked() end //update this every time we open or refresh the panel, since it can change after the icon has been created
 			local vis = GetItemModelVisuals(self.data)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
-			mdl:SetModel(vis.model)
-			local ent = mdl:GetEntity()
-			if IsValid(ent) then
-				ent:SetSkin(vis.skin)
-				for k, v in pairs (vis.item_bg) do
-					ent:SetBodygroup(ent:FindBodygroupByName(k), v)
+			mdl.previous_models = {}
+			for k, v in ipairs (mdl.models) do
+				mdl.previous_models[k] = v:GetModel()
+				v:Remove()
+			end
+			mdl.models = {}
+
+			local models = {}
+			if self.data.submodels.item then
+				table.insert(models, {model = vis.model, is_main = true})
+				for k, v in SortedPairs (GetVisualsValue(i, self.data.team, "attached_models") or {}) do
+					table.insert(models, {model = v.model, merge = true})
 				end
+				//TODO: do festivizers here too
+			end
+			if self.data.submodels.wearable then table.insert(models, {model = i.extra_wearable}) end
+			if self.data.submodels.wearable_2 then table.insert(models, {model = i.extra_wearable_2}) end
+			if self.data.submodels.taunt_prop then table.insert(models, {model = i.taunt.custom_taunt_prop_per_class[self.data.class]}) end
+			local offset_height_base, offset_height
+			for k, v in pairs (models) do
+				local ent = ClientsideModel(v.model, RENDERGROUP_OTHER)
+				if !IsValid(ent) then return end
 
-				//don't recenter the camera if the model didn't change
-				if vis.model != mdl.old_model then
-					local pos = ent:GetPos()
-					local ang = ent:GetAngles()
-
-					local tab = PositionSpawnIcon(ent, pos, true)
-
-					ent:SetAngles(ang)
-					if tab then
-						mdl:SetCamPos(tab.origin)
-						mdl:SetFOV(tab.fov)
-						mdl:SetLookAng(tab.angles)
+				ent:SetSkin(vis.skin)
+				if v.is_main then
+					for k, v in pairs (vis.item_bg) do
+						ent:SetBodygroup(ent:FindBodygroupByName(k), v)
+					end
+					local mins, maxs = ent:GetRenderBounds()
+					offset_height_base = maxs.z
+				elseif v.merge then
+					ent:SetParent(mdl.Entity)
+					ent:AddEffects(EF_BONEMERGE)
+				else
+					//If we're rendering both the base item and wearables, then reposition wearables above the item
+					if offset_height_base then
+						local mins, maxs = ent:GetRenderBounds()
+						offset_height = offset_height_base - mins.z
+					end
+					if offset_height then
+						ent:SetPos(Vector(0,0,offset_height))
 					end
 				end
-				mdl.old_model = vis.model
+				
+				ent:SetNoDraw(true)
+				ent:SetIK(false)
+				if k == 1 then mdl.Entity = ent end
+				table.insert(mdl.models, ent)
+			end
+
+			//don't recenter the camera if the models didn't change
+			local docamera = #mdl.models != #mdl.previous_models
+			if !docamera then
+				for k, v in ipairs (mdl.models) do
+					if v:GetModel() != mdl.previous_models[k] then
+						docamera = true
+						break
+					end
+				end
+			end
+			if docamera then
+				//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
+				local mn, mx
+				for k, v in ipairs (mdl.models) do
+					local mn2, mx2 = v:GetRenderBounds()
+					mn2 = mn2 + v:GetPos()
+					mx2 = mx2 + v:GetPos()
+					if !mn then
+						mn, mx = mn2, mx2
+					else
+						mn.x = math.min(mn.x,mn2.x)
+						mn.y = math.min(mn.y,mn2.y)
+						mn.z = math.min(mn.z,mn2.z)
+						mx.x = math.max(mx.x,mx2.x)
+						mx.y = math.max(mx.y,mx2.y)
+						mx.z = math.max(mx.z,mx2.z)
+					end
+				end
+				if mn then
+					local middle = ( mn + mx ) * 0.5
+					local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
+
+					//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
+						
+					if ( size < 900 ) then
+						size = size * ( 1 - ( size / 900 ) )
+					else
+						size = size * ( 1 - ( size / 4096 ) )
+					end
+
+					size = math.Clamp( size, 5, 1000 )
+
+					local ViewAngle = Angle( 25, 220, 0 )
+					local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
+					local view = {}
+
+					view.fov		= 4 + size * 0.04
+					view.origin		= ViewPos + middle
+					//view.znear		= 1
+					//view.zfar		= ViewPos:Distance( pos ) + size * 2
+					view.angles		= ViewAngle
+
+					//Apply the changes to the camera
+					mdl:SetCamPos(view.origin)
+					mdl:SetFOV(view.fov)
+					mdl:SetLookAng(view.angles)
+				end
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -1797,6 +1882,12 @@ if CLIENT then
 			pnl.class:SetEnabled(should_show_class)
 			pnl.class:GetParent().Label:SetEnabled(should_show_class)
 		end
+		function mdl:PostDrawModel(ent)
+			//Render all additional models
+			for k, v in ipairs (self.models) do
+				if v != ent then v:DrawModel() end
+			end
+		end
 
 		local checks = vgui.Create("Panel", pnl) //container for submodel controls
 		checks:SetHeight(15)
@@ -1811,6 +1902,7 @@ if CLIENT then
 			check.OnChange = function(_, val)
 				self.data.submodels[k] = val
 				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
+				mdl.Refresh()
 			end
 			table.insert(checks.checks, check)
 		end
