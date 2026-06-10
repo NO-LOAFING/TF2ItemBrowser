@@ -97,7 +97,9 @@ for k, v in ipairs (s2) do
 				for k, v in ipairs (tab) do
 					local res_v = ReadOrderedTableMergingSubTables(v.Value)
 					v.Key = tonumber(v.Key) or v.Key //these are all strings by default, even if they should be numbers
-					if v.Key == 1 and !stupid_zero_fix then
+					if v.Key == 0 then
+						stupid_zero_fix = true
+					elseif v.Key == 1 and !stupid_zero_fix then
 						v.Key = 0
 						stupid_zero_fix = true
 					end
@@ -153,6 +155,7 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
 //all eyelander reskins have an australium style that doesn't do anything, get rid of these
 //1149 Festive SMG 2014 has an australium style, WHOOPS
+//remove the existing models for the hatless scout/engie/sniper so that we use the fallback instead; advbonemerge doesn't like these models and won't be able to do unusuals with them, also if we do fallback then we can show the playermodel in the spawn window
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -1747,47 +1750,73 @@ if CLIENT then
 			end
 			mdl.models = {}
 
-			local models = {}
+			local submodels = {}
 			if self.data.models.item then
-				table.insert(models, {model = vis.models.item, is_main = true})
+				table.insert(submodels, {model = vis.models.item, is_main = true})
 				for k, v in ipairs (vis.models.attached or {}) do
-					table.insert(models, {model = v, merge = true})
+					table.insert(submodels, {model = v, merge = true})
 				end
 				if self.data.models.attached_festive then
 					for k, v in ipairs (vis.models.attached_festive) do
-						table.insert(models, {model = v, merge = true})
+						table.insert(submodels, {model = v, merge = true})
 					end
 				end
 			end
-			if self.data.models.wearable then table.insert(models, {model = vis.models.wearable}) end
-			if self.data.models.wearable_2 then table.insert(models, {model = vis.models.wearable_2}) end
-			if self.data.models.taunt_prop then table.insert(models, {model = vis.models.taunt_prop}) end
+			if self.data.models.wearable then table.insert(submodels, {model = vis.models.wearable}) end
+			if self.data.models.wearable_2 then table.insert(submodels, {model = vis.models.wearable_2}) end
+			if self.data.models.taunt_prop then table.insert(submodels, {model = vis.models.taunt_prop}) end
+			if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {no_model_fallback = true}) end
 			local offset_height_base, offset_height
-			for k, v in ipairs (models) do
-				local ent = ClientsideModel(v.model, RENDERGROUP_OTHER)
-				if !IsValid(ent) then return end
+			for k, v in ipairs (submodels) do
+				local ent
+				if v.no_model_fallback then
+					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal),
+					//then instead show a preview of the playermodel with bodygroups changed.
+					local model, skin = "", 0
+					if IsValid(TF2ItemBrowser:GetEntity()) then
+						model = TF2ItemBrowser:GetEntity():GetModel()
+					else
+						for k, v in ipairs (classes) do //convert long class name to short class name
+							if self.data.class == v.longname then
+								model = "models/player/" .. v.shortname .. ".mdl"
+								break
+							end
+						end
+					end
+					if self.data.team then skin = 1 end
+					ent = ClientsideModel(model, RENDERGROUP_OTHER)
+					if !IsValid(ent) then return end
 
-				ent:SetSkin(vis.skin)
-				if v.is_main then
-					for k, v in pairs (vis.item_bg) do
-						ent:SetBodygroup(ent:FindBodygroupByName(k), v)
+					ent:SetSkin(skin)
+					for k, v in pairs (vis.ply_bg) do
+						if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+						ent:SetBodygroup(k, v)
 					end
-					local mins, maxs = ent:GetRenderBounds()
-					offset_height_base = maxs.z
-				elseif v.merge then
-					ent:SetParent(mdl.Entity)
-					ent:AddEffects(EF_BONEMERGE)
 				else
-					//If we're rendering both the base item and wearables, then reposition wearables above the item
-					if offset_height_base then
+					ent = ClientsideModel(v.model, RENDERGROUP_OTHER)
+					if !IsValid(ent) then return end
+
+					ent:SetSkin(vis.skin)
+					if v.is_main then
+						for k, v in pairs (vis.item_bg) do
+							ent:SetBodygroup(ent:FindBodygroupByName(k), v)
+						end
 						local mins, maxs = ent:GetRenderBounds()
-						offset_height = offset_height_base - mins.z
-					end
-					if offset_height then
-						ent:SetPos(Vector(0,0,offset_height))
+						offset_height_base = maxs.z
+					elseif v.merge then
+						ent:SetParent(mdl.Entity)
+						ent:AddEffects(EF_BONEMERGE)
+					else
+						//If we're rendering both the base item and wearables, then reposition wearables above the item
+						if offset_height_base then
+							local mins, maxs = ent:GetRenderBounds()
+							offset_height = offset_height_base - mins.z
+						end
+						if offset_height then
+							ent:SetPos(Vector(0,0,offset_height))
+						end
 					end
 				end
-				
 				ent:SetNoDraw(true)
 				ent:SetIK(false)
 				if k == 1 then mdl.Entity = ent end
@@ -2337,6 +2366,7 @@ if SERVER then
 			if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
 			if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
 			if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
+			if #submodels == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
 		end
 
 		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
@@ -2420,7 +2450,14 @@ if SERVER then
 					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
 				end
 				local item_bg
-				if v.role == "item" then item_bg = vis.item_bg end
+				if v.role == "item" then
+					item_bg = vis.item_bg
+				elseif v.role == "no_model_fallback" then
+					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal, or it has
+					//multiple submodels like banners but they're all disabled), then instead spawn an invisible model so that
+					//we still have an entity to associate the item with.
+					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
+				end
 
 				local e = CreateItemEntity(model, vis.skin, item_bg, parent)
 				if !IsValid(e) then continue end
@@ -2478,6 +2515,12 @@ if SERVER then
 					model = model[v.attach_num]
 					parent = e
 				end
+				if v.role == "no_model_fallback" then
+					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal, or it has
+					//multiple submodels like banner but they're all disabled), then instead spawn an invisible model so that
+					//we still have an entity to associate the item with.
+					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
+				end
 
 				local e2
 				if k == 1 then
@@ -2508,7 +2551,6 @@ if SERVER then
 					end
 					submodels_to_remove[v.role] = nil
 				end
-				
 
 				//Update the model and skin of each submodel
 				if model != e2:GetModel() then
@@ -2536,7 +2578,6 @@ if SERVER then
 				end
 				e.TF2ItemBrowser_Item_SubModels[role] = nil
 			end
-			
 
 			//Check if the bodygroup changes this item applies to the parent ent were modified
 			if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item then
