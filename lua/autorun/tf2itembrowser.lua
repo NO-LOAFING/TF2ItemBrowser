@@ -1334,7 +1334,8 @@ if CLIENT then
 					for k, v in ipairs (classes) do
 						if k == 1 or k == 11 then continue end
 						if string.find(mdl, v.shortname, 1, true) then
-							filters.class:ChooseOptionID(k) //TODO: make sure this works
+							filters.class:ChooseOptionID(k)
+							break
 						end
 					end
 					atticons.Label:SetText("Attached to " .. mdl .. ":")
@@ -1552,7 +1553,6 @@ if CLIENT then
 			if self.quality != "strange" and self.data.models.stat_clock then
 				quality = GetTFLanguageString("strange") .. " " .. quality
 			end
-			//TODO: we might actually care about ranks if we're getting the correct name for token/gargoyle rank styles? or maybe just lump that in with australium? come back to this later.
 		end
 
 		local australium_skin = ""
@@ -1848,7 +1848,6 @@ if CLIENT then
 
 			if !IsValid(ent) then self.data.team = TF2ItemBrowser.attopts.team:GetChecked() end //update this every time we open or refresh the panel, since it can change after the icon has been created
 			local vis = GetItemModelVisuals(self.data)
-			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
 
 			mdl.previous_models = {}
 			for k, v in ipairs (mdl.models) do
