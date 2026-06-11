@@ -120,14 +120,6 @@ end
 
 
 //inject custom values into a few items
-s.prefabs.paintkit_base._paintkit = true //custom value for filter
-s.prefabs.tournament_medal._tm = true //custom value for filter
-//these items have existing models in the files, but aren't assigned in the schema; add them anyway
-s.prefabs.spell_base_footprints.model_player = "models/props_halloween/flask_bottle.mdl"
-s.prefabs.voice_spell_base.model_player = "models/props_halloween/flask_erlenmeyer.mdl"
-s.prefabs.spell_base.model_player = "models/props_halloween/flask_florence.mdl"
-s.prefabs.spell_base_pumpkinbombs.model_player = "models/props_halloween/flask_tub.mdl"
-
 
 local function SafeAmendItem(i, expected_name, func)
 	local found_name
@@ -140,6 +132,10 @@ local function SafeAmendItem(i, expected_name, func)
 	if tab == "remove" then tab = nil end
 	s.items[i] = tab
 end
+
+//custom values for filters
+s.prefabs.paintkit_base._paintkit = true
+s.prefabs.tournament_medal._tm = true
 
 //Almost all stock weapons have two variants - the default items, which are located at the top of the list, and the "Upgradeable" items, which are 
 //exactly the same except they're unique-quality and contain extra info for customization like paintkits and australiums... and are located much 
@@ -208,41 +204,50 @@ for _, tab in ipairs ({
 	{836, "Promo Champ Stamp"},
 	{837, "Promo Marxman"},
 	{838, "Promo Human Cannonball"},
-	//{1184, "Gloves of Running Urgently MvM"},
+	//{1184, "Gloves of Running Urgently MvM"}, //visually the same as 239 "Gloves of Running Urgently" but has different attributes
 	{30739, "Promo Fear Monger"}, //copy of 30724 "Fear Monger"
 	{30740, "Promo Arkham Cowl"}, //copy of 30720 "Arkham Cowl"
 	{30741, "Promo The Firefly"}, //copy of 30721 "The Firefly"
+	{8936, "Halloween Spellbook Page (Achievement)"}, //copy of 8935 "Halloween Spellbook Page" except it applies different spellbook page in TF2
 }) do
 	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
 end
 
 //these items have existing models in the files, but aren't assigned in the schema; add them anyway
+s.prefabs.spell_base_footprints.model_player = "models/props_halloween/flask_bottle.mdl"
+s.prefabs.voice_spell_base.model_player = "models/props_halloween/flask_erlenmeyer.mdl"
+s.prefabs.spell_base.model_player = "models/props_halloween/flask_florence.mdl"
+s.prefabs.spell_base_pumpkinbombs.model_player = "models/props_halloween/flask_tub.mdl"
 SafeAmendItem(8925, "Halloween Spell: Spectral Flame", function(i) i.model_player = "models/props_halloween/flask_tube.mdl" end)
 SafeAmendItem(8921, "Halloween Spell: Exorcism", function(i) i.model_player = "models/props_halloween/flask_vial.mdl" end)
-//models/props_halloween/hwn_spellbook_incomplete.mdl
-//models/props_halloween/hwn_spellbook_page.mdl
-//models/props_halloween/hwn_spellbook_magazine.mdl
-//models/workshop/cases/invasion_case/invasion_key.mdl
-//models/crafting/halloween2015_gargoyle_key.mdl
-//models/crafting/ticket_summer2015.mdl
-//models/crafting/ticket_tough_break.mdl
-//models/player/items/crafting/bundle_of_taunts.mdl //eehh, broken materials
-//models/player/items/crafting/crate_variation.mdl //eehh, broken materials
-//maybe change spy watches to use these instead, just because they spawn better; the default models are viewmodels so they aren't attachable either way
-//models/weapons/c_models/c_spy_watch.mdl
-//models/weapons/c_models/c_leather_watch/parts/c_leather_watch.mdl
-//models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl
-//
-//TODO:
-//
-//maybe better backpack icons for:
+SafeAmendItem(1068, "Halloween Unfilled Spellbook", function(i) i.model_player = "models/props_halloween/hwn_spellbook_incomplete.mdl" end)
+s.prefabs.halloween2013_spellbookpage.model_player = "models/props_halloween/hwn_spellbook_page.mdl"
+SafeAmendItem(1070, "TF_WEAPON_SPELLBOOK", function(i) i.model_player = "models/props_halloween/hwn_spellbook_magazine.mdl" end)
+SafeAmendItem(5821, "Invasion Key", function(i) i.model_player = "models/workshop/cases/invasion_case/invasion_key.mdl" end)
+SafeAmendItem(5827, "Halloween 2015 Key", function(i) i.model_player = "models/crafting/halloween2015_gargoyle_key.mdl" end)
+SafeAmendItem(5808, "Unused Summer 2015 Operation Pass", function(i) i.model_player = "models/crafting/ticket_summer2015.mdl" end)
+SafeAmendItem(5829, "Unused Operation Tough Break Pass", function(i) i.model_player = "models/crafting/ticket_tough_break.mdl" end)
+//SafeAmendItem(2129, "Love & War Taunt Bundle", function(i) i.model_player = "models/player/items/crafting/bundle_of_taunts.mdl" end) //eehh, broken materials
+//SafeAmendItem(5734, "Supply Crate Ration", function(i) i.model_player = "models/player/items/crafting/crate_variation.mdl" end) //eehh, broken materials; there's 7 more of these, and one of them uses a different skin which is only partially broken
+//change spy watches to use these instead, just because they spawn better; the default models are viewmodels so they aren't attachable either way. 
+//none of the watch reskins have separated models like these, unfortunately.
+SafeAmendItem(30, "Upgradeable TF_WEAPON_INVIS", function(i) i.model_player = "models/weapons/c_models/c_spy_watch.mdl" end)
+SafeAmendItem(60, "The Cloak and Dagger", function(i) i.model_player = "models/weapons/c_models/c_leather_watch/parts/c_leather_watch.mdl" end)
+SafeAmendItem(59, "The Dead Ringer", function(i) i.model_player = "models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl" end)
+
+//remove paintkit attribute from the generic paintkit tool item so that it doesn't get filtered out with all the paintkit weapons/tools below
+SafeAmendItem(9536, "Paintkit", function(i) i.static_attrs.paintkit_proto_def_index = nil end)
+
+//remove the existing models for the hatless scout/engie/sniper so that we use the fallback instead; advbonemerge doesn't like these 
+//models and won't be able to do unusuals with them, also if we do fallbacks then we can show the playermodel in the spawn window
+SafeAmendItem(111, "Baseball Bill's Sports Shine", function(i) i.model_player = nil end)
+SafeAmendItem(117, "Ritzy Rick's Hair Fixative", function(i) i.model_player = nil end)
+SafeAmendItem(118, "Texas Slim's Dome Shine", function(i) i.model_player = nil end)
+
+//TODO: better backpack icons (and names?) for:
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon and no name
-//1057 MvM GateBotLight Scout (and the others) - missing textures
+//1057 MvM GateBotLight Scout (and the others) - missing textures and all use the same name
 //30143 tw_demobot_armor (and the others) - placeholder white circle
-//
-//just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
-//266 The Horseless Headless Horseman's Headtaker, 482 Nessie's Nine Iron, 1082 Festive Eyelander, 1085 Festive Black Box, 1149 Festive SMG 2014 have australium style that doesn't do anything, get rid of these
-//remove the existing models for the hatless scout/engie/sniper so that we use the fallback instead; advbonemerge doesn't like these models and won't be able to do unusuals with them, also if we do fallback then we can show the playermodel in the spawn window
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
@@ -284,6 +289,15 @@ end
 s.items = tab
 
 
+//these weapon reskins unintentionally inherit australium styles that don't work from their base weapons, get rid of them
+//(this has to be done after InheritPrefabValues because some (not all) of these come from prefabs)
+SafeAmendItem(266, "The Horseless Headless Horseman's Headtaker", function(i) i.visuals.styles = nil end)
+SafeAmendItem(482, "Nessie's Nine Iron", function(i) i.visuals.styles = nil end)
+SafeAmendItem(1082, "Festive Eyelander", function(i) i.visuals.styles = nil end)
+SafeAmendItem(1085, "Festive Black Box", function(i) i.visuals.styles = nil end)
+SafeAmendItem(1149, "Festive SMG 2014", function(i) i.visuals.styles = nil end)
+
+
 //test: get all possible keys in item tables
 --[[local t = {}
 for k, v in pairs (s.items) do
@@ -308,7 +322,7 @@ local items_by_name = {}
 for k, v in pairs (s.items) do
 	//clear useless items
 	if v.equip_type == "account" //contracts
-	or (v.static_attrs and v.static_attrs.paintkit_proto_def_index and (v.item_class != "tool" or v.static_attrs.paintkit_proto_def_index > 0)) //war paint items; the second part is a hack because the generic paintkit base item (which we want) uses protodef 0, but so does the first pre-JI pre-skinned weapon, 15013 concealedkiller_pistol_redrockroscoe, which we don't want
+	or (v.static_attrs and v.static_attrs.paintkit_proto_def_index) //war paint items
 	then 
 		s.items[k] = nil
 		continue
