@@ -153,8 +153,7 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //30143 tw_demobot_armor (and the others) - placeholder white circle
 //
 //just remove v.static_attrs.paintkit_proto_def_index from 9536 Paintkit, to make the paintkit filter below run faster
-//all eyelander reskins have an australium style that doesn't do anything, get rid of these
-//1149 Festive SMG 2014 has an australium style, WHOOPS
+//266 The Horseless Headless Horseman's Headtaker, 482 Nessie's Nine Iron, 1082 Festive Eyelander, 1085 Festive Black Box, 1149 Festive SMG 2014 have australium style that doesn't do anything, get rid of these
 //remove the existing models for the hatless scout/engie/sniper so that we use the fallback instead; advbonemerge doesn't like these models and won't be able to do unusuals with them, also if we do fallback then we can show the playermodel in the spawn window
 
 
@@ -301,6 +300,57 @@ for k, v in pairs (s.items) do
 		end
 		//Note: there's also a fourth table, visuals_mvm_boss, which contains overrides used only by 
 		//mvm giants, but the 2 instances of this only contain sounds, so we don't care about these
+	end
+
+
+	//Grab style names and prefixes for australiums and campaign ranks
+	if CLIENT and v.visuals and v.visuals.styles then
+		for k2, v2 in pairs (v.visuals.styles) do
+			if !v2.name and v2.image_inventory then
+				local name, strange_prefix, aus_prefix
+				if string.StartsWith(v2.image_inventory, "backpack/player/items/crafting/coin_summer2015")
+				or string.StartsWith(v2.image_inventory, "backpack/player/items/crafting/stamp_winter2016") then
+					if string.EndsWith(v2.image_inventory, "_gravel") then
+						strange_prefix = "#KillEater_OperationContractRank0"
+					elseif string.EndsWith(v2.image_inventory, "_bronze") then
+						strange_prefix = "#KillEater_OperationContractRank1"
+					elseif string.EndsWith(v2.image_inventory, "_silver") then
+						strange_prefix = "#KillEater_OperationContractRank2"
+					elseif string.EndsWith(v2.image_inventory, "_gold") then
+						strange_prefix = "#KillEater_OperationContractRank3"
+					end
+				elseif string.StartsWith(v2.image_inventory, "backpack/player/items/crafting/hwn2015_gargoyle") then
+					if string.EndsWith(v2.image_inventory, "_stone") then
+						strange_prefix = "#KillEater_HalloweenSoulsRank0"
+					elseif string.EndsWith(v2.image_inventory, "_bronze") then
+						strange_prefix = "#KillEater_HalloweenSoulsRank1"
+					elseif string.EndsWith(v2.image_inventory, "_silver") then
+						strange_prefix = "#KillEater_HalloweenSoulsRank2"
+					elseif string.EndsWith(v2.image_inventory, "_gold") then
+						strange_prefix = "#KillEater_HalloweenSoulsRank3"
+					end
+				elseif string.StartsWith(v2.image_inventory, "backpack/player/items/cyoa_pda/cyoa_pda") then
+					if string.EndsWith(v2.image_inventory, "_bronze") then
+						strange_prefix = "#KillEater_ContractPointsEarnedRank1"
+					elseif string.EndsWith(v2.image_inventory, "_silver") then
+						strange_prefix = "#KillEater_ContractPointsEarnedRank2"
+					elseif string.EndsWith(v2.image_inventory, "_gold") then
+						strange_prefix = "#KillEater_ContractPointsEarnedRank3"
+					else //the contracker's first style has no suffix
+						strange_prefix = "#KillEater_ContractPointsEarnedRank0"
+					end
+				else
+					if string.EndsWith(v2.image_inventory, "_gold") then
+						aus_prefix = true
+						name = string.Trim(GetTFLanguageString("ItemNameAustralium", true))
+					end
+				end
+				if strange_prefix then name = string.Trim(GetTFLanguageString(strange_prefix, true)) end
+				v.visuals.styles[k2].name = name
+				v.visuals.styles[k2].strange_prefix = strange_prefix
+				v.visuals.styles[k2].aus_prefix = aus_prefix
+			end
+		end
 	end
 
 
@@ -486,7 +536,7 @@ local function GetClassModelWithBasename(tab, class)
 	end
 end
 
-//Given an item data table with id, class, team, style, returns a table with the model, skin, and bodygroups to use.
+//Given an item data table with id, class, team, style, returns a table with the models, skin, and bodygroups to use.
 local function GetItemModelVisuals(data)
 
 	local i = TF2Items.items[data.id]
@@ -572,6 +622,10 @@ local function GetItemModelVisuals(data)
 	vis.models.wearable = i.extra_wearable
 	vis.models.wearable_2 = i.extra_wearable_2
 	if i.taunt and i.taunt.custom_taunt_prop_per_class then vis.models.taunt_prop = i.taunt.custom_taunt_prop_per_class[data.class] end
+	if i.static_attrs then
+		vis.models.stat_clock = i.static_attrs.weapon_uses_stattrak_module
+		vis.stat_clock_scale = i.static_attrs.weapon_stattrak_module_scale
+	end
 
 	return vis
 
@@ -1376,9 +1430,22 @@ if CLIENT then
 		if !vis.models.taunt_prop then data.models.taunt_prop = nil
 		elseif !vis.models.item then data.models.taunt_prop = true end
 		if !vis.models.attached_festive then data.models.attached_festive = nil end
+		if !vis.models.stat_clock then data.models.stat_clock = nil end
 
-		self.ImageToQueue = i.image_inventory
-		self.quality = i.item_quality or "unique"
+		local img_override, quality_override
+		if i.visuals and i.visuals.styles then
+			img_override = i.visuals.styles[data.style].image_inventory
+			self.strange_prefix = i.visuals.styles[data.style].strange_prefix
+			self.aus_prefix = i.visuals.styles[data.style].aus_prefix
+		end 
+		self.ImageToQueue = img_override or i.image_inventory
+		local quality_override
+		if data.todo_replace_with_actual_unusual_effect_data_value then //TODO: unusual effect
+			quality_override = "unusual"
+		elseif data.models.stat_clock or self.aus_prefix then
+			quality_override = "strange"
+		end
+		self.quality = quality_override or i.item_quality or "unique"
 		self.rarity = i._rarity or nil
 		self.sound_pressed = i.mouse_pressed_sound or "ui/item_default_pickup.wav"
 		self.sound_drop = i.drop_sound or "ui/item_default_drop.wav"
@@ -1428,6 +1495,7 @@ if CLIENT then
 				wearable_2 = false,
 				taunt_prop = false,
 				attached_festive = false,
+				stat_clock = false,
 			},
 		})
 
@@ -1457,7 +1525,9 @@ if CLIENT then
 
 		local quality = ""
 		if !ignoreQuality then 
-			if self.quality != "normal" and self.quality != "paintkitweapon" then //tf2 code here checks nQuality > 0, which only filters out normal quality (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.h#L516)
+			if self.strange_prefix then
+				quality = GetTFLanguageString(self.strange_prefix) .. GetTFLanguageString("Strange_Spacer") //yeah, no check for valid string on this one
+			elseif self.quality != "normal" and self.quality != "paintkitweapon" then //tf2 code here checks nQuality > 0, which only filters out normal quality (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.h#L516)
 				if self.quality == "unique" then
 					if useProperName and i.propername == 1 then 
 						quality = GetTFLanguageString("TF_Unique_Prepend_Proper")
@@ -1468,20 +1538,22 @@ if CLIENT then
 				end
 			end
 
-			//tf2 code here sets strange ranks, which we don't care about, but also prepends strange rank onto strange unusual weapons,
-			//which in our use cases, only applies to weapons with both an unusual effect and a stat clock enabled.
-			if self.quality != "strange" and self.statclock then
+			//tf2 code here sets strange ranks, which we only care about for campaign ranks and handle above, 
+			//but also prepends strange rank onto strange unusual items, which in our use cases, only applies 
+			//to weapons with both an unusual effect and a stat clock enabled.
+			if self.quality != "strange" and self.data.models.stat_clock then
 				quality = GetTFLanguageString("strange") .. " " .. quality
 			end
 			//TODO: we might actually care about ranks if we're getting the correct name for token/gargoyle rank styles? or maybe just lump that in with australium? come back to this later.
 		end
 
 		local australium_skin = ""
-		if self.australium then australium_skin = GetTFLanguageString("ItemNameAustralium") end
-		//TODO: "self.australium" might not be how we implement this, come back to this later
+		if self.aus_prefix then
+			australium_skin = GetTFLanguageString("ItemNameAustralium")
+		end
 
 		local festivized = ""
-		if self.festivized then festivized = GetTFLanguageString("ItemNameFestive") end
+		if self.data.models.attached_festive then festivized = GetTFLanguageString("ItemNameFestive") end
 
 		local qualityFormat
 		if (self.quality == "normal" or self.quality == "unique" or self.quality == "paintkitweapon" or ignoreQuality) and self.quality != "selfmade" then
@@ -1544,7 +1616,8 @@ if CLIENT then
 			end
 		else
 			//Item level; based on CEconItemDescription::Generate_ItemLevelDesc, which calls CEconItemDescription::Generate_ItemLevelDesc_Default (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1252);
-			//the former also has a use case for showing strange ranks in place of levels, but this addon doesn't need those
+			//the former also has a use case for showing strange ranks in place of levels, but this addon doesn't need those; 
+			//all we need from that method is the stat clock attrib, which we'll do below.
 			
 			local typeName = GetTFLanguageString(i.item_type_name)
 			if typeName != "" then
@@ -1574,6 +1647,17 @@ if CLIENT then
 					end
 				end
 			end
+		end
+
+		//do statclocks here; in tf2 code, this is done by Generate_ItemLevelDesc calling Generate_ItemLevelDesc_StrangeNameAndStats
+		//even if it has a rarity instead; in our case, we can have statclocks even on non-paintkit items, so don't replace the 
+		//standard Level X Thing text with this, even if that's what the tf2 code would do if that were possible
+		if self.data.models.stat_clock then
+			local rank = GetTFLanguageString("Attrib_stattrakmodule")
+			if rank != "" then
+				rank = string.Replace(rank, "%s1", GetTFLanguageString("KillEaterRank0"))
+			end
+			table.insert(desc, {str = rank, col = quality_colors.strange})
 		end
 
 		//TODO: tf2 code does a bunch of other stuff here, go through these and see which ones we care about
@@ -1761,6 +1845,7 @@ if CLIENT then
 						table.insert(submodels, {model = v, merge = true})
 					end
 				end
+				if self.data.models.stat_clock then table.insert(submodels, {model = vis.models.stat_clock, merge = true, stat_clock = true}) end
 			end
 			if self.data.models.wearable then table.insert(submodels, {model = vis.models.wearable}) end
 			if self.data.models.wearable_2 then table.insert(submodels, {model = vis.models.wearable_2}) end
@@ -1806,6 +1891,13 @@ if CLIENT then
 					elseif v.merge then
 						ent:SetParent(mdl.Entity)
 						ent:AddEffects(EF_BONEMERGE)
+						if v.stat_clock then
+							local scl = vis.stat_clock_scale or 1
+							ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
+							//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
+							//detail, and it would need both its own gui and either a bunch of new materials or a whole 
+							//custom matproxy, is this worth the trouble?
+						end
 					else
 						//If we're rendering both the base item and wearables, then reposition wearables above the item
 						if offset_height_base then
@@ -2040,7 +2132,8 @@ if CLIENT then
 			AddDropdown("Style", function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
-					drop:AddChoice(name or "PLACEHOLDER " .. k, k, self.data.style == k) //TODO: replace placeholders for nameless styles eventually (australiums, campaign stamp ranks)
+					if !name and k == 0 then name = GetTFLanguageString("TF_style0_normal") end
+					drop:AddChoice(name or "BAD UNHANDLED STYLE " .. k, k, self.data.style == k)
 				end
 			end, function(data)
 				self.data.style = data
@@ -2310,6 +2403,7 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.models.wearable_2)
 	net.WriteBool(data.models.taunt_prop)
 	net.WriteBool(data.models.attached_festive)
+	net.WriteBool(data.models.stat_clock)
 end
 
 ReadItemDataTable = function()
@@ -2324,7 +2418,8 @@ ReadItemDataTable = function()
 			wearable = net.ReadBool(),
 			wearable_2 = net.ReadBool(),
 			taunt_prop = net.ReadBool(),
-			attached_festive = net.ReadBool()
+			attached_festive = net.ReadBool(),
+			stat_clock = net.ReadBool(),
 		},
 	}
 end
@@ -2362,6 +2457,7 @@ if SERVER then
 						table.insert(submodels, {role = "attached_festive", attach_num = k})
 					end
 				end
+				if data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
 			end
 			if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
 			if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
@@ -2445,13 +2541,14 @@ if SERVER then
 			for k, v in ipairs (submodels) do
 				local parent = ent
 				local model = vis.models[v.role]
+				local item_bg
 				if v.attach_num then
 					model = model[v.attach_num]
 					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
-				end
-				local item_bg
-				if v.role == "item" then
+				elseif v.role == "item" then
 					item_bg = vis.item_bg
+				elseif v.role == "stat_clock" then
+					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
 				elseif v.role == "no_model_fallback" then
 					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal, or it has
 					//multiple submodels like banners but they're all disabled), then instead spawn an invisible model so that
@@ -2463,6 +2560,11 @@ if SERVER then
 				if !IsValid(e) then continue end
 
 				table.insert(spawned_models, e)
+
+				if v.role == "stat_clock" then
+					local scl = vis.stat_clock_scale or 1
+					e:ManipulateBoneScale(e:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
+				end
 
 				if e != spawned_models[1] then
 					constraint.TF2ItemBrowser_Item_SubModel(spawned_models[1], e, v.role, v.attach_num, ply)
@@ -2514,8 +2616,9 @@ if SERVER then
 				if v.attach_num then
 					model = model[v.attach_num]
 					parent = e
-				end
-				if v.role == "no_model_fallback" then
+				elseif v.role == "stat_clock" then
+					parent = e
+				elseif v.role == "no_model_fallback" then
 					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal, or it has
 					//multiple submodels like banner but they're all disabled), then instead spawn an invisible model so that
 					//we still have an entity to associate the item with.
@@ -2546,6 +2649,10 @@ if SERVER then
 					if !IsValid(e2) then
 						e2 = CreateItemEntity(model, vis.skin, nil, parent)
 						if !IsValid(e2) then continue end
+						if v.role == "stat_clock" then
+							local scl = vis.stat_clock_scale or 1
+							e2:ManipulateBoneScale(e2:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
+						end
 
 						constraint.TF2ItemBrowser_Item_SubModel(e, e2, v.role, v.attach_num, ply)
 					end
