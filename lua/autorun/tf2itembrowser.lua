@@ -122,16 +122,103 @@ end
 //inject custom values into a few items
 s.prefabs.paintkit_base._paintkit = true //custom value for filter
 s.prefabs.tournament_medal._tm = true //custom value for filter
-
-//TODO:
-//
 //these items have existing models in the files, but aren't assigned in the schema; add them anyway
-//models/props_halloween/flask_bottle.mdl
-//models/props_halloween/flask_erlenmeyer.mdl
-//models/props_halloween/flask_florence.mdl
-//models/props_halloween/flask_tub.mdl
-//models/props_halloween/flask_tube.mdl
-//models/props_halloween/flask_vial.mdl
+s.prefabs.spell_base_footprints.model_player = "models/props_halloween/flask_bottle.mdl"
+s.prefabs.voice_spell_base.model_player = "models/props_halloween/flask_erlenmeyer.mdl"
+s.prefabs.spell_base.model_player = "models/props_halloween/flask_florence.mdl"
+s.prefabs.spell_base_pumpkinbombs.model_player = "models/props_halloween/flask_tub.mdl"
+
+
+local function SafeAmendItem(i, expected_name, func)
+	local found_name
+	if s.items[i] then found_name = s.items[i].name end
+	if found_name != expected_name then
+		MsgN("WARNING: TF2ItemBrowser tried to amend item ", i, " ", expected_name, ", but found ", i, " ", found_name, " at this index! Item schema must have been updated, make sure this addon's changes aren't outdated!")
+	end
+	local tab = s.items[i]
+	tab = func(tab) or tab
+	if tab == "remove" then tab = nil end
+	s.items[i] = tab
+end
+
+//Almost all stock weapons have two variants - the default items, which are located at the top of the list, and the "Upgradeable" items, which are 
+//exactly the same except they're unique-quality and contain extra info for customization like paintkits and australiums... and are located much 
+//further down the list. We want to get rid of the less useful copies and only show the upgradable ones, but keep them at the top of the list 
+//because that's the intuitive place to look for them, so instead we *replace* all the stock variants with the upgradable variants.
+for _, tab in ipairs ({
+	{0, "TF_WEAPON_BAT", 190, "Upgradeable TF_WEAPON_BAT"},
+	{1, "TF_WEAPON_BOTTLE", 191, "Upgradeable TF_WEAPON_BOTTLE"},
+	{2, "TF_WEAPON_FIREAXE", 192, "Upgradeable TF_WEAPON_FIREAXE"},
+	{3, "TF_WEAPON_CLUB", 193, "Upgradeable TF_WEAPON_CLUB"},
+	{4, "TF_WEAPON_KNIFE", 194, "Upgradeable TF_WEAPON_KNIFE"},
+	{5, "TF_WEAPON_FISTS", 195, "Upgradeable TF_WEAPON_FISTS"},
+	{6, "TF_WEAPON_SHOVEL", 196, "Upgradeable TF_WEAPON_SHOVEL"},
+	{7, "TF_WEAPON_WRENCH", 197, "Upgradeable TF_WEAPON_WRENCH"},
+	{8, "TF_WEAPON_BONESAW", 198, "Upgradeable TF_WEAPON_BONESAW"},
+	{9, "TF_WEAPON_SHOTGUN_PRIMARY", 199, "Upgradeable TF_WEAPON_SHOTGUN_PRIMARY"},
+	{13, "TF_WEAPON_SCATTERGUN", 200, "Upgradeable TF_WEAPON_SCATTERGUN"},
+	{14, "TF_WEAPON_SNIPERRIFLE", 201, "Upgradeable TF_WEAPON_SNIPERRIFLE"},
+	{15, "TF_WEAPON_MINIGUN", 202, "Upgradeable TF_WEAPON_MINIGUN"},
+	{16, "TF_WEAPON_SMG", 203, "Upgradeable TF_WEAPON_SMG"},
+	{17, "TF_WEAPON_SYRINGEGUN_MEDIC", 204, "Upgradeable TF_WEAPON_SYRINGEGUN_MEDIC"},
+	{18, "TF_WEAPON_ROCKETLAUNCHER", 205, "Upgradeable TF_WEAPON_ROCKETLAUNCHER"},
+	{19, "TF_WEAPON_GRENADELAUNCHER", 206, "Upgradeable TF_WEAPON_GRENADELAUNCHER"},
+	{20, "TF_WEAPON_PIPEBOMBLAUNCHER", 207, "Upgradeable TF_WEAPON_PIPEBOMBLAUNCHER"},
+	{21, "TF_WEAPON_FLAMETHROWER", 208, "Upgradeable TF_WEAPON_FLAMETHROWER"},
+	{22, "TF_WEAPON_PISTOL", 209, "Upgradeable TF_WEAPON_PISTOL"},
+	{24, "TF_WEAPON_REVOLVER", 210, "Upgradeable TF_WEAPON_REVOLVER"},
+	{25, "TF_WEAPON_PDA_ENGINEER_BUILD", 737, "Upgradeable TF_WEAPON_PDA_ENGINEER_BUILD"},
+	{29, "TF_WEAPON_MEDIGUN", 211, "Upgradeable TF_WEAPON_MEDIGUN"},
+	{30, "TF_WEAPON_INVIS", 212, "Upgradeable TF_WEAPON_INVIS"},
+	{735, "TF_WEAPON_BUILDER_SPY", 736, "Upgradeable TF_WEAPON_BUILDER_SPY"},
+	{31, nil, 735, "Upgradeable TF_WEAPON_BUILDER_SPY"}, //move the sapper into the unused 31 slot so it's not all the way down there
+	//these two action items weren't converted into stock until after release, but the stock variant is the only one that 
+	//the game gives to players now, so do the opposite and move the stock variant into the earlier unique variant's spot
+	{489, "Power Up Canteen (MvM)", 1163, "Default Power Up Canteen (MvM)"},
+	{1070, "Basic Spellbook", 1132, "TF_WEAPON_SPELLBOOK"},
+}) do
+	//MsgN("trying to change ", tab[1], " ", tab[2], " into ", tab[3], " ", tab[4])
+	SafeAmendItem(tab[1], tab[2], function(i)
+		local tab2 = table.Copy(s.items[tab[3]])
+		tab2.item_quality = "normal"
+		return tab2
+	end)
+	SafeAmendItem(tab[3], tab[4], function(i) return "remove" end)
+end
+
+//this stock item is called "PDA" and uses the destruction pda icon, but its model is engi's toolbox
+SafeAmendItem(28, "TF_WEAPON_BUILDER", function(i) 
+	i.item_name =--[["#LoadoutSlot_Building"]] "Toolbox" //not localized! bad!!
+	i.item_type_name = "#LoadoutSlot_Building"
+	i.image_inventory = "backpack/weapons/w_models/w_toolbox"
+end)
+
+//remove redundant copies of items
+for _, tab in ipairs ({
+	{10, "TF_WEAPON_SHOTGUN_SOLDIER"},
+	{11, "TF_WEAPON_SHOTGUN_HWG"},
+	{12, "TF_WEAPON_SHOTGUN_PYRO"},
+	{23, "TF_WEAPON_PISTOL_SCOUT"},
+	{743, "Autogrant Pyrovision Goggles"}, //copy of 744 "Pyrovision Goggles"
+	{831, "Promo Red-Tape Recorder"}, //copies of 810-817, non-promo versions of the same items
+	{832, "Promo Huo Long Heatmaker"},
+	{833, "Promo Flying Guillotine"},
+	{834, "Promo Neon Annihilator"},
+	{835, "Promo Triad Trinket"},
+	{836, "Promo Champ Stamp"},
+	{837, "Promo Marxman"},
+	{838, "Promo Human Cannonball"},
+	//{1184, "Gloves of Running Urgently MvM"},
+	{30739, "Promo Fear Monger"}, //copy of 30724 "Fear Monger"
+	{30740, "Promo Arkham Cowl"}, //copy of 30720 "Arkham Cowl"
+	{30741, "Promo The Firefly"}, //copy of 30721 "The Firefly"
+}) do
+	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
+end
+
+//these items have existing models in the files, but aren't assigned in the schema; add them anyway
+SafeAmendItem(8925, "Halloween Spell: Spectral Flame", function(i) i.model_player = "models/props_halloween/flask_tube.mdl" end)
+SafeAmendItem(8921, "Halloween Spell: Exorcism", function(i) i.model_player = "models/props_halloween/flask_vial.mdl" end)
 //models/props_halloween/hwn_spellbook_incomplete.mdl
 //models/props_halloween/hwn_spellbook_page.mdl
 //models/props_halloween/hwn_spellbook_magazine.mdl
@@ -146,9 +233,10 @@ s.prefabs.tournament_medal._tm = true //custom value for filter
 //models/weapons/c_models/c_leather_watch/parts/c_leather_watch.mdl
 //models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl
 //
+//TODO:
+//
 //maybe better backpack icons for:
-//28 TF_WEAPON_BUILDER - this is called "PDA" but its model is engi's toolbox
-//1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon
+//1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon and no name
 //1057 MvM GateBotLight Scout (and the others) - missing textures
 //30143 tw_demobot_armor (and the others) - placeholder white circle
 //
@@ -274,10 +362,10 @@ for k, v in pairs (s.items) do
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
 			[0] = {
-				name = "#TF_sbox2014_knight_helmet_style1" //closed
+				name = "#TF_Quest_Status_Inactive" //Inactive
 			},
 			[1] = {
-				name = "#TF_sbox2014_knight_helmet_style0", //open
+				name = "#QuestLog_Active", //"Active"
 				model_player = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_pack_open.mdl" //parachute model paths seem to be hard-coded as well (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weapon_buff_item.cpp#L45-L49)
 				//TODO: some sort of custom value here to play the deployed animation on the attached_model when this style is selected
 			}
@@ -287,6 +375,27 @@ for k, v in pairs (s.items) do
 				model = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_parachute.mdl"
 			}
 		}
+	//Add placement/placed styles for sappers
+	elseif (v.item_class == "tf_weapon_builder" and v.used_by_classes.spy) or v.item_class == "tf_weapon_sapper" then
+		local name = string.sub(string.StripExtension(string.GetFileFromFilename(v.model_world or v.model_player)), 3)
+		v.visuals = v.visuals or {}
+		v.visuals.styles = {
+			[0] = {
+				name = "#Normal"
+			},
+			[1] = {
+				name = "#TR_Eng_MoveTitle", //Building Placement
+				model_player = "models/buildables/" .. name .. "_placement.mdl" //these are hard-coded based on the item model in tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/server/tf/tf_obj_sapper.cpp#L396)
+			},
+			[2] = {
+				name = "#TR_Eng1_SpyRemoveTitle", //Sapped Buildings; not the best name, but there aren't any strings for words like "placed, built, attached, deployed"
+				model_player = "models/buildables/" .. name .. "_placed.mdl"
+			},
+		}
+	elseif v.item_class == "tf_weapon_rocketpack" then
+		//TODO: styles for animations like parachute
+		//"#TF_Quest_Status_Inactive" //Inactive
+		//"#QuestLog_Active" //"Active"
 	end
 	//Clear visuals tables that don't contain anything useful, so that we can clear out items with no useful visual 
 	//data at the end of this function (example: noisemakers have "visuals" tables containing only sound paths)
@@ -354,6 +463,7 @@ for k, v in pairs (s.items) do
 	end
 
 
+	v.model_player = v.model_world or v.model_player //a few items (hot hand) have a model_world that's different from model_player (which is a viewmodel instead), so use the worldmodel
 	if v.model_player == "" then v.model_player = nil end
 	//if an item only has an extra_wearable and not a model_player(_per_class), then change it into one (base jumper, diary, spellbook)
 	if v.extra_wearable and !v.model_player and !v.model_player_per_class then
@@ -1453,6 +1563,8 @@ if CLIENT then
 			quality_override = "unusual"
 		elseif data.models.stat_clock or self.aus_prefix then
 			quality_override = "strange"
+		elseif i.item_quality == "normal" and data.models.attached_festive then
+			quality_override = "unique"
 		end
 		self.quality = quality_override or i.item_quality or "unique"
 		self.rarity = i._rarity or nil
@@ -2156,7 +2268,7 @@ if CLIENT then
 			AddDropdown("Style", function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
-					if !name and k == 0 then name = GetTFLanguageString("TF_style0_normal") end
+					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
 					drop:AddChoice(name or "BAD UNHANDLED STYLE " .. k, k, self.data.style == k)
 				end
 			end, function(data)
