@@ -1306,10 +1306,9 @@ if CLIENT then
 						end
 					end
 				end
-				if window.SpawnPanel and window.SpawnPanel then
+				if IsValid(window.SpawnPanel) then
 					window.SpawnPanel.Refresh()
 				end
-
 			end
 
 			attopts:InvalidateLayout(true)
