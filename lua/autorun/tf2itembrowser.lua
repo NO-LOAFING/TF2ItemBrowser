@@ -1306,8 +1306,8 @@ if CLIENT then
 						end
 					end
 				end
-				if window.SpawnPanel and window.SpawnPanel.ModelPanel then
-					window.SpawnPanel.ModelPanel.Refresh()
+				if window.SpawnPanel and window.SpawnPanel then
+					window.SpawnPanel.Refresh()
 				end
 
 			end
@@ -1419,7 +1419,12 @@ if CLIENT then
 
 	function PANEL:SetData(data)
 
-		self.data = data
+		if data then
+			self.data = data
+		else
+			//this can be called with no arg just to make the panel acknowledge changes made to the data table
+			data = self.data
+		end
 		local i = TF2Items.items[data.id]
 
 		//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
@@ -1432,13 +1437,17 @@ if CLIENT then
 		if !vis.models.attached_festive then data.models.attached_festive = nil end
 		if !vis.models.stat_clock then data.models.stat_clock = nil end
 
-		local img_override, quality_override
+		local img_override
 		if i.visuals and i.visuals.styles then
 			img_override = i.visuals.styles[data.style].image_inventory
 			self.strange_prefix = i.visuals.styles[data.style].strange_prefix
 			self.aus_prefix = i.visuals.styles[data.style].aus_prefix
 		end 
-		self.ImageToQueue = img_override or i.image_inventory
+		img_override = img_override or i.image_inventory
+		if !self.mat or self.mat:GetName() != img_override then
+			self.mat = nil
+			self.ImageToQueue = img_override
+		end
 		local quality_override
 		if data.todo_replace_with_actual_unusual_effect_data_value then //TODO: unusual effect
 			quality_override = "unusual"
@@ -1521,7 +1530,7 @@ if CLIENT then
 
 		//tf2 code here sets killstreak values, but this addon won't be doing those unless rubat implements $sheenmap someday
 
-		if self.festivized then useProperName = false end
+		if self.data.models.attached_festive then useProperName = false end
 
 		local quality = ""
 		if !ignoreQuality then 
@@ -1804,8 +1813,11 @@ if CLIENT then
 		TF2ItemBrowser.SpawnPanel = pnl
 		pnl.Owner = self
 
-		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad) 
-		self:AddItemText(pnl, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad)
+		local name_container = pnl:Add("DPanel")
+		name_container:Dock(TOP)
+		name_container.Paint = function() end
+		//this will be populated in pnl.Refresh()
 		
 		local mdl_container = pnl:Add("DPanel")
 		mdl_container:SetSize(300,300)
@@ -1822,7 +1834,19 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		mdl.models = {}
-		function mdl.Refresh()
+		function mdl:PostDrawModel(ent)
+			//Render all additional models
+			for k, v in ipairs (self.models) do
+				if v != ent then v:DrawModel() end
+			end
+		end
+
+		function pnl.Refresh()
+			name_container:Clear()
+			self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
+			name_container:InvalidateLayout(true)
+			name_container:SizeToChildren(false, true)
+
 			if !IsValid(ent) then self.data.team = TF2ItemBrowser.attopts.team:GetChecked() end //update this every time we open or refresh the panel, since it can change after the icon has been created
 			local vis = GetItemModelVisuals(self.data)
 			//TODO: use class model as a fallback if we click on something like fists or gunslinger, or no model for stuff like taunts
@@ -2026,13 +2050,17 @@ if CLIENT then
 			end
 			pnl.class:SetEnabled(should_show_class)
 			pnl.class:GetParent().Label:SetEnabled(should_show_class)
+
+			pnl:InvalidateLayout(true)
+			pnl:SizeToChildren(false,true)
+			self:PositionPopupPanel(pnl)
 		end
-		function mdl:PostDrawModel(ent)
-			//Render all additional models
-			for k, v in ipairs (self.models) do
-				if v != ent then v:DrawModel() end
-			end
-		end
+		
+		function pnl.OnSettingChanged()
+			self:SetData()
+			pnl.Refresh()
+			if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
+		end	
 
 		local checks = vgui.Create("Panel", pnl) //container for submodel controls
 		checks:SetHeight(15)
@@ -2042,15 +2070,14 @@ if CLIENT then
 			local check = vgui.Create("DCheckBoxLabel", checks)
 			check.model = k
 			local text = string.NiceName(k)
-			if k == "attached_festive" then text = "Festivize" end
+			if k == "attached_festive" then text = "Festivizer" end
 			check:SetText(text)
 			check:SetHeight(15)
 			check:Dock(LEFT)
 			check:SetChecked(v)
 			check.OnChange = function(_, val)
 				self.data.models[k] = val
-				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
-				mdl.Refresh()
+				pnl.OnSettingChanged()
 			end
 			table.insert(checks.checks, check)
 		end
@@ -2094,8 +2121,7 @@ if CLIENT then
 			function drop.Combo.OnSelect(_, index, value, data)
 				if select_extras then select_extras(data) end
 				drop.Combo.value = data
-				if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
-				mdl.Refresh()
+				pnl.OnSettingChanged()
 			end
 			function drop.Combo:OnMenuOpened(menu)
 				//Add a checkmark to the currently selected option.
@@ -2166,10 +2192,7 @@ if CLIENT then
 		end
 		
 		pnl:SetWide(popup_w)
-		pnl:InvalidateLayout(true)
-		pnl:SizeToChildren(false,true)
-		mdl.Refresh()
-		self:PositionPopupPanel(pnl)
+		pnl.Refresh()
 		self.popup = pnl
 		function pnl:Paint(w,h)
 			self.Owner:PositionPopupPanel(self)
