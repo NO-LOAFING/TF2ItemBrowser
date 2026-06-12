@@ -70,7 +70,7 @@ end
 
 local classes = {"(any)", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
 //our favorite black scottish cyclops is called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), 
-//"demo" in model paths, and either one interchangably in equip region names. dumb!!!
+//"demo" in all model paths, and either one interchangably in equip region names. dumb!!!
 for k, v in ipairs (classes) do
 	local shortname = v
 	if v == "demoman" then shortname = "demo" end
@@ -229,8 +229,8 @@ SafeAmendItem(5808, "Unused Summer 2015 Operation Pass", function(i) i.model_pla
 SafeAmendItem(5829, "Unused Operation Tough Break Pass", function(i) i.model_player = "models/crafting/ticket_tough_break.mdl" end)
 //SafeAmendItem(2129, "Love & War Taunt Bundle", function(i) i.model_player = "models/player/items/crafting/bundle_of_taunts.mdl" end) //eehh, broken materials
 //SafeAmendItem(5734, "Supply Crate Ration", function(i) i.model_player = "models/player/items/crafting/crate_variation.mdl" end) //eehh, broken materials; there's 7 more of these, and one of them uses a different skin which is only partially broken
-//change spy watches to use these instead, just because they spawn better; the default models are viewmodels so they aren't attachable either way. 
-//none of the watch reskins have separated models like these, unfortunately.
+//change spy watches to use these armless separated models instead, just because they spawn better; the defaults are 
+//viewmodels so they aren't attachable either way. none of the watch reskins have models like these, unfortunately.
 SafeAmendItem(30, "Upgradeable TF_WEAPON_INVIS", function(i) i.model_player = "models/weapons/c_models/c_spy_watch.mdl" end)
 SafeAmendItem(60, "The Cloak and Dagger", function(i) i.model_player = "models/weapons/c_models/c_leather_watch/parts/c_leather_watch.mdl" end)
 SafeAmendItem(59, "The Dead Ringer", function(i) i.model_player = "models/weapons/c_models/c_pocket_watch/parts/c_pocket_watch.mdl" end)
@@ -371,17 +371,18 @@ for k, v in pairs (s.items) do
 			[3] = "models/workshop_partner/weapons/c_models/c_shogun_warbanner/c_shogun_warbanner.mdl",
 		}
 		v.extra_wearable_2 = banners[v.attributes["mod soldier buff type"].value] //silly custom "extra_wearable_2" value for additional wearable
-	//Add submodel and selectable closed/open styles for 1101 The B.A.S.E. Jumper
+	//Add submodel and selectable inactive/active styles for 1101 The B.A.S.E. Jumper
 	elseif v.item_class == "tf_weapon_parachute" then
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
 			[0] = {
-				name = "#TF_Quest_Status_Inactive" //Inactive
+				name = "#TF_Quest_Status_Inactive", //Inactive
+				_anim = {attached = "ACT_PARACHUTE_RETRACT_IDLE"}
 			},
 			[1] = {
 				name = "#QuestLog_Active", //"Active"
-				model_player = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_pack_open.mdl" //parachute model paths seem to be hard-coded as well (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weapon_buff_item.cpp#L45-L49)
-				//TODO: some sort of custom value here to play the deployed animation on the attached_model when this style is selected
+				model_player = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_pack_open.mdl", //parachute model paths seem to be hard-coded as well (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weapon_buff_item.cpp#L45-L49)
+				_anim = {attached = "ACT_PARACHUTE_DEPLOY_IDLE"}
 			}
 		}
 		v.visuals.attached_models = {
@@ -406,18 +407,46 @@ for k, v in pairs (s.items) do
 				model_player = "models/buildables/" .. name .. "_placed.mdl"
 			},
 		}
+	//Add selectable inactive/active styles for 1179 The Thermal Thruster
 	elseif v.item_class == "tf_weapon_rocketpack" then
-		//TODO: styles for animations like parachute
-		//"#TF_Quest_Status_Inactive" //Inactive
-		//"#QuestLog_Active" //"Active"
+		v.visuals = v.visuals or {}
+		v.visuals.styles = {
+			[0] = {
+				name = "#TF_Quest_Status_Inactive", //Inactive
+				_anim = {item = "ACT_ITEM_UNDEPLOYED_IDLE"}
+			},
+			[1] = {
+				name = "#QuestLog_Active", //"Active"
+				_anim = {item = "ACT_ITEM_DEPLOYED_IDLE"}
+			}
+		}
+	end
+	//Catch items that have a visuals.playback_activity table (148 "Engineer Welding Mask" and 745 "The Infernal Orchestrina") and convert those to selectable styles
+	if v.visuals and v.visuals.playback_activity then
+		v.visuals.styles = {
+			[0] = {
+				name = "#Normal",
+				_anim = {item = v.visuals.playback_activity.on_spawn}
+			}
+		}
+		if v.visuals.playback_activity.start_building then
+			v.visuals.styles[1] = {
+				name = "#Hud_Menu_Build_Title", //Build
+				_anim = {item = v.visuals.playback_activity.start_building}
+			}
+		elseif v.visuals.playback_activity.start_taunting then
+			v.visuals.styles[1] = {
+				name = "#Hud_Menu_Taunt_Title", //Taunt
+				_anim = {item = v.visuals.playback_activity.start_taunting}
+			}
+		end
 	end
 	//Clear visuals tables that don't contain anything useful, so that we can clear out items with no useful visual 
 	//data at the end of this function (example: noisemakers have "visuals" tables containing only sound paths)
 	for _, v2 in pairs (visuals_tabs) do
 		if v[v2] then
-			if !(v[v2].attached_models or v[v2].attached_models_festive or v[v2].attached_particlesystems or v[v2].material_override 
-			or v[v2].playback_activity or v[v2].player_bodygroups or v[v2].player_poseparam or v[v2].skin or v[v2].styles 
-			or v[v2].use_per_class_bodygroups or v[v2].wm_bodygroup_override) then
+			if !(v[v2].attached_models or v[v2].attached_models_festive or v[v2].attached_particlesystems or v[v2].material_override or v[v2].player_bodygroups 
+			or v[v2].player_poseparam or v[v2].skin or v[v2].styles or v[v2].use_per_class_bodygroups or v[v2].wm_bodygroup_override) then
 				v[v2] = nil
 			end
 		end
@@ -1962,7 +1991,10 @@ if CLIENT then
 		function mdl:PostDrawModel(ent)
 			//Render all additional models
 			for k, v in ipairs (self.models) do
-				if v != ent then v:DrawModel() end
+				if v != ent then
+					v:DrawModel()
+					v:FrameAdvance( --[[( RealTime() - self.LastPaint ) * self.m_fAnimSpeed]] )
+				end
 			end
 		end
 
@@ -1984,25 +2016,25 @@ if CLIENT then
 
 			local submodels = {}
 			if self.data.models.item then
-				table.insert(submodels, {model = vis.models.item, is_main = true})
+				table.insert(submodels, {role = "item"})
 				for k, v in ipairs (vis.models.attached or {}) do
-					table.insert(submodels, {model = v, merge = true})
+					table.insert(submodels, {role = "attached", attach_num = k})
 				end
 				if self.data.models.attached_festive then
 					for k, v in ipairs (vis.models.attached_festive) do
-						table.insert(submodels, {model = v, merge = true})
+						table.insert(submodels, {role = "attached_festive", attach_num = k})
 					end
 				end
-				if self.data.models.stat_clock then table.insert(submodels, {model = vis.models.stat_clock, merge = true, stat_clock = true}) end
+				if self.data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
 			end
-			if self.data.models.wearable then table.insert(submodels, {model = vis.models.wearable}) end
-			if self.data.models.wearable_2 then table.insert(submodels, {model = vis.models.wearable_2}) end
-			if self.data.models.taunt_prop then table.insert(submodels, {model = vis.models.taunt_prop}) end
-			if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {no_model_fallback = true}) end
-			local offset_height_base, offset_height
+			if self.data.models.wearable then table.insert(submodels, {role = "wearable"}) end
+			if self.data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
+			if self.data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
+			if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
+			local offset_height_base, offset_height, docamera
 			for k, v in ipairs (submodels) do
 				local ent
-				if v.no_model_fallback then
+				if v.role == "no_model_fallback" then
 					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal),
 					//then instead show a preview of the playermodel with bodygroups changed.
 					local model, skin = "", 0
@@ -2026,26 +2058,31 @@ if CLIENT then
 						ent:SetBodygroup(k, v)
 					end
 				else
-					ent = ClientsideModel(v.model, RENDERGROUP_OTHER)
+					local model = vis.models[v.role]
+					if v.attach_num then
+						model = model[v.attach_num]
+					end
+					ent = ClientsideModel(model, RENDERGROUP_OTHER)
 					if !IsValid(ent) then return end
 
 					ent:SetSkin(vis.skin)
-					if v.is_main then
+					if v.role == "item" then
 						for k, v in pairs (vis.item_bg) do
 							ent:SetBodygroup(ent:FindBodygroupByName(k), v)
 						end
 						local mins, maxs = ent:GetRenderBounds()
 						offset_height_base = maxs.z
-					elseif v.merge then
+					elseif v.attach_num then
 						ent:SetParent(mdl.Entity)
 						ent:AddEffects(EF_BONEMERGE)
-						if v.stat_clock then
-							local scl = vis.stat_clock_scale or 1
-							ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
-							//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
-							//detail, and it would need both its own gui and either a bunch of new materials or a whole 
-							//custom matproxy, is this worth the trouble?
-						end
+					elseif v.role == "stat_clock" then
+						ent:SetParent(mdl.Entity)
+						ent:AddEffects(EF_BONEMERGE)
+						local scl = vis.stat_clock_scale or 1
+						ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
+						//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
+						//detail, and it would need both its own gui and either a bunch of new materials or a whole 
+						//custom matproxy, is this worth the trouble?
 					else
 						//If we're rendering both the base item and wearables, then reposition wearables above the item
 						if offset_height_base then
@@ -2056,6 +2093,20 @@ if CLIENT then
 							ent:SetPos(Vector(0,0,offset_height))
 						end
 					end
+
+					if i.visuals and i.visuals.styles and i.visuals.styles[self.data.style] then
+						local anim = i.visuals.styles[self.data.style]._anim
+						if anim and anim[v.role] then
+							//we have to give the engine a nudge here to make it load the sequence info for the model, 
+							//otherwise LookupSequence won't return anything useful until we spawn the model in the world
+							ent:GetSequenceInfo(0)
+
+							ent:ResetSequence(ent:LookupSequence(anim[v.role]))
+							docamera = true
+							local info = ent:GetSequenceInfo(ent:LookupSequence(anim[v.role]))
+							ent:SetRenderBounds(info.bbmin, info.bbmax)
+						end
+					end
 				end
 				ent:SetNoDraw(true)
 				ent:SetIK(false)
@@ -2063,8 +2114,8 @@ if CLIENT then
 				table.insert(mdl.models, ent)
 			end
 
-			//don't recenter the camera if the models didn't change
-			local docamera = #mdl.models != #mdl.previous_models
+			//don't recenter the camera if the models or animation didn't change
+			if !docamera then docamera = #mdl.models != #mdl.previous_models end
 			if !docamera then
 				for k, v in ipairs (mdl.models) do
 					if v:GetModel() != mdl.previous_models[k] then
