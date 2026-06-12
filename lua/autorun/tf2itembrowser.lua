@@ -2634,13 +2634,14 @@ if SERVER then
 		if !input then return end
 		input = table.KeyFromValue(BrowserInputs, input)
 
-		local ent, data, vis, merge_type, submodels
+		local ent, data, i, vis, merge_type, submodels
 		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
 		end
 
 		if input == "item_spawn" or input == "attach_item_spawn" or input == "attach_item_modify" then
 			data = ReadItemDataTable()
+			i = TF2Items.items[data.id]
 			vis = GetItemModelVisuals(data)
 			merge_type = net.ReadBool()
 
@@ -2667,7 +2668,7 @@ if SERVER then
 		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
 		//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
 		//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
-		local function CreateItemEntity(model, skin, item_bg, parent)
+		local function CreateItemEntity(model, skin, item_bg, parent, anim)
 
 			if !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) 
 			or (parent != nil and !IsValid(parent)) then return end
@@ -2709,14 +2710,16 @@ if SERVER then
 
 			duplicator.StoreEntityModifier(e2, "TF2ItemBrowser_Item", data)
 
-			//test to make sure undo/entitymod stuff works properly with animprops; 
-			//TODO: reuse this when we implement features we actually need animprops for
-			--[[DisablePropCreateEffect = true
-			e = ConvertEntityToAnimprop(e, ply, true, false, false)
-			DisablePropCreateEffect = nil]]
+			if anim then
+				DisablePropCreateEffect = true
+				e = ConvertEntityToAnimprop(e, ply, true, !anim.undo)
+				DisablePropCreateEffect = nil
+
+				e:SetChannel1Sequence(e:LookupSequence(anim.anim))
+			end
 			
 			if IsValid(parent) then
-				if merge_type then
+				if merge_type or anim then
 					local old_e = e
 					e = CreateAdvBonemergeEntity(e, parent, ply, false, false, true)
 					if !IsValid(e) then return end
@@ -2739,7 +2742,7 @@ if SERVER then
 			for k, v in ipairs (submodels) do
 				local parent = ent
 				local model = vis.models[v.role]
-				local item_bg
+				local item_bg, anim
 				if v.attach_num then
 					model = model[v.attach_num]
 					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
@@ -2753,8 +2756,21 @@ if SERVER then
 					//we still have an entity to associate the item with.
 					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
 				end
+				//keep this simple, just convert every submodel into an animprop if there's an animation. this is easier than trying 
+				//to convert ents back-and-forth between animprops and normal props whenever an animated submodel is toggled on and 
+				//off (which is what would happen if you were to spawn the thermal thruster with just the non-animated taunt prop, 
+				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
+				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] then
+					anim = i.visuals.styles[data.style]._anim
+					if anim then
+						anim = {anim = anim[v.role] or "", undo = k == 1}
+					else
+						anim = nil
+					end
+				end
 
-				local e = CreateItemEntity(model, vis.skin, item_bg, parent)
+				local e = CreateItemEntity(model, vis.skin, item_bg, parent, anim)
 				if !IsValid(e) then continue end
 
 				table.insert(spawned_models, e)
@@ -2783,7 +2799,7 @@ if SERVER then
 						end
 					end
 					undo.SetPlayer(ply)
-				undo.Finish("Attached Item (" .. TF2Items.items[data.id].name .. ")") //item name instead of model name because this can change
+				undo.Finish("Attached Item (" .. i.name .. ")") //item name instead of model name because this can change
 
 				for k, v in pairs (vis.ply_bg) do
 					//when attaching a new item, we can keep this simple, and just change the ply_bg's the item has listed
@@ -2822,6 +2838,20 @@ if SERVER then
 					//we still have an entity to associate the item with.
 					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
 				end
+				//keep this simple, just convert every submodel into an animprop if there's an animation. this is easier than trying 
+				//to convert ents back-and-forth between animprops and normal props whenever an animated submodel is toggled on and 
+				//off (which is what would happen if you were to spawn the thermal thruster with just the non-animated taunt prop, 
+				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
+				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
+				local anim
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] then
+					anim = i.visuals.styles[data.style]._anim
+					if anim then
+						anim = {anim = anim[v.role] or "", undo = k == 1}
+					else
+						anim = nil
+					end
+				end
 
 				local e2
 				if k == 1 then
@@ -2845,7 +2875,7 @@ if SERVER then
 
 					//If the input enabled a submodel, then create a new entity to use for it
 					if !IsValid(e2) then
-						e2 = CreateItemEntity(model, vis.skin, nil, parent)
+						e2 = CreateItemEntity(model, vis.skin, nil, parent, anim)
 						if !IsValid(e2) then continue end
 						if v.role == "stat_clock" then
 							local scl = vis.stat_clock_scale or 1
@@ -2855,6 +2885,15 @@ if SERVER then
 						constraint.TF2ItemBrowser_Item_SubModel(e, e2, v.role, v.attach_num, ply)
 					end
 					submodels_to_remove[v.role] = nil
+				end
+
+				if anim and e2:LookupSequence(anim.anim) != e2:GetSequence() then
+					timer.Simple(0, function() //do this on a timer, otherwise this won't work when changing the entity's model at the same time
+						if !IsValid(e2) then return end
+						e2:SetChannel1Sequence(e2:LookupSequence(anim.anim))
+						e2:SetChannel1PauseFrame(0)
+						e2:StartAnimation(1)
+					end)
 				end
 
 				//Update the model and skin of each submodel
