@@ -1897,7 +1897,7 @@ if CLIENT then
 				//only relevant attrib we'd use this for is spell paints, which we may or may not end up doing this way?
 				//TODO: come back to this when implementing spell paints.
 			end
-			val = math.Round(val, 2)
+			if isnumber(val) then val = math.Round(val, 2) end
 
 			//TODO: additional wrapper for halloween spells? come back to this when implementing spell paints.
 			//https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3643-L3653
@@ -1916,6 +1916,7 @@ if CLIENT then
 				SortAttrib(k, v)
 			end
 		end
+		if self.data.models.attached_festive then SortAttrib("is_festivized", 1) end
 		//According to comments in CEconItemDescription::CVisibleAttributeDisplayer::SortAttributes() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3376),
 		//attributes in the same effect_type category (neutral, positive, negative) are sorted by attribute id.
 		for k, v in ipairs (effect_types) do
