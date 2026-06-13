@@ -2931,6 +2931,10 @@ if SERVER then
 					if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 					ent:SetBodygroup(k, v)
 				end
+				//Do parent skin change for zombie skin items
+				if i.attributes and i.attributes["player skin override"] and ent:SkinCount() > 4 and ent:GetSkin() <= 3 then
+					ent:SetSkin(ent:GetSkin() + 4)
+				end
 
 				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
 				//	if !IsValid(e) then return end
@@ -3168,6 +3172,21 @@ if SERVER then
 						end
 					end
 					break
+				end
+				//Undo parent skin change for zombie skin items
+				local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id]
+				if i.attributes and i.attributes["player skin override"] and ent:GetSkin() > 3 then
+					ent:SetSkin(ent:GetSkin() - 4)
+					//but what if the player had *two* equipped and only removed *one*?? this is stupid, who's going to do this?
+					for k, child in ipairs (ent:GetChildren()) do
+						if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
+							i = TF2Items.items[child.EntityMods.TF2ItemBrowser_Item.id]
+							if i.attributes and i.attributes["player skin override"] --[[and ent:SkinCount() > 4 and ent:GetSkin() <= 3]] then
+								ent:SetSkin(ent:GetSkin() + 4)
+								break
+							end
+						end
+					end
 				end
 			end
 		end)
