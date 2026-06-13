@@ -1933,18 +1933,45 @@ if CLIENT then
 			local item_desc = GetTFLanguageString(i.item_description)
 			if item_desc != "" then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
 		end
-		//This method also does a list of styles here for store previews; co-opt this for icons that don't correspond to an attached entity
 		if !self.entity then
+			local done_spacer
+			//This method also does a list of styles here for store previews; co-opt this for icons that don't correspond to an attached entity
 			if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-				table.insert(desc, {str = "", col = desc_colors.level})
-				table.insert(desc, {str = GetTFLanguageString("#Store_AvailableStyles_Header"), col = desc_colors.level})
+				//valve's method takes up too much space, make this a single line instead
+				local str
 				for k, v in SortedPairs (i.visuals.styles) do
 					local name = GetTFLanguageString(v.name, true)
 					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
-					table.insert(desc, {str = name or "BAD UNHANDLED STYLE " .. k, col = desc_colors.level})
+					if !str then
+						str = GetTFLanguageString("#Store_AvailableStyles_Header") .. " "
+					else
+						str = str .. ", "
+					end
+					str = str .. name or "BAD UNHANDLED STYLE " .. k
 				end
+				if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
+				table.insert(desc, {str = str, col = desc_colors.level})
 			end
-			//TODO: do class list here too
+			//Do class list here too, so that players can tell which classes can use unfamiliar items
+			if i.used_by_classes and !i.used_by_classes.none then
+				local str
+				if table.Count(i.used_by_classes) == 9 then
+					str = GetTFLanguageString("#Store_ItemDesc_UsedBy") .. " " .. GetTFLanguageString("#Store_ItemDesc_AllClasses")
+				else
+					for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
+						if i.used_by_classes[v.longname] then
+							if !str then
+								str = GetTFLanguageString("#Store_ItemDesc_UsedBy") .. " "
+							else
+								str = str .. ", " //manually appending unlocalized commas here is good enough for valve, so it's good enough for us (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/store/v2/tf_store_preview_item2.cpp#L922)
+							end
+							str = str .. string.NiceName(v.longname)
+						end
+					end
+				end
+				if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
+				table.insert(desc, {str = str, col = desc_colors.level})
+			end
 		end
 
 		//TODO: tf2 code does even more stuff here, go through these and see which ones we care about
@@ -2298,40 +2325,30 @@ if CLIENT then
 						if should_show_class then break end
 					end
 					for k, v in pairs (vis2.models) do
-						if vis.models[k] != v then
+						if istable(v) then
+							for k2, v2 in pairs (v) do
+								if vis.models[k][k2] != v2 then
+									should_show_class = true
+									break
+								end
+							end
+						elseif vis.models[k] != v then
 							should_show_class = true
 							break
 						end
 					end
 				end
 			end
-			//Instead of hiding the class selector, keep it visible but grayed out, so that players can see what class an item belongs to
-			if table.Count(i.used_by_classes) > 1 then
-				//If there are multiple selectable classes that use the same model, change the display text on the dropdown to list them
-				if !should_show_class and pnl.class:IsEnabled() then
-					if table.Count(i.used_by_classes) == 9 then
-						//if it's used by all classes (i.e. medals), just show "(any)"
-						pnl.class:SetText("(any)")
-					else
-						local text
-						for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
-							if i.used_by_classes[v.longname] then
-								if text then
-									text = text .. ", "
-								else
-									text = ""
-								end
-								text = text .. string.NiceName(v.longname)
-							end
-						end
-						pnl.class:SetText(text)
-					end
-				elseif should_show_class and !pnl.class:IsEnabled() then
-					pnl.class:SetText(string.NiceName(self.data.class))
+			local par = pnl.class:GetParent()
+			if !should_show_class and par:IsVisible() then
+				par:SetVisible(false)
+				par.stored_margin = {par:GetDockMargin()}
+			elseif should_show_team and !par:IsVisible() then
+				par:SetVisible(true)
+				if par.stored_margin then
+					par:DockMargin(par.stored_margin[1], par.stored_margin[2], par.stored_margin[3], par.stored_margin[4])
 				end
 			end
-			pnl.class:SetEnabled(should_show_class)
-			pnl.class:GetParent().Label:SetEnabled(should_show_class)
 
 			pnl:InvalidateLayout(true)
 			pnl:SizeToChildren(false,true)
