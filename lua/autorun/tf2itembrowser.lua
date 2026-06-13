@@ -421,6 +421,72 @@ for k, v in pairs (s.items) do
 				_anim = {item = "ACT_ITEM_DEPLOYED_IDLE"}
 			}
 		}
+	//Add selectable styles for canteens; the default canteen has separate models for each powerup type, while reskins use skin 0 for empty and skin 1 for any powerup.
+	elseif v.item_class == "tf_powerup_bottle" then
+		if v.attributes["lunchbox adds minicrits"] then //set_weapon_mode
+			v.visuals = v.visuals or {}
+			v.visuals.styles = {
+				[0] = {
+					name = "#TF_Quest_Status_Inactive", //Inactive
+				},
+				[1] = {
+					name = "#Attrib_CritBoost_shortdesc",
+					model_player = "models/player/items/mvm_loot/all_class/mvm_flask_krit.mdl",
+					image_inventory = "backpack/player/items/mvm_loot/all_class/mvm_flask_krit"
+				},
+				[2] = {
+					name = "#Attrib_Ubercharge_shortdesc",
+					model_player = "models/player/items/mvm_loot/all_class/mvm_flask_uber.mdl",
+					image_inventory = "backpack/player/items/mvm_loot/all_class/mvm_flask_uber"
+				},
+				[3] = {
+					name = "Attrib_RefillAmmo_shortdesc",
+					model_player = "models/player/items/mvm_loot/all_class/mvm_flask_ammo.mdl",
+					image_inventory = "backpack/player/items/mvm_loot/all_class/mvm_flask_ammo"
+				},
+				[4] = {
+					name = "Attrib_Recall_shortdesc",
+					model_player = "models/player/items/mvm_loot/all_class/mvm_flask_tele.mdl",
+					image_inventory = "backpack/player/items/mvm_loot/all_class/mvm_flask_tele"
+				},
+				[5] = {
+					name = "Attrib_BuildingInstaUpgrade_shortdesc",
+					model_player = "models/player/items/mvm_loot/all_class/mvm_flask_build.mdl",
+					image_inventory = "backpack/player/items/mvm_loot/all_class/mvm_flask_build"
+				}
+			}
+		else
+			v.visuals = v.visuals or {}
+			v.visuals.styles = {
+				[0] = {
+					name = "#TF_Quest_Status_Inactive", //Inactive
+					skin = 0
+				},
+				[1] = {
+					name = "#QuestLog_Active", //"Active"
+					skin = 1
+				}
+			}
+		end
+	//Add selectable intact/broken styles for demo bottles, caber, neon
+	elseif v.item_class == "tf_weapon_bottle" or v.item_class == "tf_weapon_stickbomb" or v.item_class == "tf_weapon_breakable_sign" then
+		v.visuals = v.visuals or {}
+		v.visuals.styles = {
+			[0] = {
+				name = "#Normal",
+				bodygroup = {
+					name = "broken",
+					submodel_index = 0
+				}
+			},
+			[1] = {
+				name = "#TF_Plutonidome_Style1", //Broken
+				bodygroup = {
+					name = "broken",
+					submodel_index = 1
+				}
+			},
+		}
 	end
 	//Catch items that have a visuals.playback_activity table (148 "Engineer Welding Mask" and 745 "The Infernal Orchestrina") and convert those to selectable styles
 	if v.visuals and v.visuals.playback_activity then
