@@ -204,7 +204,8 @@ for _, tab in ipairs ({
 	{836, "Promo Champ Stamp"},
 	{837, "Promo Marxman"},
 	{838, "Promo Human Cannonball"},
-	//{1184, "Gloves of Running Urgently MvM"}, //visually the same as 239 "Gloves of Running Urgently" but has different attributes
+	{1184, "Gloves of Running Urgently MvM"}, //visually the same as 239 "Gloves of Running Urgently" but has different attributes
+	{850, "Deflector"}, //visually the same as minigun, exists as a contrivance for mvm because tracer fx can only be defined in an itemdef
 	{30739, "Promo Fear Monger"}, //copy of 30724 "Fear Monger"
 	{30740, "Promo Arkham Cowl"}, //copy of 30720 "Arkham Cowl"
 	{30741, "Promo The Firefly"}, //copy of 30721 "The Firefly"
@@ -645,6 +646,13 @@ for k, v in ipairs (s2) do
 	end
 end
 s.equip_regions_list = tab
+
+
+//So item attrib displays can get these faster
+s.attribute_ids_by_name = {}
+for k, v in pairs (s.attributes) do
+	s.attribute_ids_by_name[v.name] = k
+end
 
 
 TF2Items = s
@@ -1823,22 +1831,121 @@ if CLIENT then
 			table.insert(desc, {str = rank, col = quality_colors.strange})
 		end
 
-		//TODO: tf2 code does a bunch of other stuff here, go through these and see which ones we care about
-		//Generate_CraftTag( pLocalizationProvider, pEconItem );
-		//Generate_StyleDesc( pLocalizationProvider, pEconItem );
-		//Generate_Painted( pLocalizationProvider, pEconItem );
-		//Generate_HolidayRestriction( pLocalizationProvider, pEconItem );	
-		//Generate_SaxxyAwardDesc( pLocalizationProvider, pEconItem );
-		//Generate_VisibleAttributes( pLocalizationProvider, pEconItem );
-		//Generate_QualityDesc( pLocalizationProvider, pEconItem );	
+		//TF2 code here does Generate_CraftTag, we don't care about this
+
+		//Current style, based on CEconItemDescription::Generate_StyleDesc (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1268)
+		//Only do this if this icon corresponds to a specific item, otherwise do the store-type list of all the styles below
+		if self.entity and i.visuals and i.visuals.styles then
+			local style = GetTFLanguageString(i.visuals.styles[self.data.style].name)
+			if style != "" then
+				table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Style_Desc"), "%s1", style), col = desc_colors.level})
+			end
+		end
+
+		//TODO: Paint name; get back to this when we implement paints (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1268)
+
+		//Holiday restriction, based on CEconItemDescription::Generate_HolidayRestriction https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1447
+		//In practice, the only one used by items this addon can spawn is halloween_and_full_moon
+		if i.holiday_restriction then
+			table.insert(desc, {str = GetTFLanguageString("Econ_holiday_restriction_" .. i.holiday_restriction), col = desc_colors.level}) //might be intended to use negative color if holiday is disabled? not sure if this works in tf2 or if it's necessary here.
+		end
+
+		//TF2 code here does Generate_SaxxyAwardDesc (specific category an award is for), we don't care about this
+
+		//Item attributes, based approximately on CEconItemDescription::Generate_VisibleAttributes and various related methods (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3415)
+		local sorted_attribs = {}
+		local effect_types = { //order from https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_schema.h#L694
+			[1] = {name = "unusual", color = quality_colors.rarity4},
+			//"strange" is here too, but currently the only attrib that's strange-colored is hidden, so skip this for now
+			[2] = {name = "neutral", color = desc_colors.neutral},
+			[3] = {name = "positive", color = desc_colors.positive},
+			[4] = {name = "negative", color = desc_colors.negative},
+		}
+		local function SortAttrib(attrib, val)
+			if attrib == "set supply crate series" and i.static_attrs["hide crate series number"] then return end //yes, tf2 code does this at the attrib processing level (CEconItemDescription::CVisibleAttributeDisplayer::Finalize (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3397C6-L3397C64)). dumb!!
+			local id = TF2Items.attribute_ids_by_name[attrib]
+			local attrib = TF2Items.attributes[id]
+			if !attrib or !attrib.description_string or attrib.hidden == 1 then return end
+			local str = GetTFLanguageString(attrib.description_string)
+			if str == "" then return end
+
+			//based on formatting code from CEconAttributeDescription::InternalConstruct (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3478)
+			local f = attrib.description_format 
+			if f == "value_is_additive_percentage" then
+				val = val * 100
+			//elseif f == "value_is_account_id" then
+			//	//not relevant
+			//	return
+			//elseif f == "value_is_additive" then
+			//	//no changes needed
+			elseif (f == "value_is_inverted_percentage" and val < 1) then
+				val = (1 - val) * 100
+			elseif f == "value_is_percentage" or f == "value_is_inverted_percentage" then
+				val = (val * 100) - 100
+			//elseif f == "value_is_date" then
+			//	//not relevant
+			//	return
+			elseif f == "value_is_particle_index" then
+				val = GetTFLanguageString("Attrib_Particle" .. val)
+				if val == "" then return end
+				//TODO: come back to this when implementing unusual effects.
+			//value_is_killstreakeffect_index and value_is_killstreak_idleeffect_index work the same as above, but we're not implementing these unless rubat adds $sheenmap someday
+			//elseif f == "value_is_or" then
+			//	//no changes needed
+			elseif f == "value_is_from_lookup_table" then
+				//this one's a little interesting, it converts the displayed value into a string from TF2Items.string_lookups[attrib].
+				//only relevant attrib we'd use this for is spell paints, which we may or may not end up doing this way?
+				//TODO: come back to this when implementing spell paints.
+			end
+			val = math.Round(val, 2)
+
+			//TODO: additional wrapper for halloween spells? come back to this when implementing spell paints.
+			//https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3643-L3653
+
+			local k = attrib.effect_type or "neutral"
+			sorted_attribs[k] = sorted_attribs[k] or {}
+			sorted_attribs[k][id] = string.Replace(str, "%s1", val)
+		end
+		if i.attributes then
+			for k, v in pairs (i.attributes) do
+				SortAttrib(k, v.value)
+			end
+		end
+		if i.static_attrs then
+			for k, v in pairs (i.static_attrs) do
+				SortAttrib(k, v)
+			end
+		end
+		//According to comments in CEconItemDescription::CVisibleAttributeDisplayer::SortAttributes() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3376),
+		//attributes in the same effect_type category (neutral, positive, negative) are sorted by attribute id.
+		for k, v in ipairs (effect_types) do
+			if sorted_attribs[v.name] then
+				for _, attrib in SortedPairs (sorted_attribs[v.name]) do
+					table.insert(desc, {str = attrib, col = v.color})
+				end
+			end
+		end
+		
+		//TF2 code here does Generate_QualityDesc (extra flavor text for community/self-made items), we don't care about this since no spawnable items use these qualities
 
 		//Item description; based on CEconItemDescription::Generate_ItemDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1575
 		if i.item_description then
 			local item_desc = GetTFLanguageString(i.item_description)
 			if item_desc != "" then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
 		end
-		//This method also does a list of styles here
-		//TODO: get back to this once styles are implemented https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1607-L1622
+		//This method also does a list of styles here for store previews; co-opt this for icons that don't correspond to an attached entity
+		if !self.entity then
+			if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
+				table.insert(desc, {str = "", col = desc_colors.level})
+				table.insert(desc, {str = GetTFLanguageString("#Store_AvailableStyles_Header"), col = desc_colors.level})
+				for k, v in SortedPairs (i.visuals.styles) do
+					local name = GetTFLanguageString(v.name, true)
+					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
+					table.insert(desc, {str = name or "BAD UNHANDLED STYLE " .. k, col = desc_colors.level})
+				end
+			end
+			//TODO: do class list here too
+		end
 
 		//TODO: tf2 code does even more stuff here, go through these and see which ones we care about
 		//Generate_Bundle( pLocalizationProvider, pEconItem );
