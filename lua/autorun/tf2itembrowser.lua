@@ -1749,6 +1749,10 @@ if CLIENT then
 			self.mat = nil
 			self.ImageToQueue = img_override
 		end
+		if i.image_inventory_overlay then
+			//there aren't many items with overlays, so just load these immediately, no need to queue then
+			self.mat_overlay = Material(i.image_inventory_overlay)
+		end
 		local quality_override
 		if data.todo_replace_with_actual_unusual_effect_data_value then //TODO: unusual effect
 			quality_override = "unusual"
@@ -1854,11 +1858,11 @@ if CLIENT then
 		if i.attributes and i.attributes["set item tint RGB"] then
 			paint_enabled = true
 			paint_col = {}
-			paint_col[false] = PackedRGBToTab(i.attributes["set item tint RGB"].value)
-			paint_col[false] = Vector(paint_col[false][1], paint_col[false][2], paint_col[false][3])
+			local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
+			paint_col[false] = Vector(col[1], col[2], col[3])
 			if i.attributes["set item tint RGB 2"] then
-				paint_col[true] = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
-				paint_col[true] = Vector(paint_col[true][1], paint_col[true][2], paint_col[true][3])
+				col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
+				paint_col[true] = Vector(col[1], col[2], col[3])
 			else
 				paint_col[true] = paint_col[false]
 			end
@@ -1882,7 +1886,7 @@ if CLIENT then
 			fx = fx,
 			paint = {
 				enabled = paint_enabled,
-				col = paint_col or {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+				col = paint_col or {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
 				override = {[false] = 0, [true] = 0},
 			},
 		})
@@ -2058,7 +2062,21 @@ if CLIENT then
 			end
 		end
 
-		//TODO: Paint name; get back to this when we implement paints (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1268)
+		//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
+		
+		if self.entity and self.data.paint.enabled and self.data.paint.override[false] == 0 then
+			local paint
+			for k, v in ipairs (paints) do
+				for k2, v2 in ipairs (v) do
+					if v2[1] == self.data.paint.col[false] or v2[2] == self.data.paint.col[true] then
+						paint = GetTFLanguageString(v2.name)
+						break
+					end
+				end
+				if paint then break end
+			end
+			if paint then table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Paint_Name"), "%s1", paint), col = desc_colors.level}) end
+		end
 
 		//Holiday restriction, based on CEconItemDescription::Generate_HolidayRestriction https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1447
 		//In practice, the only one used by items this addon can spawn is halloween_and_full_moon
@@ -2080,13 +2098,13 @@ if CLIENT then
 		local function SortAttrib(attrib, val)
 			if attrib == "set supply crate series" and i.static_attrs["hide crate series number"] then return end //yes, tf2 code does this at the attrib processing level (CEconItemDescription::CVisibleAttributeDisplayer::Finalize (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3397C6-L3397C64)). dumb!!
 			local id = TF2Items.attribute_ids_by_name[attrib]
-			local attrib = TF2Items.attributes[id]
-			if !attrib or !attrib.description_string or attrib.hidden == 1 then return end
-			local str = GetTFLanguageString(attrib.description_string)
+			local _attrib = TF2Items.attributes[id]
+			if !_attrib or !_attrib.description_string or _attrib.hidden == 1 then return end
+			local str = GetTFLanguageString(_attrib.description_string)
 			if str == "" then return end
 
 			//based on formatting code from CEconAttributeDescription::InternalConstruct (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3478)
-			local f = attrib.description_format 
+			local f = _attrib.description_format 
 			if f == "value_is_additive_percentage" then
 				val = val * 100
 			//elseif f == "value_is_account_id" then
@@ -2109,18 +2127,20 @@ if CLIENT then
 			//elseif f == "value_is_or" then
 			//	//no changes needed
 			elseif f == "value_is_from_lookup_table" then
-				//this one's a little interesting, it converts the displayed value into a string from TF2Items.string_lookups[attrib].
-				//only relevant attrib we'd use this for is spell paints, which we may or may not end up doing this way?
-				//TODO: come back to this when implementing spell paints.
+				if !TF2Items.string_lookups[attrib] then return end
+				val = GetTFLanguageString(TF2Items.string_lookups[attrib][val])
 			end
 			if isnumber(val) then val = math.Round(val, 2) end
 
-			//TODO: additional wrapper for halloween spells? come back to this when implementing spell paints.
-			//https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3643-L3653
+			str = string.Replace(str, "%s1", val)
+			//additional wrapper for halloween spells (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3643-L3653)
+			if _attrib.is_user_generated then
+				str = string.Replace(GetTFLanguageString("#Econ_Attrib_UserGeneratedWrapper_" .. tostring(_attrib.is_user_generated)), "%s1", str)
+			end
 
-			local k = attrib.effect_type or "neutral"
+			local k = _attrib.effect_type or "neutral"
 			sorted_attribs[k] = sorted_attribs[k] or {}
-			sorted_attribs[k][id] = string.Replace(str, "%s1", val)
+			sorted_attribs[k][id] = str
 		end
 		if i.attributes then
 			for k, v in pairs (i.attributes) do
@@ -2133,6 +2153,7 @@ if CLIENT then
 			end
 		end
 		if self.data.models.attached_festive then SortAttrib("is_festivized", 1) end
+		if self.data.paint.enabled and self.data.paint.override[false] > 0 then SortAttrib("SPELL: set item tint RGB", self.data.paint.override[false] - 1) end
 		//According to comments in CEconItemDescription::CVisibleAttributeDisplayer::SortAttributes() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3376),
 		//attributes in the same effect_type category (neutral, positive, negative) are sorted by attribute id.
 		for k, v in ipairs (effect_types) do
@@ -2735,20 +2756,38 @@ if CLIENT then
 		end
 
 		if i.capabilities and i.capabilities.paintable == 1 then
-			AddDropdown("Paint Color", function(drop)
+			local drop = AddDropdown("Paint Color", function(drop)
 				drop:AddChoice("(none)", nil, !self.data.paint.enabled)
 				for k, v in ipairs (paints) do //this starts from 0 so we can't do ipairs
 					drop:AddSpacer()
 					for k2, v2 in ipairs (v) do
 						local is_selected = self.data.paint.enabled 
-						and (self.data.paint.override == v2.override or self.data.paint.override == v2.override_2
-						or self.data.paint.col == v2[1] or self.data.paint.col == v2[2])	
+						and (self.data.paint.override[false] == v2.override or self.data.paint.override[true] == v2.override_2
+						or self.data.paint.col[false] == v2[1] or self.data.paint.col[true] == v2[2])	
 						drop:AddChoice(GetTFLanguageString(v2.name, true), v2, is_selected)
 					end
 				end
+				if drop:GetText() == "" then drop:SetText("(custom)") end
 			end, function(data)
 				if !data then
-					self.data.paint.enabled = false
+					//revert to default
+					if i.attributes and i.attributes["set item tint RGB"] then
+						self.data.paint.enabled = true
+						local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
+						self.data.paint.col[false] = Vector(col[1], col[2], col[3])
+						if i.attributes["set item tint RGB 2"] then
+							col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
+							self.data.paint.col[true] = Vector(col[1], col[2], col[3])
+						else
+							self.data.paint.col[true] = self.data.paint.col[false]
+						end
+					else
+						self.data.paint.enabled = false
+						self.data.paint.col[false] = Vector(255,255,255)
+						self.data.paint.col[true] = Vector(255,255,255)
+					end
+					self.data.paint.override[false] = 0
+					self.data.paint.override[true] = 0
 				else
 					self.data.paint.enabled = true
 					if data.override then
@@ -2758,6 +2797,9 @@ if CLIENT then
 						else
 							self.data.paint.override[true] = data.override
 						end
+					else
+						self.data.paint.override[false] = 0
+						self.data.paint.override[true] = 0
 					end
 					if data[1] then
 						self.data.paint.col[false] = data[1]
@@ -2769,6 +2811,40 @@ if CLIENT then
 					end
 				end
 			end)
+			local button = vgui.Create("DImageButton", drop:GetParent())
+			button:SetImage("materials/icon16/color_wheel.png")
+			button:Dock(RIGHT)
+			button:DockMargin(4,0,0,0)
+			button:SetWide(16)
+			button:SetStretchToFit(false)
+			button.DoClick = function()
+				local col = vgui.Create("DColorMixer")
+				col:SetAlphaBar(false)
+				local _col = self.data.paint.col[self.data.team]
+				col:SetColor(Color(_col.x, _col.y, _col.z))
+				col.ValueChanged = function(_, _col)
+					_col = Vector(_col.r, _col.g, _col.b)
+					//0,0,0 (and anything darker than 3,3,3) is used by the vmt to mean "no paint color", which means it'll get overwritten by the hat's
+					//default color, so if the player is trying to paint something pure black, then redirect it to a color that actually works.
+					if _col.x < 3 and _col.y < 3 and _col.z < 3 then
+						_col = Vector(3,3,3)
+					end
+					self.data.paint.enabled = true
+					self.data.paint.override[false] = 0
+					self.data.paint.override[true] = 0
+					self.data.paint.col[false] = _col
+					self.data.paint.col[true] = _col
+					drop:SetText("(custom)")
+					drop.selected = nil
+					pnl.OnSettingChanged()
+				end
+
+				//show color picker in a temporary popup window, like DProperty_VectorColor (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51)
+				local menu = DermaMenu()
+				menu:AddPanel(col)
+				//menu:SetPaintBackground(false)
+				menu:Open(gui.MouseX() + 8, gui.MouseY() + 10)
+			end
 		end
 
 		local button = vgui.Create("DButton", pnl)
@@ -2924,6 +3000,12 @@ if CLIENT then
 			//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
 			local diff = (1-(h/w))/2
 			surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+			if self.mat_overlay then
+				local col = self.data.paint.col[false]
+				surface.SetDrawColor(col.x, col.y, col.z, 255)
+				surface.SetMaterial(self.mat_overlay)
+				surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+			end
 		elseif self.ImageToQueue then
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
@@ -3035,6 +3117,11 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.models.stat_clock)
 
 	net.WriteUInt(data.fx, 3)
+	net.WriteBool(data.paint.enabled)
+	net.WriteVector(data.paint.col[false])
+	net.WriteVector(data.paint.col[true])
+	net.WriteUInt(data.paint.override[false], 3)
+	net.WriteUInt(data.paint.override[true], 3)
 end
 
 ReadItemDataTable = function()
@@ -3054,6 +3141,11 @@ ReadItemDataTable = function()
 		},
 
 		fx = net.ReadUInt(3),
+		paint = {
+			enabled = net.ReadBool(),
+			col = {[false] = net.ReadVector(), [true] = net.ReadVector()},
+			override = {[false] = net.ReadUInt(3), [true] = net.ReadUInt(3)},
+		}
 	}
 end
 
@@ -3241,6 +3333,16 @@ if SERVER then
 					e:SetMaterial(mat)
 					duplicator.StoreEntityModifier(e, "material", {MaterialOverride = mat})
 				end
+
+				if data.paint.enabled then
+					local col = data.paint.col[data.team]
+					GiveMatproxyTF2ItemPaint(ply, e, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						Override = data.paint.override[data.team]
+					})
+				end
 			end
 			if !IsValid(spawned_models[1]) then return end
 
@@ -3382,6 +3484,20 @@ if SERVER then
 					//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
 					e2:SetMaterial("")
 					duplicator.ClearEntityModifier(e2, "material")
+				end
+
+				if data.paint.enabled then
+					local col = data.paint.col[data.team]
+					GiveMatproxyTF2ItemPaint(ply, e2, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						Override = data.paint.override[data.team]
+					})
+				elseif e2.ProxyentPaintColor then
+					e2.ProxyentPaintColor:Remove()
+					e2.ProxyentPaintColor = nil
+					duplicator.ClearEntityModifier(e2, "MatproxyTF2ItemPaint")
 				end
 			end
 			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
