@@ -76,6 +76,12 @@ for k, v in ipairs (classes) do
 	if v == "demoman" then shortname = "demo" end
 	classes[k] = {shortname = shortname, longname = v}
 end
+//globals for these too
+local EFFECT_NONE = 0
+local EFFECT_UBER = 1
+local EFFECT_JARATE = 2
+local EFFECT_GOLD = 3
+local EFFECT_ICE = 4
 
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
@@ -1488,20 +1494,6 @@ if CLIENT then
 			end
 			AddTFButtonSounds(button)
 
-			local drop = AddDropdownFilter("Attach with:", function(self)
-				local b = GetConVar("cl_tf2itembrowser_advbone"):GetBool()
-				self:AddChoice("Easy Bonemerge", false, !b)
-				self:AddChoice("Adv. Bonemerge", true, b)
-			end)
-			drop:GetParent():SetParent(attopts)
-			drop:GetParent():Dock(TOP)
-			function drop.OnSelect(_, index, value, data)
-				//is there really no easy number-to-bool func in glua?
-				local b = 0
-				if data then b = 1 end
-				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. b)
-			end
-
 			//TODO: make this use red/blu team icons later
 			local check = vgui.Create("DCheckBoxLabel", attopts)
 			check:SetText("BLU")
@@ -1519,7 +1511,7 @@ if CLIENT then
 						if val then skintoset = ent:GetSkin()+1 end
 					end
 					if skintoset != nil then
-						window:DoInput("attach_skin", skintoset)
+						window:DoInput("attach_par_skin", skintoset)
 					end
 
 					for ent, pnl in pairs (atticons.icons) do
@@ -1536,6 +1528,61 @@ if CLIENT then
 				if IsValid(window.SpawnPanel) then
 					window.SpawnPanel.Refresh()
 				end
+			end
+
+			local drop = AddDropdownFilter("Effects", function(self)
+				self:AddChoice("(none)", EFFECT_NONE, true)
+				self:AddChoice("Uber", EFFECT_UBER)
+				self:AddChoice("Jarate", EFFECT_JARATE) //TODO: implement
+				self:AddChoice("Gold", EFFECT_GOLD)
+				self:AddChoice("Ice", EFFECT_ICE)
+			end)
+			drop:GetParent():SetParent(attopts)
+			drop:GetParent():Dock(TOP)
+			attopts.fx = drop
+			function drop.OnSelect(_, index, value, data)
+				local ent = window:GetEntity()
+				if IsValid(ent) then
+					if drop.IsUpdating then return end
+
+					local skintoset
+					local is_uber_skin = (math.ceil((ent:GetSkin()+1)/2) % 2) == 0
+					if data != 1 and is_uber_skin then
+						skintoset = ent:GetSkin() - 2
+					elseif data == 1 and !is_uber_skin then
+						skintoset = ent:GetSkin() + 2
+					end
+					if skintoset != nil then
+						window:DoInput("attach_par_skin", skintoset)
+					end
+					
+					window:DoInput("attach_par_fx", data)
+
+					for ent, pnl in pairs (atticons.icons) do
+						if !IsValid(pnl) or !IsValid(ent) then
+							atticons.icons[ent] = nil 
+						else
+							if pnl.data.fx != data then
+								pnl.data.fx = data
+								TF2ItemBrowser:DoInput("attach_item_modify", ent, pnl.data)
+							end
+						end
+					end
+				end
+				if IsValid(window.SpawnPanel) then
+					window.SpawnPanel.Refresh()
+				end
+			end
+
+			local drop = AddDropdownFilter("Attach with", function(self)
+				local b = GetConVar("cl_tf2itembrowser_advbone"):GetBool()
+				self:AddChoice("Easy Bonemerge", "0", !b)
+				self:AddChoice("Adv. Bonemerge", "1", b)
+			end)
+			drop:GetParent():SetParent(attopts)
+			drop:GetParent():Dock(TOP)
+			function drop.OnSelect(_, index, value, data)
+				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. data)
 			end
 
 			attopts:InvalidateLayout(true)
@@ -1570,6 +1617,21 @@ if CLIENT then
 
 					attopts.team:SetChecked(ent:GetSkin() % 2 != 0)
 
+					//Try to figure out if the selected ent has fx applied
+					attopts.fx.IsUpdating = true
+					local is_uber_skin = (math.ceil((ent:GetSkin()+1)/2) % 2) == 0
+					if is_uber_skin then
+						attopts.fx:ChooseOptionID(EFFECT_UBER+1)
+					elseif ent:GetMaterial() == "models/player/shared/gold_player" then
+						attopts.fx:ChooseOptionID(EFFECT_GOLD+1)
+					elseif ent:GetMaterial() == "models/player/shared/ice_player" then
+						attopts.fx:ChooseOptionID(EFFECT_ICE+1)
+					else
+						attopts.fx:ChooseOptionID(EFFECT_NONE+1)
+					end
+					//TODO: check matproxy stuff for EFFECT_JARATE
+					attopts.fx.IsUpdating = nil
+
 					net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
 						net.WriteEntity(ent)
 					net.SendToServer()
@@ -1581,6 +1643,13 @@ if CLIENT then
 					attopts.deselect:SetVisible(false)
 					attopts:InvalidateLayout(true)
 					attopts:SizeToChildren(false,true)
+
+					//Reset soem options that were specific to the selected ent
+					filters.class:ChooseOptionID(1)
+					attopts.team:SetChecked(false)
+					attopts.fx.IsUpdating = true
+					attopts.fx:ChooseOptionID(1)
+					attopts.fx.IsUpdating = nil
 				end
 			end
 
@@ -1612,9 +1681,13 @@ if CLIENT then
 					
 						net.WriteEntity(args[1]) //item ent to remove
 
-					elseif input == "attach_skin" then
+					elseif input == "attach_par_skin" then
 
 						net.WriteUInt(args[1], 8) //skin id
+
+					elseif input == "attach_par_fx" then
+
+						net.WriteUInt(args[1], 3) //EFFECT_ enum
 
 					end
 
@@ -1721,6 +1794,8 @@ if CLIENT then
 			end
 		end
 
+		local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
+
 		self:SetData({
 			id = id, 
 			class = class, 
@@ -1735,6 +1810,8 @@ if CLIENT then
 				attached_festive = false,
 				stat_clock = false,
 			},
+
+			fx = fx,
 		})
 
 	end
@@ -2205,7 +2282,12 @@ if CLIENT then
 			name_container:InvalidateLayout(true)
 			name_container:SizeToChildren(false, true)
 
-			if !IsValid(ent) then self.data.team = TF2ItemBrowser.attopts.team:GetChecked() end //update this every time we open or refresh the panel, since it can change after the icon has been created
+			//update these every time we open or refresh the panel, since they can change after the icon has been created
+			if !IsValid(ent) then 
+				self.data.team = TF2ItemBrowser.attopts.team:GetChecked()
+				local _, f = TF2ItemBrowser.attopts.fx:GetSelected()
+				self.data.fx = f
+			end
 			local vis = GetItemModelVisuals(self.data)
 
 			mdl.previous_models = {}
@@ -2308,6 +2390,25 @@ if CLIENT then
 							ent:SetRenderBounds(info.bbmin, info.bbmax)
 						end
 					end
+
+					//material overrides
+					local mat
+					if self.data.fx == EFFECT_UBER then
+						if !self.data.team then
+							mat = "models/effects/invulnfx_red"
+						else
+							mat = "models/effects/invulnfx_blue"
+						end
+					elseif self.data.fx == EFFECT_GOLD then
+						mat = "models/player/shared/gold_player"
+					elseif self.data.fx == EFFECT_ICE then
+						mat = "models/player/shared/ice_player"
+					elseif i.visuals and i.visuals.material_override then
+						mat = i.visuals.material_override
+					end
+					if mat then ent:SetMaterial(mat) end
+
+					//TODO: matproxy stuff for for EFFECT_JARATE
 				end
 				ent:SetNoDraw(true)
 				ent:SetIK(false)
@@ -2765,7 +2866,8 @@ BrowserInputs = {
 	"attach_item_spawn",
 	"attach_item_modify",
 	"attach_item_remove",
-	"attach_skin",
+	"attach_par_skin",
+	"attach_par_fx",
 }
 BrowserInputs_bits = 3 //max 7
 BrowserInputs = table.Flip(BrowserInputs)
@@ -2793,6 +2895,8 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.models.taunt_prop)
 	net.WriteBool(data.models.attached_festive)
 	net.WriteBool(data.models.stat_clock)
+
+	net.WriteUInt(data.fx, 3)
 end
 
 ReadItemDataTable = function()
@@ -2810,6 +2914,8 @@ ReadItemDataTable = function()
 			attached_festive = net.ReadBool(),
 			stat_clock = net.ReadBool(),
 		},
+
+		fx = net.ReadUInt(3),
 	}
 end
 
@@ -2825,7 +2931,7 @@ if SERVER then
 		if !input then return end
 		input = table.KeyFromValue(BrowserInputs, input)
 
-		local ent, data, i, vis, merge_type, submodels
+		local ent, data, i, vis, merge_type, submodels, effect_mats
 		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
 		end
@@ -2853,6 +2959,22 @@ if SERVER then
 			if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
 			if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
 			if #submodels == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
+
+			effect_mats = {
+				[EFFECT_GOLD] = "models/player/shared/gold_player",
+				[EFFECT_ICE] = "models/player/shared/ice_player",
+				["red"] = "models/effects/invulnfx_red", //for table.KeyFromValue detection
+				["blu"] = "models/effects/invulnfx_blue", //^
+			}
+			if !data.team then
+				effect_mats[EFFECT_UBER] = effect_mats.red
+			else
+				effect_mats[EFFECT_UBER] = effect_mats.blu
+			end
+			if i.visuals and i.visuals.material_override then 
+				effect_mats[EFFECT_NONE] = i.visuals.material_override 
+				effect_mats[EFFECT_JARATE] = i.visuals.material_override
+			end
 		end
 
 		//Spawn the item using the retrieved model, skin and bodygroups. To do this, we mostly just emulate sandbox's CCSpawn function
@@ -2973,6 +3095,13 @@ if SERVER then
 
 				if e != spawned_models[1] then
 					constraint.TF2ItemBrowser_Item_SubModel(spawned_models[1], e, v.role, v.attach_num, ply)
+				end
+
+				//Set material override on each submodel
+				local mat = effect_mats[data.fx]
+				if mat then
+					e:SetMaterial(mat)
+					duplicator.StoreEntityModifier(e, "material", {MaterialOverride = mat})
 				end
 			end
 			if !IsValid(spawned_models[1]) then return end
@@ -3105,6 +3234,17 @@ if SERVER then
 					end
 				end
 				e2:SetSkin(vis.skin)
+
+				//Update material override of each submodel
+				local mat = effect_mats[data.fx]
+				if mat then
+					e2:SetMaterial(mat)
+					duplicator.StoreEntityModifier(e2, "material", {MaterialOverride = mat})
+				elseif table.KeyFromValue(effect_mats, e2:GetMaterial()) then
+					//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
+					e2:SetMaterial("")
+					duplicator.ClearEntityModifier(e2, "material")
+				end
 			end
 			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
 			for role, v in pairs (submodels_to_remove) do
@@ -3165,9 +3305,30 @@ if SERVER then
 
 			e:Remove()
 
-		elseif input ==  "attach_skin" then
+		elseif input == "attach_par_skin" then
 
 			ent:SetSkin(net.ReadUInt(8))
+
+		elseif input == "attach_par_fx" then
+			
+			local fx = net.ReadUInt(3)
+
+			//do material overrides; parent entity only needs these ones
+			local effect_mats = {
+				[EFFECT_GOLD] = "models/player/shared/gold_player",
+				[EFFECT_ICE] = "models/player/shared/ice_player",
+			}
+			local mat = effect_mats[fx]
+			if mat then
+				ent:SetMaterial(mat)
+				duplicator.StoreEntityModifier(ent, "material", {MaterialOverride = mat})
+			elseif table.KeyFromValue(effect_mats, ent:GetMaterial()) then
+				//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
+				ent:SetMaterial("")
+				duplicator.ClearEntityModifier(ent, "material")
+			end
+				
+			//TODO: matproxy stuff for EFFECT_JARATE
 
 		end
 
