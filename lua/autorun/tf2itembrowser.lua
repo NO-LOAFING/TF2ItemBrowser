@@ -219,7 +219,7 @@ for _, tab in ipairs ({
 }) do
 	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
 end
-s.prefabs.base_paintkit_keylesscase.model_player = nil //these cases all use the same model as the paintkit internally, which is wrong and doesn't match their icon (and isn't visible anywhere in-game), get rid of them
+s.prefabs.base_paintkit_keylesscase.model_player = nil //these cases all use the same model as the paintkit internally, which is wrong and doesn't match their icon (and isn't even visible anywhere in-game), get rid of them
 
 //these items have existing models in the files, but aren't assigned in the schema; add them anyway
 s.prefabs.spell_base_footprints.model_player = "models/props_halloween/flask_bottle.mdl"
@@ -1767,6 +1767,56 @@ if CLIENT then
 
 	end
 
+	//duplicate function from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L326-L331)
+	local function PackedRGBToTab(n)
+		n = string.Right(bit.tohex(n),6)
+		return {tonumber(string.sub(n,1,2),16), tonumber(string.sub(n,3,4),16), tonumber(string.sub(n,5,6),16)}
+	end
+
+	local paints = {
+		{
+			{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
+			{name = "#TF_Tool_PaintCan_2",	[1] = Vector(66, 79, 59)},	//Zepheniah's Greed
+			{name = "#TF_Tool_PaintCan_3",	[1] = Vector(81, 56, 74)},	//Noble Hatter's Violet
+			{name = "#TF_Tool_PaintCan_4",	[1] = Vector(216, 190, 216)},	//Color No. 216-190-216
+			{name = "#TF_Tool_PaintCan_5",	[1] = Vector(125, 64, 113)},	//A Deep Commitment to Purple
+			{name = "#TF_Tool_PaintCan_6",	[1] = Vector(207, 115, 54)},	//Mann Co. Orange
+			{name = "#TF_Tool_PaintCan_7",	[1] = Vector(165, 117, 69)},	//Muskelmannbraun
+			{name = "#TF_Tool_PaintCan_8",	[1] = Vector(197, 175, 145)},	//Peculiarly Drab Tincture
+			{name = "#TF_Tool_PaintCan_9",	[1] = Vector(105, 77, 58)},	//Radigan Conagher Brown
+			{name = "#TF_Tool_PaintCan_10",	[1] = Vector(124, 108, 87)},	//Ye Olde Rustic Colour
+			{name = "#TF_Tool_PaintCan_11",	[1] = Vector(231, 181, 59)},	//Australium Gold
+			{name = "#TF_Tool_PaintCan_12",	[1] = Vector(126, 126, 126)},	//Aged Moustache Grey
+			{name = "#TF_Tool_PaintCan_13",	[1] = Vector(230, 230, 230)},	//An Extraordinary Abundance of Tinge
+			{name = "#TF_Tool_PaintCan_14",	[1] = Vector(20, 20, 20)},	//A Distinctive Lack of Hue
+			{name = "#TF_Tool_PaintCan_15",	[1] = Vector(255, 105, 180)},	//Pink as Hell
+			{name = "#TF_Tool_PaintCan_16",	[1] = Vector(47, 79, 79)},	//A Color Similar to Slate
+			{name = "#TF_Tool_PaintCan_17",	[1] = Vector(128, 128, 0)},	//Drably Olive
+			{name = "#TF_Tool_PaintCan_18",	[1] = Vector(50, 205, 50)},	//The Bitter Taste of Defeat and Lime
+			{name = "#TF_Tool_PaintCan_19",	[1] = Vector(240, 230, 140)},	//The Color of a Gentlemann's Business Pants
+			{name = "#TF_Tool_PaintCan_20",	[1] = Vector(233, 150, 122)},	//Dark Salmon Injustice
+			{name = "#TF_Tool_PaintCan_21",	[1] = Vector(188, 221, 179)},	//A Mann's Mint
+			{name = "#TF_Tool_PaintCan_22",	[1] = Vector(45, 45, 36)},	//After Eight
+		},
+		{
+			{name = "#TF_Tool_PaintCan_TeamColor",	[1] = Vector(184, 56, 59),	[2] = Vector(88, 133, 162)},	//Team Spirit
+			{name = "#TF_Tool_PaintCan_TeamColor2",	[1] = Vector(72, 56, 56),	[2] = Vector(56, 66, 72)},	//Operator's Overalls
+			{name = "#TF_Tool_PaintCan_TeamColor3",	[1] = Vector(168, 154, 140),	[2] = Vector(131, 159, 163)},	//Waterlogged Lab Coat
+			{name = "#TF_Tool_PaintCan_TeamColor4",	[1] = Vector(59, 31, 35),	[2] = Vector(24, 35, 61)},	//Balaclavas Are Forever
+			{name = "#TF_Tool_PaintCan_TeamColor5",	[1] = Vector(101, 71, 64),	[2] = Vector(40, 57, 77)},	//An Air of Debonair
+			{name = "#TF_Tool_PaintCan_TeamColor6",	[1] = Vector(128, 48, 32),	[2] = Vector(37, 109, 141)},	//The Value of Teamwork
+			{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
+		},
+		{
+			{name = "#TF_HalloweenSpell_Paint_1", override = 3},	//Putrescent Pigmentation
+			{name = "#TF_HalloweenSpell_Paint_2", override = 1},	//Die Job
+			{name = "#TF_HalloweenSpell_Paint_3", override = 2},	//Chromatic Corruption
+			{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
+			{name = "#TF_HalloweenSpell_Paint_5", override = 5},	//Sinister Staining
+			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7}, //not localized, bad!!
+		},
+	}
+
 	function PANEL:SetDefaultData()
 
 		//When the icon is first created, it's only assigned an id number, and then when the icon becomes visible, Paint calls this func
@@ -1786,6 +1836,8 @@ if CLIENT then
 			end
 		end
 
+		local team = TF2ItemBrowser.attopts.team:GetChecked()
+
 		local style = 0
 		if i.visuals and i.visuals.styles then
 			//default to the first style listed; i THINK this is always 0 but let's make extra sure
@@ -1797,10 +1849,25 @@ if CLIENT then
 
 		local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
 
+		local paint_enabled = false
+		local paint_col
+		if i.attributes and i.attributes["set item tint RGB"] then
+			paint_enabled = true
+			paint_col = {}
+			paint_col[false] = PackedRGBToTab(i.attributes["set item tint RGB"].value)
+			paint_col[false] = Vector(paint_col[false][1], paint_col[false][2], paint_col[false][3])
+			if i.attributes["set item tint RGB 2"] then
+				paint_col[true] = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
+				paint_col[true] = Vector(paint_col[true][1], paint_col[true][2], paint_col[true][3])
+			else
+				paint_col[true] = paint_col[false]
+			end
+		end
+
 		self:SetData({
 			id = id, 
 			class = class, 
-			team = TF2ItemBrowser.attopts.team:GetChecked(),
+			team = team,
 			style = style,
 
 			models = {
@@ -1813,6 +1880,11 @@ if CLIENT then
 			},
 
 			fx = fx,
+			paint = {
+				enabled = paint_enabled,
+				col = paint_col or {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+				override = {[false] = 0, [true] = 0},
+			},
 		})
 
 	end
@@ -2267,12 +2339,31 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		mdl.models = {}
-		function mdl:PostDrawModel(ent)
-			//Render all additional models
-			for k, v in ipairs (self.models) do
+		function mdl.PostDrawModel(ent)
+			for k, v in ipairs (mdl.models) do
+				//Update color of halloween spell paints
+				if self.data.paint.enabled then
+					//duplicate code from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L333-L345)
+					local override = self.data.paint.override[self.data.team]
+					if override > 0 then
+						local scaledTime = CurTime() * 22 //"arbitrary time scalar people liked"
+						local samplePoint0 = math.Round(scaledTime) % #ProxyentPaintColor_Overrides[override]
+						local samplePoint1 = (samplePoint0 + 1) % #ProxyentPaintColor_Overrides[override]
+						//MsgN(samplePoint0, " ", samplePoint1)
+
+						local delta = scaledTime - math.Round(scaledTime)
+
+						local c0 = PackedRGBToTab(ProxyentPaintColor_Overrides[override][samplePoint0+1]) //+1 because lua tables start at 1, not 0
+						local c1 = PackedRGBToTab(ProxyentPaintColor_Overrides[override][samplePoint1+1]) //^
+
+						v.ProxyentPaintColor.Color = Vector(Lerp(delta, c0[1], c1[1])/255, Lerp(delta, c0[2], c1[2])/255, Lerp(delta, c0[3], c1[3])/255)
+					end
+				end
+
+				//Render all additional models
 				if v != ent then
 					v:DrawModel()
-					v:FrameAdvance( --[[( RealTime() - self.LastPaint ) * self.m_fAnimSpeed]] )
+					v:FrameAdvance( --[[( RealTime() - mdl.LastPaint ) * mdl.m_fAnimSpeed]] )
 				end
 			end
 		end
@@ -2408,6 +2499,15 @@ if CLIENT then
 						mat = i.visuals.material_override
 					end
 					if mat then ent:SetMaterial(mat) end
+
+					//paint matproxy
+					if self.data.paint.enabled then
+						local col = self.data.paint.col[self.data.team]
+						ent.ProxyentPaintColor = {
+							IsValid = function() return true end, 
+							Color = Vector(col[1]/255, col[2]/255, col[3]/255)
+						}
+					end
 
 					//TODO: matproxy stuff for for EFFECT_JARATE
 				end
@@ -2631,6 +2731,43 @@ if CLIENT then
 				end
 			end, function(data)
 				self.data.style = data
+			end)
+		end
+
+		if i.capabilities and i.capabilities.paintable == 1 then
+			AddDropdown("Paint Color", function(drop)
+				drop:AddChoice("(none)", nil, !self.data.paint.enabled)
+				for k, v in ipairs (paints) do //this starts from 0 so we can't do ipairs
+					drop:AddSpacer()
+					for k2, v2 in ipairs (v) do
+						local is_selected = self.data.paint.enabled 
+						and (self.data.paint.override == v2.override or self.data.paint.override == v2.override_2
+						or self.data.paint.col == v2[1] or self.data.paint.col == v2[2])	
+						drop:AddChoice(GetTFLanguageString(v2.name, true), v2, is_selected)
+					end
+				end
+			end, function(data)
+				if !data then
+					self.data.paint.enabled = false
+				else
+					self.data.paint.enabled = true
+					if data.override then
+						self.data.paint.override[false] = data.override
+						if data.override_2 then
+							self.data.paint.override[true] = data.override_2
+						else
+							self.data.paint.override[true] = data.override
+						end
+					end
+					if data[1] then
+						self.data.paint.col[false] = data[1]
+						if data[2] then
+							self.data.paint.col[true] = data[2]
+						else
+							self.data.paint.col[true] = data[1]
+						end
+					end
+				end
 			end)
 		end
 
