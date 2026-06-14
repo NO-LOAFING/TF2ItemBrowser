@@ -219,6 +219,7 @@ for _, tab in ipairs ({
 }) do
 	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
 end
+s.prefabs.base_paintkit_keylesscase.model_player = nil //these cases all use the same model as the paintkit internally, which is wrong and doesn't match their icon (and isn't visible anywhere in-game), get rid of them
 
 //these items have existing models in the files, but aren't assigned in the schema; add them anyway
 s.prefabs.spell_base_footprints.model_player = "models/props_halloween/flask_bottle.mdl"
