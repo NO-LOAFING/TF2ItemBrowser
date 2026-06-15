@@ -76,12 +76,17 @@ for k, v in ipairs (classes) do
 	if v == "demoman" then shortname = "demo" end
 	classes[k] = {shortname = shortname, longname = v}
 end
+
 //globals for these too
 local EFFECT_NONE = 0
 local EFFECT_UBER = 1
 local EFFECT_JARATE = 2
 local EFFECT_GOLD = 3
 local EFFECT_ICE = 4
+local jarate = {
+	[false] = Vector(6, 9, 2),
+	[true] = Vector(7, 5, 1),
+}
 
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
@@ -1071,6 +1076,14 @@ if CLIENT then
 			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7}, //not localized, bad!!
 		},
 	}
+	local critglows = {
+		{name = "Critboost",	[1] = Vector(80, 8, 5),		[2] = Vector(5, 20, 80),	sparks_rb = true},
+		{name = "Mini-Crits",	[1] = Vector(226, 150, 62),	[2] = Vector(29, 202, 135),	sparks_rb = false},
+		{name = "Hype Mode",	[1] = Vector(50, 2, 48),	sparks_rb = false},
+	}
+	PrecacheParticleSystem("critgun_weaponmodel_red")
+	PrecacheParticleSystem("critgun_weaponmodel_blu")
+	PrecacheParticleSystem("critgun_weaponmodel_colorable")
 
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
@@ -1404,7 +1417,7 @@ if CLIENT then
 
 					//keep the search filter simple, only search by base name
 					if f and !(GetTFLanguageString(v.item_name, true):lower():find(f, 1, true)) then continue end
-					
+
 					local _, f = filters.class:GetSelected()
 					if f != "(any)" and !v.used_by_classes[f] then continue end
 
@@ -1572,6 +1585,10 @@ if CLIENT then
 						window:DoInput("attach_par_skin", skintoset)
 					end
 
+					//also update EFFECT_JARATE team color
+					local _, f = attopts.fx:GetSelected()
+					window:DoInput("attach_par_fx", f)
+
 					for ent, pnl in pairs (atticons.icons) do
 						if !IsValid(pnl) or !IsValid(ent) then
 							atticons.icons[ent] = nil 
@@ -1591,7 +1608,7 @@ if CLIENT then
 			local drop = AddDropdownFilter("Effects", function(self)
 				self:AddChoice("(none)", EFFECT_NONE, true)
 				self:AddChoice("Uber", EFFECT_UBER)
-				self:AddChoice("Jarate", EFFECT_JARATE) //TODO: implement
+				self:AddChoice("Jarate", EFFECT_JARATE)
 				self:AddChoice("Gold", EFFECT_GOLD)
 				self:AddChoice("Ice", EFFECT_ICE)
 			end)
@@ -1680,6 +1697,8 @@ if CLIENT then
 					local is_uber_skin = (math.ceil((ent:GetSkin()+1)/2) % 2) == 0
 					if is_uber_skin then
 						attopts.fx:ChooseOptionID(EFFECT_UBER+1)
+					elseif IsValid(ent.ProxyentCritGlow) and ent.ProxyentCritGlow:GetSparksJarate() then
+						attopts.fx:ChooseOptionID(EFFECT_JARATE+1)
 					elseif ent:GetMaterial() == "models/player/shared/gold_player" then
 						attopts.fx:ChooseOptionID(EFFECT_GOLD+1)
 					elseif ent:GetMaterial() == "models/player/shared/ice_player" then
@@ -1687,7 +1706,6 @@ if CLIENT then
 					else
 						attopts.fx:ChooseOptionID(EFFECT_NONE+1)
 					end
-					//TODO: check matproxy stuff for EFFECT_JARATE
 					attopts.fx.IsUpdating = nil
 
 					net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
@@ -1898,6 +1916,12 @@ if CLIENT then
 				col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
 				override = {[false] = 0, [true] = 0},
 			},
+			crit = {
+				enabled = false,
+				col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+				sparks_rb = false,
+				sparks_c = false,
+			}
 		})
 
 	end
@@ -2371,6 +2395,7 @@ if CLIENT then
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
 		mdl.models = {}
+		mdl.particles = {}
 		function mdl.PostDrawModel(ent)
 			for k, v in ipairs (mdl.models) do
 				//Update color of halloween spell paints
@@ -2398,6 +2423,10 @@ if CLIENT then
 					v:FrameAdvance( --[[( RealTime() - mdl.LastPaint ) * mdl.m_fAnimSpeed]] )
 				end
 			end
+			//Render particles
+			for k, v in ipairs (mdl.particles) do
+				v:Render()
+			end
 		end
 
 		function pnl.Refresh()
@@ -2420,6 +2449,11 @@ if CLIENT then
 				v:Remove()
 			end
 			mdl.models = {}
+
+			for k, v in ipairs (mdl.particles) do
+				v:StopEmissionAndDestroyImmediately()
+			end
+			mdl.particles = {}
 
 			local submodels = {}
 			if self.data.models.item then
@@ -2541,7 +2575,43 @@ if CLIENT then
 						}
 					end
 
-					//TODO: matproxy stuff for for EFFECT_JARATE
+					//critglow and EFFECT_JARATE matproxy
+					local col
+					if self.data.crit.enabled and (v.role == "item" or v.role == "attached" 
+					or v.role == "attached_festive" or v.role == "stat_clock") then
+						col = self.data.crit.col[self.data.team]
+					end
+					if self.data.fx == EFFECT_JARATE then
+						col = (col or Vector(1,1,1)) * jarate[self.data.team]
+					end
+					if col then
+						ent.ProxyentCritGlow = {
+							IsValid = function() return true end, 
+							Color = col
+						}
+					end
+
+					//crit spark particles
+					if self.data.crit.enabled and v.role == "item" then
+						if self.data.crit.sparks_rb then
+							local pname = "critgun_weaponmodel_red"
+							if self.data.team then pname = "critgun_weaponmodel_blu" end
+							local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW, 0)
+							if IsValid(part) then
+								part:SetShouldDraw(false)
+								table.insert(mdl.particles, part)
+							end
+						end
+						if self.data.crit.sparks_c then
+							local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW, 0)
+							if IsValid(part) then
+								local col = Vector(65,65,65) + (self.data.crit.col[self.data.team] * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+								part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
+								part:SetShouldDraw(false)
+								table.insert(mdl.particles, part)
+							end
+						end
+					end
 				end
 				ent:SetNoDraw(true)
 				ent:SetIK(false)
@@ -2769,12 +2839,10 @@ if CLIENT then
 		if i.capabilities and i.capabilities.paintable == 1 then
 			local drop = AddDropdown("Paint Color", function(drop)
 				drop:AddChoice("(none)", nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
-				for k, v in ipairs (paints) do //this starts from 0 so we can't do ipairs
+				for k, v in ipairs (paints) do
 					drop:AddSpacer()
 					for k2, v2 in ipairs (v) do
-						local is_selected = self.data.paint.enabled 
-						and (self.data.paint.override[false] == v2.override or self.data.paint.override[true] == v2.override_2
-						or self.data.paint.col[false] == v2[1] or self.data.paint.col[true] == v2[2])	
+						local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v2.override or self.data.paint.col[false] == v2[1])	
 						drop:AddChoice(GetTFLanguageString(v2.name, true), v2, is_selected)
 					end
 				end
@@ -2819,7 +2887,7 @@ if CLIENT then
 			button:SetStretchToFit(false)
 			button.DoClick = function()
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-				container:DockPadding(8,8,8,8)
+				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
 					LoadoutItemPopupBorder(0,0,w,h)
 				end
@@ -2854,12 +2922,113 @@ if CLIENT then
 					self.data.paint.override = {[false] = 0, [true] = 0}
 					self.data.paint.col = {[false] = _col, [true] = _col}
 					drop:SetText("(custom)")
-					drop.selected = nil
 					pnl.OnSettingChanged()
 				end
 				col:Dock(FILL)
 
 				container:SizeToChildren(true, true)
+				container:InvalidateLayout()
+			end
+		end
+
+		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
+		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true}
+		if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
+			local drop = AddDropdown("Crit Glow", function(drop)
+				drop:AddChoice("(none)", nil, !self.data.crit.enabled)
+				drop:AddSpacer()
+				for k, v in ipairs (critglows) do
+					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1]
+					drop:AddChoice(GetTFLanguageString(v.name, true), v, is_selected)
+				end
+				if drop:GetText() == "" then drop:SetText("(custom)") end
+			end, function(data)
+				if !data then
+					self.data.crit.enabled = false
+					self.data.crit.col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)}
+					self.data.crit.sparks_rb = false 
+					self.data.crit.sparks_c = false
+				else
+					self.data.crit.enabled = true
+					self.data.crit.col[false] = data[1]
+					if data[2] then
+						self.data.crit.col[true] = data[2]
+					else
+						self.data.crit.col[true] = data[1]
+					end
+					self.data.crit.sparks_rb = data.sparks_rb
+					self.data.crit.sparks_c = false
+				end
+			end)
+			local button = vgui.Create("DImageButton", drop:GetParent())
+			button:SetImage("materials/icon16/color_wheel.png")
+			button:Dock(RIGHT)
+			button:DockMargin(4,0,0,0)
+			button:SetWide(16)
+			button:SetStretchToFit(false)
+			button.DoClick = function()
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					LoadoutItemPopupBorder(0,0,w,h)
+				end
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
+				container:IsMouseInputEnabled(true)
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local col = vgui.Create("DColorMixer", container)
+				col:SetAlphaBar(false)
+				local _col = self.data.crit.col[self.data.team]
+				col:SetColor(Color(_col.x, _col.y, _col.z))
+				col.ValueChanged = function(_, _col)
+					_col = Vector(_col.r, _col.g, _col.b)
+					self.data.crit.enabled = true
+					self.data.crit.col = {[false] = _col, [true] = _col}
+					drop:SetText("(custom)")
+					pnl.OnSettingChanged()
+				end
+				col:Dock(FILL)
+
+				local check = vgui.Create("DCheckBoxLabel", container)
+				check:SetText("Colorable Sparks")
+				check:SetHeight(15)
+				//check:SizeToChildren(true, false)
+				check:DockMargin(0,8,0,0)
+				check:Dock(BOTTOM)
+				check:SetChecked(self.data.crit.sparks_c)
+				check.OnChange = function(_, val)
+					self.data.crit.enabled = true
+					self.data.crit.sparks_c = val
+					pnl.OnSettingChanged()
+				end
+
+				local check = vgui.Create("DCheckBoxLabel", container)
+				check:SetText("Team Sparks")
+				check:SetHeight(15)
+				//check:SizeToChildren(true, false)
+				check:DockMargin(0,16,0,0)
+				check:Dock(BOTTOM)
+				check:SetChecked(self.data.crit.sparks_rb)
+				check.OnChange = function(_, val)
+					self.data.crit.enabled = true
+					self.data.crit.sparks_rb = val
+					pnl.OnSettingChanged()
+				end
+
+				container:SizeToChildren(true, true)
+				container:SetTall(container:GetTall()+15+15+8) //sizetochildren doesn't account for height of checks? why not?
 				container:InvalidateLayout()
 			end
 		end
@@ -3142,6 +3311,13 @@ WriteItemDataTable = function(data)
 		net.WriteUInt(data.paint.override[false], 3)
 		net.WriteUInt(data.paint.override[true], 3)
 	end
+	net.WriteBool(data.crit.enabled)
+	if data.crit.enabled then
+		net.WriteVector(data.crit.col[false])
+		net.WriteVector(data.crit.col[true])
+		net.WriteBool(data.crit.sparks_rb)
+		net.WriteBool(data.crit.sparks_c)
+	end
 end
 
 ReadItemDataTable = function()
@@ -3174,6 +3350,21 @@ ReadItemDataTable = function()
 			enabled = false,
 			col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
 			override = {[false] = 0, [true] = 0},
+		}
+	end
+	if net.ReadBool() then
+		tab.crit = {
+			enabled = true,
+			col = {[false] = net.ReadVector(), [true] = net.ReadVector()},
+			sparks_rb = net.ReadBool(),
+			sparks_c = net.ReadBool(),
+		}
+	else
+		tab.crit = {
+			enabled = false,
+			col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+			sparks_rb = false,
+			sparks_c = false,
 		}
 	end
 
@@ -3374,6 +3565,26 @@ if SERVER then
 						Override = data.paint.override[data.team]
 					})
 				end
+
+				//critglow and EFFECT_JARATE matproxy
+				local col
+				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
+				or v.role == "attached_festive" or v.role == "stat_clock") then
+					col = data.crit.col[data.team]
+				end
+				if data.fx == EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * jarate[data.team]
+				end
+				if col then
+					GiveMatproxyTF2CritGlow(ply, e, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						RedSparks = !data.team and data.crit.sparks_rb,
+						BluSparks = data.team and data.crit.sparks_rb,
+						ColorableSparks = data.crit.sparks_c,
+					})
+				end
 			end
 			if !IsValid(spawned_models[1]) then return end
 
@@ -3530,6 +3741,30 @@ if SERVER then
 					e2.ProxyentPaintColor = nil
 					duplicator.ClearEntityModifier(e2, "MatproxyTF2ItemPaint")
 				end
+
+				//critglow and EFFECT_JARATE matproxy
+				local col
+				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
+				or v.role == "attached_festive" or v.role == "stat_clock") then
+					col = data.crit.col[data.team]
+				end
+				if data.fx == EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * jarate[data.team]
+				end
+				if col then
+					GiveMatproxyTF2CritGlow(ply, e2, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						RedSparks = !data.team and data.crit.sparks_rb,
+						BluSparks = data.team and data.crit.sparks_rb,
+						ColorableSparks = data.crit.sparks_c,
+					})
+				elseif e2.ProxyentCritGlow then
+					e2.ProxyentCritGlow:Remove()
+					e2.ProxyentCritGlow = nil
+					duplicator.ClearEntityModifier(e2, "MatproxyTF2CritGlow")
+				end
 			end
 			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
 			for role, v in pairs (submodels_to_remove) do
@@ -3612,8 +3847,26 @@ if SERVER then
 				ent:SetMaterial("")
 				duplicator.ClearEntityModifier(ent, "material")
 			end
-				
-			//TODO: matproxy stuff for EFFECT_JARATE
+
+			//matproxy stuff for EFFECT_JARATE
+			if fx == EFFECT_JARATE then
+				local team = ent:GetSkin() % 2 != 0
+				local col = jarate[team]
+				GiveMatproxyTF2CritGlow(ply, ent, {
+					ColorR = col.x,
+					ColorG = col.y,
+					ColorB = col.z,
+					RedSparks = false,
+					BluSparks = false,
+					ColorableSparks = false,
+					JarateSparks = true,
+					JarateColorableSparks = false,
+				})
+			elseif ent.ProxyentCritGlow then
+				ent.ProxyentCritGlow:Remove()
+				ent.ProxyentCritGlow = nil
+				duplicator.ClearEntityModifier(ent, "MatproxyTF2CritGlow")
+			end
 
 		end
 
