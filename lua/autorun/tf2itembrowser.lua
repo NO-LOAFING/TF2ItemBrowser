@@ -3576,13 +3576,14 @@ if SERVER then
 					col = (col or Vector(1,1,1)) * jarate[data.team]
 				end
 				if col then
+					local function bool_to_num(a) if !a then return 0 else return 1 end end
 					GiveMatproxyTF2CritGlow(ply, e, {
 						ColorR = col.x,
 						ColorG = col.y,
 						ColorB = col.z,
-						RedSparks = !data.team and data.crit.sparks_rb,
-						BluSparks = data.team and data.crit.sparks_rb,
-						ColorableSparks = data.crit.sparks_c,
+						RedSparks = bool_to_num(v.role == "item" and !data.team and data.crit.sparks_rb),
+						BluSparks = bool_to_num(v.role == "item" and data.team and data.crit.sparks_rb),
+						ColorableSparks = bool_to_num(v.role == "item" and data.crit.sparks_c),
 					})
 				end
 			end
@@ -3752,13 +3753,14 @@ if SERVER then
 					col = (col or Vector(1,1,1)) * jarate[data.team]
 				end
 				if col then
+					local function bool_to_num(a) if !a then return 0 else return 1 end end
 					GiveMatproxyTF2CritGlow(ply, e2, {
 						ColorR = col.x,
 						ColorG = col.y,
 						ColorB = col.z,
-						RedSparks = !data.team and data.crit.sparks_rb,
-						BluSparks = data.team and data.crit.sparks_rb,
-						ColorableSparks = data.crit.sparks_c,
+						RedSparks = bool_to_num(v.role == "item" and !data.team and data.crit.sparks_rb),
+						BluSparks = bool_to_num(v.role == "item" and data.team and data.crit.sparks_rb),
+						ColorableSparks = bool_to_num(v.role == "item" and data.crit.sparks_c),
 					})
 				elseif e2.ProxyentCritGlow then
 					e2.ProxyentCritGlow:Remove()
@@ -3856,11 +3858,11 @@ if SERVER then
 					ColorR = col.x,
 					ColorG = col.y,
 					ColorB = col.z,
-					RedSparks = false,
-					BluSparks = false,
-					ColorableSparks = false,
-					JarateSparks = true,
-					JarateColorableSparks = false,
+					RedSparks = 0,
+					BluSparks = 0,
+					ColorableSparks = 0,
+					JarateSparks = 1,
+					JarateColorableSparks = 0,
 				})
 			elseif ent.ProxyentCritGlow then
 				ent.ProxyentCritGlow:Remove()
