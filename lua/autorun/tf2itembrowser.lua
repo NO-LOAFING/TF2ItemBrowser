@@ -2811,11 +2811,26 @@ if CLIENT then
 			button:SetWide(16)
 			button:SetStretchToFit(false)
 			button.DoClick = function()
-				local container = vgui.Create("DPanel")
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(8,8,8,8)
 				function container:Paint(w,h)
 					LoadoutItemPopupBorder(0,0,w,h)
 				end
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
+				container:IsMouseInputEnabled(true)
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
 
 				local col = vgui.Create("DColorMixer", container)
 				col:SetAlphaBar(false)
@@ -2839,12 +2854,6 @@ if CLIENT then
 
 				container:SizeToChildren(true, true)
 				container:InvalidateLayout()
-
-				//show color picker in a temporary popup window, like DProperty_VectorColor (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51)
-				local menu = DermaMenu()
-				menu:AddPanel(container)
-				menu:SetPaintBackground(false)
-				menu:Open(gui.MouseX() + 8, gui.MouseY() + 10)
 			end
 		end
 
