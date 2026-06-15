@@ -1015,6 +1015,56 @@ if CLIENT then
 		return text
 	end
 
+	//duplicate function from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L326-L331)
+	local function PackedRGBToTab(n)
+		n = string.Right(bit.tohex(n),6)
+		return {tonumber(string.sub(n,1,2),16), tonumber(string.sub(n,3,4),16), tonumber(string.sub(n,5,6),16)}
+	end
+
+	local paints = {
+		{
+			{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
+			{name = "#TF_Tool_PaintCan_2",	[1] = Vector(66, 79, 59)},	//Zepheniah's Greed
+			{name = "#TF_Tool_PaintCan_3",	[1] = Vector(81, 56, 74)},	//Noble Hatter's Violet
+			{name = "#TF_Tool_PaintCan_4",	[1] = Vector(216, 190, 216)},	//Color No. 216-190-216
+			{name = "#TF_Tool_PaintCan_5",	[1] = Vector(125, 64, 113)},	//A Deep Commitment to Purple
+			{name = "#TF_Tool_PaintCan_6",	[1] = Vector(207, 115, 54)},	//Mann Co. Orange
+			{name = "#TF_Tool_PaintCan_7",	[1] = Vector(165, 117, 69)},	//Muskelmannbraun
+			{name = "#TF_Tool_PaintCan_8",	[1] = Vector(197, 175, 145)},	//Peculiarly Drab Tincture
+			{name = "#TF_Tool_PaintCan_9",	[1] = Vector(105, 77, 58)},	//Radigan Conagher Brown
+			{name = "#TF_Tool_PaintCan_10",	[1] = Vector(124, 108, 87)},	//Ye Olde Rustic Colour
+			{name = "#TF_Tool_PaintCan_11",	[1] = Vector(231, 181, 59)},	//Australium Gold
+			{name = "#TF_Tool_PaintCan_12",	[1] = Vector(126, 126, 126)},	//Aged Moustache Grey
+			{name = "#TF_Tool_PaintCan_13",	[1] = Vector(230, 230, 230)},	//An Extraordinary Abundance of Tinge
+			{name = "#TF_Tool_PaintCan_14",	[1] = Vector(20, 20, 20)},	//A Distinctive Lack of Hue
+			{name = "#TF_Tool_PaintCan_15",	[1] = Vector(255, 105, 180)},	//Pink as Hell
+			{name = "#TF_Tool_PaintCan_16",	[1] = Vector(47, 79, 79)},	//A Color Similar to Slate
+			{name = "#TF_Tool_PaintCan_17",	[1] = Vector(128, 128, 0)},	//Drably Olive
+			{name = "#TF_Tool_PaintCan_18",	[1] = Vector(50, 205, 50)},	//The Bitter Taste of Defeat and Lime
+			{name = "#TF_Tool_PaintCan_19",	[1] = Vector(240, 230, 140)},	//The Color of a Gentlemann's Business Pants
+			{name = "#TF_Tool_PaintCan_20",	[1] = Vector(233, 150, 122)},	//Dark Salmon Injustice
+			{name = "#TF_Tool_PaintCan_21",	[1] = Vector(188, 221, 179)},	//A Mann's Mint
+			{name = "#TF_Tool_PaintCan_22",	[1] = Vector(45, 45, 36)},	//After Eight
+		},
+		{
+			{name = "#TF_Tool_PaintCan_TeamColor",	[1] = Vector(184, 56, 59),	[2] = Vector(88, 133, 162)},	//Team Spirit
+			{name = "#TF_Tool_PaintCan_TeamColor2",	[1] = Vector(72, 56, 56),	[2] = Vector(56, 66, 72)},	//Operator's Overalls
+			{name = "#TF_Tool_PaintCan_TeamColor3",	[1] = Vector(168, 154, 140),	[2] = Vector(131, 159, 163)},	//Waterlogged Lab Coat
+			{name = "#TF_Tool_PaintCan_TeamColor4",	[1] = Vector(59, 31, 35),	[2] = Vector(24, 35, 61)},	//Balaclavas Are Forever
+			{name = "#TF_Tool_PaintCan_TeamColor5",	[1] = Vector(101, 71, 64),	[2] = Vector(40, 57, 77)},	//An Air of Debonair
+			{name = "#TF_Tool_PaintCan_TeamColor6",	[1] = Vector(128, 48, 32),	[2] = Vector(37, 109, 141)},	//The Value of Teamwork
+			{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
+		},
+		{
+			{name = "#TF_HalloweenSpell_Paint_1", override = 3},	//Putrescent Pigmentation
+			{name = "#TF_HalloweenSpell_Paint_2", override = 1},	//Die Job
+			{name = "#TF_HalloweenSpell_Paint_3", override = 2},	//Chromatic Corruption
+			{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
+			{name = "#TF_HalloweenSpell_Paint_5", override = 5},	//Sinister Staining
+			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7}, //not localized, bad!!
+		},
+	}
+
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
 
@@ -1738,6 +1788,23 @@ if CLIENT then
 		if !vis.models.attached_festive then data.models.attached_festive = nil end
 		if !vis.models.stat_clock then data.models.stat_clock = nil end
 
+		if !self.default_paint and i.attributes and i.attributes["set item tint RGB"] then
+			tab = {}
+			local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
+			tab[false] = Vector(col[1], col[2], col[3])
+			if i.attributes["set item tint RGB 2"] then
+				col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
+				tab[true] = Vector(col[1], col[2], col[3])
+			else
+				tab[true] = tab[false]
+			end
+			self.default_paint = tab
+		end
+		if self.default_paint and !data.paint.enabled then
+			data.paint.enabled = true
+			data.paint.col = table.Copy(self.default_paint)
+		end
+
 		local img_override
 		if i.visuals and i.visuals.styles then
 			img_override = i.visuals.styles[data.style].image_inventory
@@ -1771,56 +1838,6 @@ if CLIENT then
 
 	end
 
-	//duplicate function from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L326-L331)
-	local function PackedRGBToTab(n)
-		n = string.Right(bit.tohex(n),6)
-		return {tonumber(string.sub(n,1,2),16), tonumber(string.sub(n,3,4),16), tonumber(string.sub(n,5,6),16)}
-	end
-
-	local paints = {
-		{
-			{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
-			{name = "#TF_Tool_PaintCan_2",	[1] = Vector(66, 79, 59)},	//Zepheniah's Greed
-			{name = "#TF_Tool_PaintCan_3",	[1] = Vector(81, 56, 74)},	//Noble Hatter's Violet
-			{name = "#TF_Tool_PaintCan_4",	[1] = Vector(216, 190, 216)},	//Color No. 216-190-216
-			{name = "#TF_Tool_PaintCan_5",	[1] = Vector(125, 64, 113)},	//A Deep Commitment to Purple
-			{name = "#TF_Tool_PaintCan_6",	[1] = Vector(207, 115, 54)},	//Mann Co. Orange
-			{name = "#TF_Tool_PaintCan_7",	[1] = Vector(165, 117, 69)},	//Muskelmannbraun
-			{name = "#TF_Tool_PaintCan_8",	[1] = Vector(197, 175, 145)},	//Peculiarly Drab Tincture
-			{name = "#TF_Tool_PaintCan_9",	[1] = Vector(105, 77, 58)},	//Radigan Conagher Brown
-			{name = "#TF_Tool_PaintCan_10",	[1] = Vector(124, 108, 87)},	//Ye Olde Rustic Colour
-			{name = "#TF_Tool_PaintCan_11",	[1] = Vector(231, 181, 59)},	//Australium Gold
-			{name = "#TF_Tool_PaintCan_12",	[1] = Vector(126, 126, 126)},	//Aged Moustache Grey
-			{name = "#TF_Tool_PaintCan_13",	[1] = Vector(230, 230, 230)},	//An Extraordinary Abundance of Tinge
-			{name = "#TF_Tool_PaintCan_14",	[1] = Vector(20, 20, 20)},	//A Distinctive Lack of Hue
-			{name = "#TF_Tool_PaintCan_15",	[1] = Vector(255, 105, 180)},	//Pink as Hell
-			{name = "#TF_Tool_PaintCan_16",	[1] = Vector(47, 79, 79)},	//A Color Similar to Slate
-			{name = "#TF_Tool_PaintCan_17",	[1] = Vector(128, 128, 0)},	//Drably Olive
-			{name = "#TF_Tool_PaintCan_18",	[1] = Vector(50, 205, 50)},	//The Bitter Taste of Defeat and Lime
-			{name = "#TF_Tool_PaintCan_19",	[1] = Vector(240, 230, 140)},	//The Color of a Gentlemann's Business Pants
-			{name = "#TF_Tool_PaintCan_20",	[1] = Vector(233, 150, 122)},	//Dark Salmon Injustice
-			{name = "#TF_Tool_PaintCan_21",	[1] = Vector(188, 221, 179)},	//A Mann's Mint
-			{name = "#TF_Tool_PaintCan_22",	[1] = Vector(45, 45, 36)},	//After Eight
-		},
-		{
-			{name = "#TF_Tool_PaintCan_TeamColor",	[1] = Vector(184, 56, 59),	[2] = Vector(88, 133, 162)},	//Team Spirit
-			{name = "#TF_Tool_PaintCan_TeamColor2",	[1] = Vector(72, 56, 56),	[2] = Vector(56, 66, 72)},	//Operator's Overalls
-			{name = "#TF_Tool_PaintCan_TeamColor3",	[1] = Vector(168, 154, 140),	[2] = Vector(131, 159, 163)},	//Waterlogged Lab Coat
-			{name = "#TF_Tool_PaintCan_TeamColor4",	[1] = Vector(59, 31, 35),	[2] = Vector(24, 35, 61)},	//Balaclavas Are Forever
-			{name = "#TF_Tool_PaintCan_TeamColor5",	[1] = Vector(101, 71, 64),	[2] = Vector(40, 57, 77)},	//An Air of Debonair
-			{name = "#TF_Tool_PaintCan_TeamColor6",	[1] = Vector(128, 48, 32),	[2] = Vector(37, 109, 141)},	//The Value of Teamwork
-			{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
-		},
-		{
-			{name = "#TF_HalloweenSpell_Paint_1", override = 3},	//Putrescent Pigmentation
-			{name = "#TF_HalloweenSpell_Paint_2", override = 1},	//Die Job
-			{name = "#TF_HalloweenSpell_Paint_3", override = 2},	//Chromatic Corruption
-			{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
-			{name = "#TF_HalloweenSpell_Paint_5", override = 5},	//Sinister Staining
-			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7}, //not localized, bad!!
-		},
-	}
-
 	function PANEL:SetDefaultData()
 
 		//When the icon is first created, it's only assigned an id number, and then when the icon becomes visible, Paint calls this func
@@ -1853,21 +1870,6 @@ if CLIENT then
 
 		local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
 
-		local paint_enabled = false
-		local paint_col
-		if i.attributes and i.attributes["set item tint RGB"] then
-			paint_enabled = true
-			paint_col = {}
-			local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
-			paint_col[false] = Vector(col[1], col[2], col[3])
-			if i.attributes["set item tint RGB 2"] then
-				col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
-				paint_col[true] = Vector(col[1], col[2], col[3])
-			else
-				paint_col[true] = paint_col[false]
-			end
-		end
-
 		self:SetData({
 			id = id, 
 			class = class, 
@@ -1885,8 +1887,8 @@ if CLIENT then
 
 			fx = fx,
 			paint = {
-				enabled = paint_enabled,
-				col = paint_col or {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
+				enabled = false,
+				col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
 				override = {[false] = 0, [true] = 0},
 			},
 		})
@@ -2063,8 +2065,7 @@ if CLIENT then
 		end
 
 		//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
-		
-		if self.entity and self.data.paint.enabled and self.data.paint.override[false] == 0 then
+		if self.data.paint.enabled and self.data.paint.override[false] == 0 then
 			local paint
 			for k, v in ipairs (paints) do
 				for k2, v2 in ipairs (v) do
@@ -2074,6 +2075,9 @@ if CLIENT then
 					end
 				end
 				if paint then break end
+			end
+			if !paint and !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
+				paint = "(custom)" //not localized, bad!!
 			end
 			if paint then table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Paint_Name"), "%s1", paint), col = desc_colors.level}) end
 		end
@@ -2757,7 +2761,7 @@ if CLIENT then
 
 		if i.capabilities and i.capabilities.paintable == 1 then
 			local drop = AddDropdown("Paint Color", function(drop)
-				drop:AddChoice("(none)", nil, !self.data.paint.enabled)
+				drop:AddChoice("(none)", nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
 				for k, v in ipairs (paints) do //this starts from 0 so we can't do ipairs
 					drop:AddSpacer()
 					for k2, v2 in ipairs (v) do
@@ -2770,24 +2774,14 @@ if CLIENT then
 				if drop:GetText() == "" then drop:SetText("(custom)") end
 			end, function(data)
 				if !data then
-					//revert to default
-					if i.attributes and i.attributes["set item tint RGB"] then
+					if self.default_paint then
 						self.data.paint.enabled = true
-						local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
-						self.data.paint.col[false] = Vector(col[1], col[2], col[3])
-						if i.attributes["set item tint RGB 2"] then
-							col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
-							self.data.paint.col[true] = Vector(col[1], col[2], col[3])
-						else
-							self.data.paint.col[true] = self.data.paint.col[false]
-						end
+						self.data.paint.col = table.Copy(self.default_paint)
 					else
 						self.data.paint.enabled = false
-						self.data.paint.col[false] = Vector(255,255,255)
-						self.data.paint.col[true] = Vector(255,255,255)
+						self.data.paint.col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)}
 					end
-					self.data.paint.override[false] = 0
-					self.data.paint.override[true] = 0
+					self.data.paint.override = {[false] = 0, [true] = 0}
 				else
 					self.data.paint.enabled = true
 					if data.override then
@@ -2798,8 +2792,7 @@ if CLIENT then
 							self.data.paint.override[true] = data.override
 						end
 					else
-						self.data.paint.override[false] = 0
-						self.data.paint.override[true] = 0
+						self.data.paint.override = {[false] = 0, [true] = 0}
 					end
 					if data[1] then
 						self.data.paint.col[false] = data[1]
@@ -2818,7 +2811,13 @@ if CLIENT then
 			button:SetWide(16)
 			button:SetStretchToFit(false)
 			button.DoClick = function()
-				local col = vgui.Create("DColorMixer")
+				local container = vgui.Create("DPanel")
+				container:DockPadding(8,8,8,8)
+				function container:Paint(w,h)
+					LoadoutItemPopupBorder(0,0,w,h)
+				end
+
+				local col = vgui.Create("DColorMixer", container)
 				col:SetAlphaBar(false)
 				local _col = self.data.paint.col[self.data.team]
 				col:SetColor(Color(_col.x, _col.y, _col.z))
@@ -2830,19 +2829,21 @@ if CLIENT then
 						_col = Vector(3,3,3)
 					end
 					self.data.paint.enabled = true
-					self.data.paint.override[false] = 0
-					self.data.paint.override[true] = 0
-					self.data.paint.col[false] = _col
-					self.data.paint.col[true] = _col
+					self.data.paint.override = {[false] = 0, [true] = 0}
+					self.data.paint.col = {[false] = _col, [true] = _col}
 					drop:SetText("(custom)")
 					drop.selected = nil
 					pnl.OnSettingChanged()
 				end
+				col:Dock(FILL)
+
+				container:SizeToChildren(true, true)
+				container:InvalidateLayout()
 
 				//show color picker in a temporary popup window, like DProperty_VectorColor (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51)
 				local menu = DermaMenu()
-				menu:AddPanel(col)
-				//menu:SetPaintBackground(false)
+				menu:AddPanel(container)
+				menu:SetPaintBackground(false)
 				menu:Open(gui.MouseX() + 8, gui.MouseY() + 10)
 			end
 		end
@@ -3117,15 +3118,18 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.models.stat_clock)
 
 	net.WriteUInt(data.fx, 3)
+
 	net.WriteBool(data.paint.enabled)
-	net.WriteVector(data.paint.col[false])
-	net.WriteVector(data.paint.col[true])
-	net.WriteUInt(data.paint.override[false], 3)
-	net.WriteUInt(data.paint.override[true], 3)
+	if data.paint.enabled then
+		net.WriteVector(data.paint.col[false])
+		net.WriteVector(data.paint.col[true])
+		net.WriteUInt(data.paint.override[false], 3)
+		net.WriteUInt(data.paint.override[true], 3)
+	end
 end
 
 ReadItemDataTable = function()
-	return {
+	local tab = {
 		id = net.ReadUInt(15),
 		class = classes[net.ReadUInt(4)].longname,
 		team = net.ReadBool(),
@@ -3141,12 +3145,23 @@ ReadItemDataTable = function()
 		},
 
 		fx = net.ReadUInt(3),
-		paint = {
-			enabled = net.ReadBool(),
+	}
+
+	if net.ReadBool() then
+		tab.paint = {
+			enabled = true,
 			col = {[false] = net.ReadVector(), [true] = net.ReadVector()},
 			override = {[false] = net.ReadUInt(3), [true] = net.ReadUInt(3)},
 		}
-	}
+	else
+		tab.paint = {
+			enabled = false,
+			col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
+			override = {[false] = 0, [true] = 0},
+		}
+	end
+
+	return tab
 end
 
 if SERVER then
