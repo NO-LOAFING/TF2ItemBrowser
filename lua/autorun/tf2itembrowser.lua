@@ -202,7 +202,7 @@ for _, tab in ipairs ({
 	{12, "TF_WEAPON_SHOTGUN_PYRO"},
 	{23, "TF_WEAPON_PISTOL_SCOUT"},
 	{743, "Autogrant Pyrovision Goggles"}, //copy of 744 "Pyrovision Goggles"
-	{831, "Promo Red-Tape Recorder"}, //copies of 810-817, non-promo versions of the same items
+	{831, "Promo Red-Tape Recorder"}, //copies of 810-817 (non-promo versions of the same items)
 	{832, "Promo Huo Long Heatmaker"},
 	{833, "Promo Flying Guillotine"},
 	{834, "Promo Neon Annihilator"},
@@ -216,6 +216,13 @@ for _, tab in ipairs ({
 	{30740, "Promo Arkham Cowl"}, //copy of 30720 "Arkham Cowl"
 	{30741, "Promo The Firefly"}, //copy of 30721 "The Firefly"
 	{8936, "Halloween Spellbook Page (Achievement)"}, //copy of 8935 "Halloween Spellbook Page" except it applies different spellbook page in TF2
+	{1201, "Poker Visor 2026"}, //copies of 292, 294-298 (original poker night items) but with different names
+	{1202, "TTG Max Pistol - Poker Night 2026"},
+	{1203, "TTG Glasses 2026"},
+	{1204, "TTG Badge 2026"},
+	{1205, "TTG Watch 2026"},
+	{1206, "Iron Curtain 2026"},
+	{294, "TTG Max Pistol - Poker Night"}, //visually the same as 160 TTG Max Pistol, only differences are armory/store stuff
 }) do
 	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
 end
