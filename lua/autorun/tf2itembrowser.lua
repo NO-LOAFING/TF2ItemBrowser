@@ -1068,12 +1068,12 @@ if CLIENT then
 			{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
 		},
 		{
-			{name = "#TF_HalloweenSpell_Paint_1", override = 3},	//Putrescent Pigmentation
-			{name = "#TF_HalloweenSpell_Paint_2", override = 1},	//Die Job
-			{name = "#TF_HalloweenSpell_Paint_3", override = 2},	//Chromatic Corruption
+			{name = "#TF_HalloweenSpell_Paint_1", override = 3},			//Putrescent Pigmentation
+			{name = "#TF_HalloweenSpell_Paint_2", override = 1},			//Die Job
+			{name = "#TF_HalloweenSpell_Paint_3", override = 2},			//Chromatic Corruption
 			{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
-			{name = "#TF_HalloweenSpell_Paint_5", override = 5},	//Sinister Staining
-			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7}, //not localized, bad!!
+			{name = "#TF_HalloweenSpell_Paint_5", override = 5},			//Sinister Staining
+			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7},	//not localized, bad!!
 		},
 	}
 	local critglows = {
@@ -1820,8 +1820,6 @@ if CLIENT then
 			if i.attributes["set item tint RGB 2"] then
 				col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
 				tab[true] = Vector(col[1], col[2], col[3])
-			else
-				tab[true] = tab[false]
 			end
 			self.default_paint = tab
 		end
@@ -1913,12 +1911,12 @@ if CLIENT then
 			fx = fx,
 			paint = {
 				enabled = false,
-				col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
-				override = {[false] = 0, [true] = 0},
+				col = {[false] = Vector(255,255,255)},
+				override = {[false] = 0},
 			},
 			crit = {
 				enabled = false,
-				col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+				col = {[false] = Vector(1,1,1)},
 				sparks_rb = false,
 				sparks_c = false,
 			}
@@ -2100,7 +2098,7 @@ if CLIENT then
 			local paint
 			for k, v in ipairs (paints) do
 				for k2, v2 in ipairs (v) do
-					if v2[1] == self.data.paint.col[false] or v2[2] == self.data.paint.col[true] then
+					if v2[1] == self.data.paint.col[false] and v2[2] == self.data.paint.col[true] then
 						paint = GetTFLanguageString(v2.name)
 						break
 					end
@@ -2401,7 +2399,7 @@ if CLIENT then
 				//Update color of halloween spell paints
 				if self.data.paint.enabled then
 					//duplicate code from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L333-L345)
-					local override = self.data.paint.override[self.data.team]
+					local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
 					if override > 0 then
 						local scaledTime = CurTime() * 22 //"arbitrary time scalar people liked"
 						local samplePoint0 = math.Round(scaledTime) % #ProxyentPaintColor_Overrides[override]
@@ -2568,7 +2566,7 @@ if CLIENT then
 
 					//paint matproxy
 					if self.data.paint.enabled then
-						local col = self.data.paint.col[self.data.team]
+						local col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
 						ent.ProxyentPaintColor = {
 							IsValid = function() return true end, 
 							Color = Vector(col[1]/255, col[2]/255, col[3]/255)
@@ -2579,7 +2577,7 @@ if CLIENT then
 					local col
 					if self.data.crit.enabled and (v.role == "item" or v.role == "attached" 
 					or v.role == "attached_festive" or v.role == "stat_clock") then
-						col = self.data.crit.col[self.data.team]
+						col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
 					end
 					if self.data.fx == EFFECT_JARATE then
 						col = (col or Vector(1,1,1)) * jarate[self.data.team]
@@ -2605,7 +2603,8 @@ if CLIENT then
 						if self.data.crit.sparks_c then
 							local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW, 0)
 							if IsValid(part) then
-								local col = Vector(65,65,65) + (self.data.crit.col[self.data.team] * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+								local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+								col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
 								part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
 								part:SetShouldDraw(false)
 								table.insert(mdl.particles, part)
@@ -2842,7 +2841,7 @@ if CLIENT then
 				for k, v in ipairs (paints) do
 					drop:AddSpacer()
 					for k2, v2 in ipairs (v) do
-						local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v2.override or self.data.paint.col[false] == v2[1])	
+						local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v2.override or (self.data.paint.col[false] == v2[1] and self.data.paint.col[true] == v2[2]))
 						drop:AddChoice(GetTFLanguageString(v2.name, true), v2, is_selected)
 					end
 				end
@@ -2854,28 +2853,18 @@ if CLIENT then
 						self.data.paint.col = table.Copy(self.default_paint)
 					else
 						self.data.paint.enabled = false
-						self.data.paint.col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)}
+						self.data.paint.col = {[false] = Vector(255,255,255)}
 					end
-					self.data.paint.override = {[false] = 0, [true] = 0}
+					self.data.paint.override = {[false] = 0}
 				else
 					self.data.paint.enabled = true
 					if data.override then
-						self.data.paint.override[false] = data.override
-						if data.override_2 then
-							self.data.paint.override[true] = data.override_2
-						else
-							self.data.paint.override[true] = data.override
-						end
+						self.data.paint.override = {[false] = data.override, [true] = data.override_2}
 					else
-						self.data.paint.override = {[false] = 0, [true] = 0}
+						self.data.paint.override = {[false] = 0}
 					end
 					if data[1] then
-						self.data.paint.col[false] = data[1]
-						if data[2] then
-							self.data.paint.col[true] = data[2]
-						else
-							self.data.paint.col[true] = data[1]
-						end
+						self.data.paint.col = {[false] = data[1], [true] = data[2]}
 					end
 				end
 			end)
@@ -2909,7 +2898,7 @@ if CLIENT then
 
 				local col = vgui.Create("DColorMixer", container)
 				col:SetAlphaBar(false)
-				local _col = self.data.paint.col[self.data.team]
+				local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
 				col:SetColor(Color(_col.x, _col.y, _col.z))
 				col.ValueChanged = function(_, _col)
 					_col = Vector(_col.r, _col.g, _col.b)
@@ -2919,8 +2908,8 @@ if CLIENT then
 						_col = Vector(3,3,3)
 					end
 					self.data.paint.enabled = true
-					self.data.paint.override = {[false] = 0, [true] = 0}
-					self.data.paint.col = {[false] = _col, [true] = _col}
+					self.data.paint.override = {[false] = 0}
+					self.data.paint.col = {[false] = _col}
 					drop:SetText("(custom)")
 					pnl.OnSettingChanged()
 				end
@@ -2938,24 +2927,19 @@ if CLIENT then
 				drop:AddChoice("(none)", nil, !self.data.crit.enabled)
 				drop:AddSpacer()
 				for k, v in ipairs (critglows) do
-					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1]
+					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1] and self.data.crit.col[true] == v[2]
 					drop:AddChoice(GetTFLanguageString(v.name, true), v, is_selected)
 				end
 				if drop:GetText() == "" then drop:SetText("(custom)") end
 			end, function(data)
 				if !data then
 					self.data.crit.enabled = false
-					self.data.crit.col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)}
+					self.data.crit.col = {[false] = Vector(1,1,1)}
 					self.data.crit.sparks_rb = false 
 					self.data.crit.sparks_c = false
 				else
 					self.data.crit.enabled = true
-					self.data.crit.col[false] = data[1]
-					if data[2] then
-						self.data.crit.col[true] = data[2]
-					else
-						self.data.crit.col[true] = data[1]
-					end
+					self.data.crit.col = {[false] = data[1], [true] = data[2]}
 					self.data.crit.sparks_rb = data.sparks_rb
 					self.data.crit.sparks_c = false
 				end
@@ -2990,12 +2974,12 @@ if CLIENT then
 
 				local col = vgui.Create("DColorMixer", container)
 				col:SetAlphaBar(false)
-				local _col = self.data.crit.col[self.data.team]
+				local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
 				col:SetColor(Color(_col.x, _col.y, _col.z))
 				col.ValueChanged = function(_, _col)
 					_col = Vector(_col.r, _col.g, _col.b)
 					self.data.crit.enabled = true
-					self.data.crit.col = {[false] = _col, [true] = _col}
+					self.data.crit.col = {[false] = _col}
 					drop:SetText("(custom)")
 					pnl.OnSettingChanged()
 				end
@@ -3307,14 +3291,23 @@ WriteItemDataTable = function(data)
 	net.WriteBool(data.paint.enabled)
 	if data.paint.enabled then
 		net.WriteVector(data.paint.col[false])
-		net.WriteVector(data.paint.col[true])
+		net.WriteBool(data.paint.col[true] != nil)
+		if data.paint.col[true] != nil then
+			net.WriteVector(data.paint.col[true])
+		end
 		net.WriteUInt(data.paint.override[false], 3)
-		net.WriteUInt(data.paint.override[true], 3)
+		net.WriteBool(data.paint.override[true] != nil)
+		if data.paint.override[true] != nil then
+			net.WriteUInt(data.paint.override[true], 3)
+		end
 	end
 	net.WriteBool(data.crit.enabled)
 	if data.crit.enabled then
 		net.WriteVector(data.crit.col[false])
-		net.WriteVector(data.crit.col[true])
+		net.WriteBool(data.crit.col[true] != nil)
+		if data.crit.col[true] != nil then
+			net.WriteVector(data.crit.col[true])
+		end
 		net.WriteBool(data.crit.sparks_rb)
 		net.WriteBool(data.crit.sparks_c)
 	end
@@ -3342,27 +3335,36 @@ ReadItemDataTable = function()
 	if net.ReadBool() then
 		tab.paint = {
 			enabled = true,
-			col = {[false] = net.ReadVector(), [true] = net.ReadVector()},
-			override = {[false] = net.ReadUInt(3), [true] = net.ReadUInt(3)},
+			col = {[false] = net.ReadVector()},
 		}
+		if net.ReadBool() then
+			tab.paint.col[true] = net.ReadVector()
+		end
+		tab.paint.override = {[false] = net.ReadUInt(3)}
+		if net.ReadBool() then
+			tab.paint.override[true] = net.ReadUInt(3)
+		end
 	else
 		tab.paint = {
 			enabled = false,
-			col = {[false] = Vector(255,255,255), [true] = Vector(255,255,255)},
-			override = {[false] = 0, [true] = 0},
+			col = {[false] = Vector(255,255,255)},
+			override = {[false] = 0},
 		}
 	end
 	if net.ReadBool() then
 		tab.crit = {
 			enabled = true,
-			col = {[false] = net.ReadVector(), [true] = net.ReadVector()},
-			sparks_rb = net.ReadBool(),
-			sparks_c = net.ReadBool(),
+			col = {[false] = net.ReadVector()}
 		}
+		if net.ReadBool() then
+			tab.crit.col[true] = net.ReadVector()
+		end
+		tab.crit.sparks_rb = net.ReadBool()
+		tab.crit.sparks_c = net.ReadBool()
 	else
 		tab.crit = {
 			enabled = false,
-			col = {[false] = Vector(1,1,1), [true] = Vector(1,1,1)},
+			col = {[false] = Vector(1,1,1)},
 			sparks_rb = false,
 			sparks_c = false,
 		}
@@ -3557,12 +3559,12 @@ if SERVER then
 				end
 
 				if data.paint.enabled then
-					local col = data.paint.col[data.team]
+					local col = data.paint.col[data.team] or data.paint.col[false]
 					GiveMatproxyTF2ItemPaint(ply, e, {
 						ColorR = col.x,
 						ColorG = col.y,
 						ColorB = col.z,
-						Override = data.paint.override[data.team]
+						Override = data.paint.override[data.team] or data.paint.override[false]
 					})
 				end
 
@@ -3570,7 +3572,7 @@ if SERVER then
 				local col
 				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
 				or v.role == "attached_festive" or v.role == "stat_clock") then
-					col = data.crit.col[data.team]
+					col = data.crit.col[data.team] or data.crit.col[false]
 				end
 				if data.fx == EFFECT_JARATE then
 					col = (col or Vector(1,1,1)) * jarate[data.team]
@@ -3730,12 +3732,12 @@ if SERVER then
 				end
 
 				if data.paint.enabled then
-					local col = data.paint.col[data.team]
+					local col = data.paint.col[data.team] or data.paint.col[false]
 					GiveMatproxyTF2ItemPaint(ply, e2, {
 						ColorR = col.x,
 						ColorG = col.y,
 						ColorB = col.z,
-						Override = data.paint.override[data.team]
+						Override = data.paint.override[data.team] or data.paint.override[false]
 					})
 				elseif e2.ProxyentPaintColor then
 					e2.ProxyentPaintColor:Remove()
@@ -3747,7 +3749,7 @@ if SERVER then
 				local col
 				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
 				or v.role == "attached_festive" or v.role == "stat_clock") then
-					col = data.crit.col[data.team]
+					col = data.crit.col[data.team] or data.crit.col[false]
 				end
 				if data.fx == EFFECT_JARATE then
 					col = (col or Vector(1,1,1)) * jarate[data.team]
@@ -3814,6 +3816,7 @@ if SERVER then
 				end
 			end
 
+			duplicator.ClearEntityModifier(e, "TF2ItemBrowser_Item") //StoreEntityModifier uses table.Copy, which means values that are present in the old table but absent in the new table will remain (i.e. when switching from a team-colored paint to single-color paint), and we don't want that, so wipe the table
 			duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
 
 		elseif input == "attach_item_remove" then
