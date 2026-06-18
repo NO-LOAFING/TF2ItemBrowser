@@ -739,6 +739,14 @@ for k, v in pairs (s.attributes) do
 	s.attribute_ids_by_name[v.name] = k
 end
 
+//Make all particle defs easily accessible by id number
+s.attribute_controlled_attached_particles_all = {}
+for k, v in pairs (s.attribute_controlled_attached_particles) do
+	for k2, v2 in pairs (v) do
+		s.attribute_controlled_attached_particles_all[k2] = v2
+	end
+end
+
 
 TF2Items = s
 
@@ -874,6 +882,41 @@ local function GetItemModelVisuals(data)
 	end
 
 	return vis
+
+end
+
+local function GetItemDefaultParticleEffects(data)
+
+	local i = TF2Items.items[data.id]
+	local pe_def = {}
+
+	if i.visuals and i.visuals.attached_particlesystems then
+		for k, v in pairs(i.visuals.attached_particlesystems) do
+			if PEPlus_FindPCFFromEffect(v.system) then
+				table.insert(pe_def, v)
+			end
+		end
+	end
+	if i.attributes and i.attributes["attach particle effect static"] then
+		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect static"].value]
+		if tab --[[and !(tab.system == "drg_pipe_smoke" and style and style.use_smoke_particle_effect == 0)]] and PEPlus_FindPCFFromEffect(tab.system) then
+			tab = table.Copy(tab)
+			local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value)
+			if str != "" then tab._displayname = str end
+			table.insert(pe_def, tab)
+		end
+	end
+	if i.attributes and i.attributes["attach particle effect"] then
+		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect"].value]
+		if tab and PEPlus_FindPCFFromEffect(tab.system) then
+			tab = table.Copy(tab)
+			local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value)
+			if str != "" then tab._displayname = str end
+			table.insert(pe_def, tab)
+		end
+	end
+
+	return pe_def
 
 end
 
@@ -1813,6 +1856,8 @@ if CLIENT then
 		if !vis.models.attached_festive then data.models.attached_festive = nil end
 		if !vis.models.stat_clock then data.models.stat_clock = nil end
 
+		if #GetItemDefaultParticleEffects(data) == 0 then data.pe_def = false end
+
 		if !self.default_paint and i.attributes and i.attributes["set item tint RGB"] then
 			tab = {}
 			local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
@@ -1844,8 +1889,8 @@ if CLIENT then
 			self.mat_overlay = Material(i.image_inventory_overlay)
 		end
 		local quality_override
-		if data.todo_replace_with_actual_unusual_effect_data_value then //TODO: unusual effect
-			quality_override = "unusual"
+		if data.pe_unusual > 0 then
+			quality_override = "rarity4" //unusual
 		elseif data.models.stat_clock or self.aus_prefix then
 			quality_override = "strange"
 		elseif i.item_quality == "normal" and data.models.attached_festive then
@@ -1919,7 +1964,10 @@ if CLIENT then
 				col = {[false] = Vector(1,1,1)},
 				sparks_rb = false,
 				sparks_c = false,
-			}
+			},
+
+			pe_def = true,
+			pe_unusual = 0,
 		})
 
 	end
@@ -1963,8 +2011,8 @@ if CLIENT then
 
 			//tf2 code here sets strange ranks, which we only care about for campaign ranks and handle above, 
 			//but also prepends strange rank onto strange unusual items, which in our use cases, only applies 
-			//to weapons with both an unusual effect and a stat clock enabled.
-			if self.quality != "strange" and self.data.models.stat_clock then
+			//to weapons with both an unusual effect and a stat clock/australium enabled.
+			if self.quality != "strange" and (self.data.models.stat_clock or (i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].aus_prefix)) then
 				quality = GetTFLanguageString("strange") .. " " .. quality
 			end
 		end
@@ -2153,9 +2201,8 @@ if CLIENT then
 			//	//not relevant
 			//	return
 			elseif f == "value_is_particle_index" then
-				val = GetTFLanguageString("Attrib_Particle" .. val)
+				val = GetTFLanguageString("#Attrib_Particle" .. val)
 				if val == "" then return end
-				//TODO: come back to this when implementing unusual effects.
 			//value_is_killstreakeffect_index and value_is_killstreak_idleeffect_index work the same as above, but we're not implementing these unless rubat adds $sheenmap someday
 			//elseif f == "value_is_or" then
 			//	//no changes needed
@@ -2187,6 +2234,7 @@ if CLIENT then
 		end
 		if self.data.models.attached_festive then SortAttrib("is_festivized", 1) end
 		if self.data.paint.enabled and self.data.paint.override[false] > 0 then SortAttrib("SPELL: set item tint RGB", self.data.paint.override[false] - 1) end
+		if self.data.pe_unusual > 0 then SortAttrib("attach particle effect", self.data.pe_unusual) end
 		//According to comments in CEconItemDescription::CVisibleAttributeDisplayer::SortAttributes() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3376),
 		//attributes in the same effect_type category (neutral, positive, negative) are sorted by attribute id.
 		for k, v in ipairs (effect_types) do
@@ -2589,27 +2637,83 @@ if CLIENT then
 						}
 					end
 
-					//crit spark particles
-					if self.data.crit.enabled and v.role == "item" then
-						if self.data.crit.sparks_rb then
-							local pname = "critgun_weaponmodel_red"
-							if self.data.team then pname = "critgun_weaponmodel_blu" end
-							local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW, 0)
+					//add particle effects
+					if v.role == "item" then
+						if self.data.crit.enabled then
+							if self.data.crit.sparks_rb then
+								local pname = "critgun_weaponmodel_red"
+								if self.data.team then pname = "critgun_weaponmodel_blu" end
+								local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
+								if IsValid(part) then
+									part:SetShouldDraw(false)
+									table.insert(mdl.particles, part)
+								end
+							end
+							if self.data.crit.sparks_c then
+								local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
+								if IsValid(part) then
+									local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+									col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+									part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
+									part:SetShouldDraw(false)
+									table.insert(mdl.particles, part)
+								end
+							end
+						end
+
+						local function AddEffect(tab)
+							local name = tab.system
+							if name:EndsWith("_teamcolor_red") and self.data.team then
+								name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+							end
+							if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+
+							local part
+							if todo_use_head_origin then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
+							else
+								//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
+								local attachment = -1
+								if tab.attachment then attachment = ent:LookupAttachment(tab.attachment) end
+								if attachment > 0 then
+									part = CreateParticleSystem(ent, name, PATTACH_POINT_FOLLOW, attachment)
+								else
+									if tab.attach_to_rootbone then
+										part = CreateParticleSystem(ent, name, PATTACH_WORLDORIGIN + 1) //PATTACH_ROOTBONE_FOLLOW
+									else
+										part = CreateParticleSystem(ent, name, PATTACH_ABSORIGIN_FOLLOW)
+									end
+								end
+							end
 							if IsValid(part) then
 								part:SetShouldDraw(false)
 								table.insert(mdl.particles, part)
+								for i = 1, 5 do
+									if tab["control_point_" .. i] then
+										local attachment = ent:LookupAttachment(tab["control_point_" .. i])
+										if attachment > 0 then
+											part:AddControlPoint(i, ent, PATTACH_POINT_FOLLOW, tab["control_point_" .. i]) //unlike CreateParticleSystem, this takes an attachment name, not id number
+										end
+									end
+								end
 							end
 						end
-						if self.data.crit.sparks_c then
-							local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW, 0)
-							if IsValid(part) then
-								local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-								col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
-								part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
-								part:SetShouldDraw(false)
-								table.insert(mdl.particles, part)
+						if self.data.pe_def then
+							for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
+								AddEffect(v)
 							end
 						end
+						if self.data.pe_unusual > 0 then
+							local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
+							if tab then AddEffect(tab) end
+						end
+					end
+
+					//test
+					local a = ent:GetAttachments()
+					if a and #a > 0 then
+						MsgN(ent:GetModel(), " has attachments:")
+						PrintTable(a)
+						MsgN("\n")
 					end
 				end
 				ent:SetNoDraw(true)
@@ -2923,7 +3027,7 @@ if CLIENT then
 		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
 		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true}
 		if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
-			local drop = AddDropdown("Crit Glow", function(drop)
+			local drop = AddDropdown("Crit Glow Color", function(drop)
 				drop:AddChoice("(none)", nil, !self.data.crit.enabled)
 				drop:AddSpacer()
 				for k, v in ipairs (critglows) do
@@ -3015,6 +3119,59 @@ if CLIENT then
 				container:SetTall(container:GetTall()+15+15+8) //sizetochildren doesn't account for height of checks? why not?
 				container:InvalidateLayout()
 			end
+		end
+
+		//Show toggle for default particle effects (cigar smoke, halo effect, earbud notes, etc.)
+		local pe_def = GetItemDefaultParticleEffects(self.data)
+		if #pe_def > 0 then
+			local names = {}
+			for k, v in ipairs (pe_def) do
+				names[v._displayname or string.NiceName(v.system)] = true
+			end
+			local name
+			for k, v in pairs (names) do
+				if !name then
+					name = ""
+				else
+					name = name .. ", "
+				end
+				name = name .. k
+			end
+			local check = vgui.Create("DCheckBoxLabel", pnl)
+			check:SetText("Add default particle effects (" .. name .. ")")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(side_margins,0,side_margins,betweenitems)
+			check:SetChecked(self.data.pe_def)
+			check.OnChange = function(_, val)
+				self.data.pe_def = val
+				pnl.OnSettingChanged()
+			end
+		end
+
+		//Add unusual effect dropdown
+		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
+		local u_wep = i.particle_suffix
+		if u_hat or u_wep then
+			AddDropdown("Unusual Effect", function(drop)
+				drop:AddChoice("(none)", 0, !self.data.crit.enabled)
+				drop:AddSpacer()
+				if u_hat then
+					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
+						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
+						if v.system:EndsWith("_teamcolor_blue") then continue end
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+					end
+				end
+				if u_wep then
+					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
+						if v.use_suffix_name and !PEPlus_FindPCFFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+					end
+				end
+			end, function(data)
+				self.data.pe_unusual = data
+			end)	
 		end
 
 		local button = vgui.Create("DButton", pnl)
@@ -3311,6 +3468,8 @@ WriteItemDataTable = function(data)
 		net.WriteBool(data.crit.sparks_rb)
 		net.WriteBool(data.crit.sparks_c)
 	end
+	net.WriteBool(data.pe_def)
+	net.WriteUInt(data.pe_unusual, 15) //the whopper
 end
 
 ReadItemDataTable = function()
@@ -3369,6 +3528,8 @@ ReadItemDataTable = function()
 			sparks_c = false,
 		}
 	end
+	tab.pe_def = net.ReadBool()
+	tab.pe_unusual = net.ReadUInt(15)
 
 	return tab
 end
