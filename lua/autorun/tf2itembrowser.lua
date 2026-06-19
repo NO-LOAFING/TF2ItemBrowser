@@ -338,12 +338,16 @@ local bad_values = {"public_prefab", "qc_template", "triangle_budget_lod0", "tri
 local visuals_tabs = {"visuals", "visuals_red", "visuals_blu"}
 local used_equip_regions = {}
 local items_by_name = {}
+local paintkit_items_to_ids = {}
+local paintkit_rarities = {}
 
 for k, v in pairs (s.items) do
-	//clear useless items
-	if v.equip_type == "account" //contracts
-	or (v.static_attrs and v.static_attrs.paintkit_proto_def_index) //war paint items
-	then 
+	//clear useless contracts
+	if v.equip_type == "account" then s.items[k] = nil continue end
+
+	//war paint items are useless as well, but we still need to make a list of them in order to retrieve war paint rarities later
+	if v.static_attrs and v.static_attrs.paintkit_proto_def_index then
+		paintkit_items_to_ids[v.name] = v.static_attrs.paintkit_proto_def_index
 		s.items[k] = nil
 		continue
 	end
@@ -712,6 +716,9 @@ for k, v in ipairs (s2) do
 							for k, _ in pairs (s.items[items_by_name[k4]].used_by_classes) do
 								s.item_collections[v2.Key]._classes[k] = true
 							end
+						//Also retrieve paintkit rarities here
+						elseif paintkit_items_to_ids[k4] then
+							paintkit_rarities[paintkit_items_to_ids[k4]] = k3
 						end
 					end
 				else
@@ -1131,6 +1138,14 @@ if CLIENT then
 	PrecacheParticleSystem("critgun_weaponmodel_red")
 	PrecacheParticleSystem("critgun_weaponmodel_blu")
 	PrecacheParticleSystem("critgun_weaponmodel_colorable")
+	local wear_strings = {
+		[0] = "#TFUI_InvTooltip_None",
+		[1] = "#TFUI_InvTooltip_FactoryNew",
+		[2] = "#TFUI_InvTooltip_MinimalWear",
+		[3] = "#TFUI_InvTooltip_FieldTested",
+		[4] = "#TFUI_InvTooltip_WellWorn",
+		[5] = "#TFUI_InvTooltip_BattleScared"
+	}
 
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
@@ -1482,7 +1497,7 @@ if CLIENT then
 					if DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
 					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
 					or DoIncludeExcludeFilter(filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
-					or DoIncludeExcludeFilter(filters.warpaint:GetValue(), v._paintkit)
+					or DoIncludeExcludeFilter(filters.warpaint:GetValue(), v._paintkit and WP.Weapons.IsSupported(v.model_player))
 					//TODO: filter for custom items when we add those at the end
 					then continue end
 
@@ -1898,11 +1913,17 @@ if CLIENT then
 			quality_override = "rarity4" //unusual
 		elseif data.models.stat_clock or self.aus_prefix then
 			quality_override = "strange"
+		elseif data.wp.enabled then
+			quality_override = "paintkit"
 		elseif i.item_quality == "normal" and data.models.attached_festive then
 			quality_override = "unique"
 		end
 		self.quality = quality_override or i.item_quality or "unique"
-		self.rarity = i._rarity or nil
+		local rarity_override
+		if data.wp.enabled then
+			rarity_override = paintkit_rarities[data.wp.id]
+		end
+		self.rarity = rarity_override or i._rarity or nil
 		self.sound_pressed = i.mouse_pressed_sound or "ui/item_default_pickup.wav"
 		self.sound_drop = i.drop_sound or "ui/item_default_drop.wav"
 
@@ -1973,7 +1994,14 @@ if CLIENT then
 
 			pe_def = true,
 			pe_unusual = 0,
-			pe_unusual_offset = nil
+			pe_unusual_offset = nil,
+
+			wp = {
+				enabled = false,
+				id = 0,
+				wear = 1,
+				seed = "0",
+			}
 		})
 
 	end
@@ -1989,8 +2017,9 @@ if CLIENT then
 		local useProperName = true
 		local ignoreWear = false
 		local ignoreQuality = false
-		if self.paintkit and self.quality != "strange" and self.quality != "selfmade" then
-			ignoreQuality = true
+		if self.data.wp.enabled and self.quality != "strange" and self.quality != "selfmade" then
+			//all quality strings are disabled on unusual paintkit items. yes, this appears to actually be the case in-game. what?? (https://steamcommunity.com/sharedfiles/filedetails/?id=3722656440)
+			//ignoreQuality = true
 		end
 		
 		// Start with the base name.
@@ -2047,10 +2076,21 @@ if CLIENT then
 		qualityformat = string.Replace(qualityformat, "%s5", "") //duck journal rank
 		quality = qualityformat
 
-		if self.paintkit then
-			//TODO: tf2 code here gets localized paintkit name and concatenates it with itemName here; these names aren't stored in 
-			//normal localization files, maybe we can grab them from the war paints gmod addon, which reads them from protodefs?
-			//https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1001
+		if self.data.wp.enabled then
+			local paintKitStr = WP.Proto.Schema.GetPaintkitByDefindex(self.data.wp.id)
+			if paintKitStr and paintKitStr.header then
+				paintKitStr = WP.Proto.Localization.GetWarpaintName(paintKitStr.header.name, paintKitStr.locDesctoken)
+			else
+				paintKitStr = nil
+			end
+			if paintKitStr then
+				//Based off Econ_ConcatPaintKitName (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L543)
+				local format = GetTFLanguageString("#ToolPaintKit_ItemDescFormat")
+				if format == "" then format = "%s1 %s2" end
+				format = string.Replace(format, "%s1", paintKitStr)
+				format = string.Replace(format, "%s2", itemName)
+				itemName = format
+			end
 		end
 
 		//note: in the tf2 code, at the very top of this method, "ItemNameFormat" is set as the default value, and a comment mentions 
@@ -2078,17 +2118,17 @@ if CLIENT then
 		local i = TF2Items.items[self.data.id]
 		if !i then return desc end
 
-		if i._rarity then
+		if self.rarity then
 			//Item rarity; based on CEconItemDescription::Generate_ItemRarityDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1521
 			
-			local tooltip = "TFUI_InvTooltip_Rarity"
-			if !self.wear then tooltip = "TFUI_InvTooltip_RarityNoWear" end //TODO: we might end up storing paintkit wear differently, come back to this
+			local tooltip = "#TFUI_InvTooltip_Rarity"
+			if !self.data.wp.enabled then tooltip = "#TFUI_InvTooltip_RarityNoWear" end
 			tooltip = GetTFLanguageString(tooltip)
 			if tooltip != "" then
-				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString(TF2Items.rarities[i._rarity].loc_key))
+				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString(TF2Items.rarities[self.rarity].loc_key))
 				tooltip = string.Replace(tooltip, "%s2", GetTFLanguageString(i.item_type_name))
-				tooltip = string.Replace(tooltip, "%s3", "") //TODO: convert wear value (however we end up storing it) to localization string from this table https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.cpp#L200-L208
-				table.insert(desc, {str = tooltip, col = rarity_colors[i._rarity]})
+				tooltip = string.Replace(tooltip, "%s3", GetTFLanguageString(wear_strings[self.data.wp.wear]))
+				table.insert(desc, {str = tooltip, col = rarity_colors[self.rarity]})
 			end
 		else
 			//Item level; based on CEconItemDescription::Generate_ItemLevelDesc, which calls CEconItemDescription::Generate_ItemLevelDesc_Default (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1252);
@@ -2644,7 +2684,7 @@ if CLIENT then
 					end
 
 					//crit spark particles
-					if v.role == "item" and self.data.crit.enabled then
+					if self.data.crit.enabled and v.role == "item" then
 						if self.data.crit.sparks_rb then
 							local pname = "critgun_weaponmodel_red"
 							if self.data.team then pname = "critgun_weaponmodel_blu" end
@@ -2666,6 +2706,55 @@ if CLIENT then
 						end
 					end
 
+					//war paint
+					if self.data.wp.enabled and v.role == "item"  then
+						local instance
+						local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
+						local _team = 0
+						if self.data.team then _team = 1 end
+
+						//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+						if weaponType then
+							 -- Try to build a full multi-layer instance if we have a warpaint ID
+							instance = WP.WarpaintData.BuildInstance(
+								self.data.wp.id,
+								weaponType,
+								self.data.wp.seed,
+								self.data.wp.wear,
+								_team
+							)
+							if instance then
+								-- Set the matIndex since BuildInstance doesn't set it
+								instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
+							end
+						end
+						//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+						--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+						if !instance then
+							MsgN(i.name, " using warpaint fallback, not good")
+							local pattern
+							for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+								if v.id == self.data.wp.id then
+									pattern = v.primaryTexture
+									break
+								end
+							end
+							instance = WP.WarpaintInstance.New({
+								patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+								seed = self.data.wp.seed,
+								wearLevel = self.data.wp.wear,
+								wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
+								team = _team,
+								weaponType = weaponType,
+								matIndex = WP.Weapons.GetMatIndex(weaponType)
+							})
+						end]]
+						if instance then
+							//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
+							local success = WP.Materials.Apply(ent, instance)
+							if success then ent:SetSkin(0) end
+						end
+					end
 				end
 				//add particle effects to both base items and fallbacks
 				if v.role == "item" or v.role == "no_model_fallback" then
@@ -3168,8 +3257,8 @@ if CLIENT then
 				self.data.pe_unusual = data
 				if IsValid(button) then
 					button:SetEnabled(data != 0 or (i.attributes and i.attributes["attach particle effect"])) //also make this available for the world traveler's stamp effect
+					if !button:IsEnabled() then self.data.pe_unusual_offset = nil end //if the menu is disabled, then clear its options so they don't get stuck on
 				end
-				if !button:IsEnabled() then self.data.pe_unusual_offset = nil end //if the menu is disabled, then clear its options so they don't get stuck on
 			end)
 			if u_hat then
 				button = vgui.Create("DImageButton", drop:GetParent())
@@ -3269,6 +3358,28 @@ if CLIENT then
 				self.data.pe_def = val
 				pnl.OnSettingChanged()
 			end
+		end
+
+		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
+			local drop = AddDropdown("War Paint", function(drop)
+				drop:AddChoice("(none)", nil, self.data.wp.enabled == false)
+				drop:AddSpacer()
+				local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
+				for k, v in ipairs (tab) do
+					//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
+					//TODO: categorize these later; for now, just put them all in a big dropdown list as a proof-of-concept
+					drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
+				end
+			end, function(data)
+				if !data then
+					self.data.wp.enabled = false
+				else
+					self.data.wp.enabled = true
+					self.data.wp.id = data.id
+					self.data.wp.seed = tostring(WP.RNG.RandomSeed())
+				end
+				pnl.OnSettingChanged()
+			end)
 		end
 
 		local button = vgui.Create("DButton", pnl)
@@ -3572,6 +3683,13 @@ WriteItemDataTable = function(data)
 	if data.pe_unusual_offset != nil then
 		net.WriteFloat(data.pe_unusual_offset)
 	end
+
+	net.WriteBool(data.wp.enabled)
+	if data.wp.enabled then
+		net.WriteUInt(data.wp.id, 10)
+		net.WriteUInt(data.wp.wear, 3)
+		net.WriteString(data.wp.seed)
+	end
 end
 
 ReadItemDataTable = function()
@@ -3635,6 +3753,22 @@ ReadItemDataTable = function()
 	tab.pe_unusual = net.ReadUInt(15)
 	if net.ReadBool() then
 		tab.pe_unusual_offset = net.ReadFloat()
+	end
+
+	if net.ReadBool() then
+		tab.wp = {
+			enabled = true,
+			id = net.ReadUInt(10),
+			wear = net.ReadUInt(3),
+			seed = net.ReadString(),
+		}
+	else
+		tab.wp = {
+			enabled = false,
+			id = 0,
+			wear = 1,
+			seed = "0",
+		}
 	end
 
 	return tab
@@ -3916,6 +4050,55 @@ if SERVER then
 					local tab = TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
 					if tab then AddEffect(tab) end
 				end
+			end
+
+			//war paint
+			if data.wp.enabled and role == "item" then
+				local instance
+				local weaponType = WP.Weapons.GetFromModel(e:GetModel())
+				local _team = 0
+				if data.team then _team = 1 end
+
+				//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+				if weaponType then
+					-- Try to build a full multi-layer instance if we have a warpaint ID
+					instance = WP.WarpaintData.BuildInstance(
+						data.wp.id,
+						weaponType,
+						data.wp.seed,
+						data.wp.wear,
+						_team
+					)
+					if instance then
+						-- Set the matIndex since BuildInstance doesn't set it
+						instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
+					end
+				end
+				//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+				--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+				if !instance then
+					MsgN(i.name, " using warpaint fallback, not good")
+					local pattern
+					for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+						if v.id == data.wp.id then
+							pattern = v.primaryTexture
+							break
+						end
+					end
+					instance = WP.WarpaintInstance.New({
+						patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+						seed = data.wp.seed,
+						wearLevel = data.wp.wear,
+						wear = WP.RNG.GenerateWearFromSeed(data.wp.seed, data.wp.wear),
+						team = _team,
+						weaponType = weaponType,
+						matIndex = WP.Weapons.GetMatIndex(weaponType)
+					})
+				end]]
+				local success = WP.Server.ApplyWarpaint(e, instance, ply)
+				if success then e:SetSkin(0) end
+			elseif e.WarpaintData then
+				WP.Server.RemoveWarpaint(e)
 			end
 		end
 
