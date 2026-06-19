@@ -3898,7 +3898,7 @@ if SERVER then
 					end
 					for i = 1, 5 do
 						if tab["control_point_" .. i] and p.ParticleInfo[i] and p.ParticleInfo[i].ent then
-							local attachment = ent:LookupAttachment(tab["control_point_" .. i])
+							local attachment = e:LookupAttachment(tab["control_point_" .. i])
 							if attachment > 0 then
 								p:AttachToEntity(e, i, attachment, ply, false)
 							end
