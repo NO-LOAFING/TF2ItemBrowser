@@ -899,19 +899,23 @@ local function GetItemDefaultParticleEffects(data)
 	end
 	if i.attributes and i.attributes["attach particle effect static"] then
 		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect static"].value]
-		if tab --[[and !(tab.system == "drg_pipe_smoke" and style and style.use_smoke_particle_effect == 0)]] and PEPlus_FindPCFFromEffect(tab.system) then
-			tab = table.Copy(tab)
-			local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value)
-			if str != "" then tab._displayname = str end
+		if tab and PEPlus_FindPCFFromEffect(tab.system) then
+			if CLIENT then
+				tab = table.Copy(tab)
+				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value)
+				if str != "" then tab._displayname = str end
+			end
 			table.insert(pe_def, tab)
 		end
 	end
 	if i.attributes and i.attributes["attach particle effect"] then
 		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect"].value]
 		if tab and PEPlus_FindPCFFromEffect(tab.system) then
-			tab = table.Copy(tab)
-			local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value)
-			if str != "" then tab._displayname = str end
+			if CLIENT then
+				tab = table.Copy(tab)
+				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value)
+				if str != "" then tab._displayname = str end
+			end
 			table.insert(pe_def, tab)
 		end
 	end
@@ -1254,6 +1258,7 @@ if CLIENT then
 							sel_read = sel_read + 1
 							if sel_read == sel then
 								child:SetChecked(true)
+								menu:ScrollToChild(child)
 								break
 							end
 						end
@@ -1968,6 +1973,7 @@ if CLIENT then
 
 			pe_def = true,
 			pe_unusual = 0,
+			pe_unusual_offset = nil
 		})
 
 	end
@@ -2637,83 +2643,98 @@ if CLIENT then
 						}
 					end
 
-					//add particle effects
-					if v.role == "item" then
-						if self.data.crit.enabled then
-							if self.data.crit.sparks_rb then
-								local pname = "critgun_weaponmodel_red"
-								if self.data.team then pname = "critgun_weaponmodel_blu" end
-								local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
-								if IsValid(part) then
-									part:SetShouldDraw(false)
-									table.insert(mdl.particles, part)
-								end
-							end
-							if self.data.crit.sparks_c then
-								local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
-								if IsValid(part) then
-									local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-									col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
-									part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
-									part:SetShouldDraw(false)
-									table.insert(mdl.particles, part)
-								end
-							end
-						end
-
-						local function AddEffect(tab)
-							local name = tab.system
-							if name:EndsWith("_teamcolor_red") and self.data.team then
-								name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
-							end
-							if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-
-							local part
-							if todo_use_head_origin then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
-							else
-								//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
-								local attachment = -1
-								if tab.attachment then attachment = ent:LookupAttachment(tab.attachment) end
-								if attachment > 0 then
-									part = CreateParticleSystem(ent, name, PATTACH_POINT_FOLLOW, attachment)
-								else
-									if tab.attach_to_rootbone then
-										part = CreateParticleSystem(ent, name, PATTACH_WORLDORIGIN + 1) //PATTACH_ROOTBONE_FOLLOW
-									else
-										part = CreateParticleSystem(ent, name, PATTACH_ABSORIGIN_FOLLOW)
-									end
-								end
-							end
+					//crit spark particles
+					if v.role == "item" and self.data.crit.enabled then
+						if self.data.crit.sparks_rb then
+							local pname = "critgun_weaponmodel_red"
+							if self.data.team then pname = "critgun_weaponmodel_blu" end
+							local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
 							if IsValid(part) then
 								part:SetShouldDraw(false)
 								table.insert(mdl.particles, part)
-								for i = 1, 5 do
-									if tab["control_point_" .. i] then
-										local attachment = ent:LookupAttachment(tab["control_point_" .. i])
-										if attachment > 0 then
-											part:AddControlPoint(i, ent, PATTACH_POINT_FOLLOW, tab["control_point_" .. i]) //unlike CreateParticleSystem, this takes an attachment name, not id number
-										end
+							end
+						end
+						if self.data.crit.sparks_c then
+							local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
+							if IsValid(part) then
+								local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+								col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+								part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
+								part:SetShouldDraw(false)
+								table.insert(mdl.particles, part)
+							end
+						end
+					end
+
+				end
+				//add particle effects to both base items and fallbacks
+				if v.role == "item" or v.role == "no_model_fallback" then
+					local function AddEffect(tab)
+						local name = tab.system
+						if name:EndsWith("_teamcolor_red") and self.data.team then
+							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+						end
+						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+						if name == "drg_pipe_smoke" and i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0 then return end
+
+						local part
+						if self.data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
+							ent:InvalidateBoneCache()
+							local manip = Vector(0, self.data.pe_unusual_offset or 0, 0)
+							local bone = ent:LookupBone("bip_head")
+							if bone then
+								manip = -manip
+							else
+								bone = ent:LookupBone("prp_helmet")
+								if !bone then bone = ent:LookupBone("prp_hat") end
+								if !bone then bone = 0 end
+							end
+
+							part = CreateParticleSystem(ent, name, PATTACH_CUSTOMORIGIN, 0)
+							if IsValid(part) then
+								part:SetControlPointEntity(0, ent)
+								
+								ent:DrawModel() //give model a nudge to make GetBoneMatrix return something
+								bone = ent:GetBoneMatrix(bone)
+								bone:Translate(manip)
+								part:SetControlPoint(0, bone:GetTranslation())
+								part:SetControlPointOrientation(0, bone:GetAngles())
+							end
+						else
+							//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
+							local attachment = -1
+							if tab.attachment then attachment = ent:LookupAttachment(tab.attachment) end
+							if attachment > 0 then
+								part = CreateParticleSystem(ent, name, PATTACH_POINT_FOLLOW, attachment)
+							else
+								if tab.attach_to_rootbone then
+									part = CreateParticleSystem(ent, name, PATTACH_WORLDORIGIN + 1) //PATTACH_ROOTBONE_FOLLOW
+								else
+									part = CreateParticleSystem(ent, name, PATTACH_ABSORIGIN_FOLLOW)
+								end
+							end
+						end
+						if IsValid(part) then
+							part:SetShouldDraw(false)
+							table.insert(mdl.particles, part)
+							for i = 1, 5 do
+								if tab["control_point_" .. i] then
+									local attachment = ent:LookupAttachment(tab["control_point_" .. i])
+									if attachment > 0 then
+										part:AddControlPoint(i, ent, PATTACH_POINT_FOLLOW, tab["control_point_" .. i]) //unlike CreateParticleSystem, this takes an attachment name, not id number
 									end
 								end
 							end
 						end
-						if self.data.pe_def then
-							for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
-								AddEffect(v)
-							end
-						end
-						if self.data.pe_unusual > 0 then
-							local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
-							if tab then AddEffect(tab) end
+					end
+					if self.data.pe_def then
+						for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
+							AddEffect(v)
 						end
 					end
-
-					//test
-					local a = ent:GetAttachments()
-					if a and #a > 0 then
-						MsgN(ent:GetModel(), " has attachments:")
-						PrintTable(a)
-						MsgN("\n")
+					if self.data.pe_unusual > 0 then
+						local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
+						if tab then AddEffect(tab) end
 					end
 				end
 				ent:SetNoDraw(true)
@@ -2909,6 +2930,7 @@ if CLIENT then
 						sel_read = sel_read + 1
 						if sel_read == sel then
 							child:SetChecked(true)
+							menu:ScrollToChild(child)
 							break
 						end
 					end
@@ -3121,6 +3143,105 @@ if CLIENT then
 			end
 		end
 
+		//Add unusual effect dropdown
+		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
+		local u_wep = i.particle_suffix
+		if u_hat or u_wep then
+			local button
+			local drop = AddDropdown("Unusual Effect", function(drop)
+				drop:AddChoice("(none)", 0, !self.data.crit.enabled)
+				drop:AddSpacer()
+				if u_hat then
+					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
+						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
+						if v.system:EndsWith("_teamcolor_blue") then continue end
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+					end
+				end
+				if u_wep then
+					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
+						if v.use_suffix_name and !PEPlus_FindPCFFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+					end
+				end
+			end, function(data)
+				self.data.pe_unusual = data
+				if IsValid(button) then
+					button:SetEnabled(data != 0)
+				end
+			end)
+			if u_hat then
+				button = vgui.Create("DImageButton", drop:GetParent())
+				button:SetImage("materials/icon16/pencil.png")
+				button:Dock(RIGHT)
+				button:DockMargin(4,0,0,0)
+				button:SetWide(16)
+				button:SetStretchToFit(false)
+				button:SetEnabled(self.data.pe_unusual != 0)
+				button.DoClick = function()
+					local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+					container:DockPadding(16,16,16,16)
+					function container:Paint(w,h)
+						LoadoutItemPopupBorder(0,0,w,h)
+					end
+
+					CloseDermaMenus()
+					container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
+					container:IsMouseInputEnabled(true)
+					container:SetIsMenu(true)
+					function container:GetDeleteSelf() return true end
+					function container:OnRemove() 
+						//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+						local chump = vgui.GetKeyboardFocus()
+						if IsValid(chump) then chump:KillFocus() end
+					end
+					RegisterDermaMenuForClose(container)
+
+					local slider
+					local check = vgui.Create("DCheckBoxLabel", container)
+					check:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
+					check:SetHeight(15)
+					//check:SizeToChildren(true, false)
+					//check:DockMargin(0,8,0,0)
+					check:Dock(TOP)
+					check:SetChecked(self.data.pe_unusual_offset != nil)
+					check.OnChange = function(_, val)
+						if val then
+							self.data.pe_unusual_offset = slider:GetValue()
+							slider:SetEnabled(true)
+						else
+							self.data.pe_unusual_offset = nil
+							slider:SetEnabled(false)
+						end
+						pnl.OnSettingChanged()
+					end
+
+					slider = vgui.Create("DNumSlider", container)
+					//slider:SetText("Offset")
+					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
+					slider:SetDefaultValue(0)
+					slider:SetHeight(18)
+					slider:Dock(TOP)
+					slider:DockMargin(0,8,0,0)
+					slider:SetValue(self.data.pe_unusual_offset or 0)
+					slider.LastValue = slider:GetValue() //make sure we only send 1 input per frame - sending 2 inputs was causing an issue where the 1st input would add a particle, and then because constraint.TF2ItemBrowser_Item_SubModel takes a frame to add the 1st particle to the list, the 2nd input would just add a 2nd particle at the same time
+					slider:SetEnabled(self.data.pe_unusual_offset != nil)
+					function slider.OnValueChanged(_, val)
+						if slider.LastValue != val and self.data.pe_unusual_offset != nil then
+							slider.LastValue = val
+							self.data.pe_unusual_offset = val
+							pnl.OnSettingChanged()
+						end
+					end
+
+					//container:SizeToChildren(true, true)
+					container:SetWide(272) //match the width of the color panels, i guess
+					container:SetTall(container:GetTall() + 15 + 8 + 18) //argh
+					container:InvalidateLayout()
+				end
+			end
+		end
+
 		//Show toggle for default particle effects (cigar smoke, halo effect, earbud notes, etc.)
 		local pe_def = GetItemDefaultParticleEffects(self.data)
 		if #pe_def > 0 then
@@ -3147,31 +3268,6 @@ if CLIENT then
 				self.data.pe_def = val
 				pnl.OnSettingChanged()
 			end
-		end
-
-		//Add unusual effect dropdown
-		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
-		local u_wep = i.particle_suffix
-		if u_hat or u_wep then
-			AddDropdown("Unusual Effect", function(drop)
-				drop:AddChoice("(none)", 0, !self.data.crit.enabled)
-				drop:AddSpacer()
-				if u_hat then
-					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
-						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
-						if v.system:EndsWith("_teamcolor_blue") then continue end
-						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
-					end
-				end
-				if u_wep then
-					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
-						if v.use_suffix_name and !PEPlus_FindPCFFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
-						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
-					end
-				end
-			end, function(data)
-				self.data.pe_unusual = data
-			end)	
 		end
 
 		local button = vgui.Create("DButton", pnl)
@@ -3468,8 +3564,13 @@ WriteItemDataTable = function(data)
 		net.WriteBool(data.crit.sparks_rb)
 		net.WriteBool(data.crit.sparks_c)
 	end
+
 	net.WriteBool(data.pe_def)
 	net.WriteUInt(data.pe_unusual, 15) //the whopper
+	net.WriteBool(data.pe_unusual_offset != nil)
+	if data.pe_unusual_offset != nil then
+		net.WriteFloat(data.pe_unusual_offset)
+	end
 end
 
 ReadItemDataTable = function()
@@ -3528,8 +3629,12 @@ ReadItemDataTable = function()
 			sparks_c = false,
 		}
 	end
+
 	tab.pe_def = net.ReadBool()
 	tab.pe_unusual = net.ReadUInt(15)
+	if net.ReadBool() then
+		tab.pe_unusual_offset = net.ReadFloat()
+	end
 
 	return tab
 end
@@ -3596,7 +3701,7 @@ if SERVER then
 		//and the various functions it calls (gamemodes/sandbox/gamemode/commands.lua) This is worth doing because it makes sure we run
 		//all of the relevant hooks that might want to catch us spawning the prop, and also lets us reuse all of DoPlayerEntitySpawn's 
 		//"spawn the prop where the player is looking, and make sure it isn't stuck" code.
-		local function CreateItemEntity(model, skin, item_bg, parent, anim)
+		local function CreateItemEntity(model, skin, item_bg, parent, anim, is_fallback)
 
 			if !gamemode.Call("PlayerSpawnObject", ply, model, skin) or !util.IsValidModel(model) 
 			or (parent != nil and !IsValid(parent)) then return end
@@ -3647,10 +3752,11 @@ if SERVER then
 			end
 			
 			if IsValid(parent) then
-				if merge_type or anim then
+				if merge_type or anim or is_fallback then //fallback models (hatlesses) use a custom boneinfo table to attach unusual effects to the head. since we don't have a good way to switch it from easybone to advbone if the player adds an unusual effect *after* spawning it, fallback models *always* have to use advbone. dumb!!
 					local old_e = e
 					e = CreateAdvBonemergeEntity(e, parent, ply, false, false, true)
 					if !IsValid(e) then return end
+					if is_fallback and parent:LookupBone("bip_head") then e.AdvBone_BoneInfo[0].parent = "bip_head" end
 					local const = constraint.AdvBoneMerge(parent, e, ply)
 					if e != old_e then old_e:Remove() end
 				else
@@ -3662,6 +3768,156 @@ if SERVER then
 
 		end
 
+		local function UpdateItemCustomization(e, role)
+			//Update material override of each submodel
+			local mat = effect_mats[data.fx]
+			if mat then
+				e:SetMaterial(mat)
+				duplicator.StoreEntityModifier(e, "material", {MaterialOverride = mat})
+			elseif table.KeyFromValue(effect_mats, e:GetMaterial()) then
+				//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
+				e:SetMaterial("")
+				duplicator.ClearEntityModifier(e, "material")
+			end
+
+			//paint matproxy
+			if data.paint.enabled then
+				local col = data.paint.col[data.team] or data.paint.col[false]
+				GiveMatproxyTF2ItemPaint(ply, e, {
+					ColorR = col.x,
+					ColorG = col.y,
+					ColorB = col.z,
+					Override = data.paint.override[data.team] or data.paint.override[false]
+				})
+			elseif e.ProxyentPaintColor then
+				e.ProxyentPaintColor:Remove()
+				e.ProxyentPaintColor = nil
+				duplicator.ClearEntityModifier(e, "MatproxyTF2ItemPaint")
+			end
+
+			//critglow and EFFECT_JARATE matproxy
+			local col
+			if data.crit.enabled and (role == "item" or role == "attached" 
+			or role == "attached_festive" or role == "stat_clock") then
+				col = data.crit.col[data.team] or data.crit.col[false]
+			end
+			if data.fx == EFFECT_JARATE then
+				col = (col or Vector(1,1,1)) * jarate[data.team]
+			end
+			if col then
+				local function bool_to_num(a) if !a then return 0 else return 1 end end
+				GiveMatproxyTF2CritGlow(ply, e, {
+					ColorR = col.x,
+					ColorG = col.y,
+					ColorB = col.z,
+					RedSparks = bool_to_num(role == "item" and !data.team and data.crit.sparks_rb),
+					BluSparks = bool_to_num(role == "item" and data.team and data.crit.sparks_rb),
+					ColorableSparks = bool_to_num(role == "item" and data.crit.sparks_c),
+				})
+			elseif e.ProxyentCritGlow then
+				e.ProxyentCritGlow:Remove()
+				e.ProxyentCritGlow = nil
+				duplicator.ClearEntityModifier(e, "MatproxyTF2CritGlow")
+			end
+
+			//particle effects
+			if role == "item" or role == "no_model_fallback" then
+				//Get rid of old particle effects
+				if e.TF2ItemBrowser_Item_Particles then
+					for k, v in pairs (e.TF2ItemBrowser_Item_Particles) do
+						if IsValid(k) then
+							k:Remove()
+						else
+							e.TF2ItemBrowser_Item_Particles[k] = nil
+						end
+					end
+				end
+
+				local function AddEffect(tab)
+					local name = tab.system
+					if name:EndsWith("_teamcolor_red") and data.team then
+						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+					end
+					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+					if name == "drg_pipe_smoke" and i.visuals and i.visuals.styles and i.visuals.styles[data.style].use_smoke_particle_effect == 0 then return end
+
+					local pcf, path = PEPlus_FindPCFFromEffect(name)
+					if !pcf then return end
+					local p = PEPlus_SpawnParticle(ply, e:GetPos(), name, pcf, path, true)
+					if !IsValid(p) then return end
+
+					if data.pe_unusual_offset then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594; yes, this applies to ALL effects attached to the model, even if it makes genteel smoke look dumb (https://www.youtube.com/watch?v=A0CBN92OhrY)
+						local _e2 = e.AttachedEntity or e
+						local bone
+						if _e2:LookupBone("bip_head") then
+							bone = "bip_head"
+						else
+							if _e2:LookupBone("prp_helmet") then
+								bone = "prp_helmet"
+							else
+								if _e2:LookupBone("prp_hat") then
+									bone = "prp_hat"
+								else
+									bone = _e2:GetBoneName(0)
+								end
+							end
+						end
+						local manip = Vector(0, data.pe_unusual_offset, 0)
+						if bone == "bip_head" or role == "no_model_fallback" then manip = -manip end
+
+						local old_g = p:GetParent()
+						local _g = CreateAdvBonemergeEntity(old_g, e, ply, false, false, true)
+						_g:ManipulateBonePosition(0, manip, true)
+						_g.AdvBone_BoneInfo[0].parent = bone
+						if !IsValid(_g) then return end
+						local const = constraint.AdvBoneMerge(e, _g, ply)
+						if _g != old_g then old_g:Remove() end
+					else
+						//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
+						local attachment = -1
+						if tab.attachment then attachment = e:LookupAttachment(tab.attachment) end
+						if attachment > 0 then
+							if p.ParticleInfo[0].ent then
+								p:AttachToEntity(e, 0, attachment, ply, false)
+							end
+						else
+							if tab.attach_to_rootbone then
+								local _e2 = e.AttachedEntity or e
+								local old_g = p:GetParent()
+								local _g = CreateAdvBonemergeEntity(old_g, e, ply, false, false, true)
+								_g.AdvBone_BoneInfo[0].parent = _e2:GetBoneName(0)
+								if !IsValid(_g) then return end
+								local const = constraint.AdvBoneMerge(e, _g, ply)
+								if _g != old_g then old_g:Remove() end
+							else
+								if p.ParticleInfo[0].ent then
+									p:AttachToEntity(e, 0, 0, ply, false)
+								end
+							end
+						end
+					end
+					for i = 1, 5 do
+						if tab["control_point_" .. i] and p.ParticleInfo[i] and p.ParticleInfo[i].ent then
+							local attachment = ent:LookupAttachment(tab["control_point_" .. i])
+							if attachment > 0 then
+								p:AttachToEntity(e, i, attachment, ply, false)
+							end
+						end
+					end
+					constraint.TF2ItemBrowser_Item_SubModel(e, p, "peplus", nil, ply)
+				end
+				if data.pe_def then
+					for k, v in ipairs (GetItemDefaultParticleEffects(data)) do
+						AddEffect(v)
+					end
+				end
+				if data.pe_unusual > 0 then
+					local tab = TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
+					if tab then AddEffect(tab) end
+				end
+			end
+		end
+
 		if input == "item_spawn" or input == "attach_item_spawn" then
 
 			if !IsValid(ply) or (!ply:Alive() and !ply:IsAdmin()) then return end
@@ -3670,7 +3926,7 @@ if SERVER then
 			for k, v in ipairs (submodels) do
 				local parent = ent
 				local model = vis.models[v.role]
-				local item_bg, anim
+				local item_bg, anim, is_fallback
 				if v.attach_num then
 					model = model[v.attach_num]
 					if IsValid(spawned_models[1]) then parent = spawned_models[1] end
@@ -3683,6 +3939,7 @@ if SERVER then
 					//multiple submodels like banners but they're all disabled), then instead spawn an invisible model so that
 					//we still have an entity to associate the item with.
 					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
+					is_fallback = true
 				end
 				//keep this simple, just convert every submodel into an animprop if there's an animation. this is easier than trying 
 				//to convert ents back-and-forth between animprops and normal props whenever an animated submodel is toggled on and 
@@ -3698,7 +3955,7 @@ if SERVER then
 					end
 				end
 
-				local e = CreateItemEntity(model, vis.skin, item_bg, parent, anim)
+				local e = CreateItemEntity(model, vis.skin, item_bg, parent, anim, is_fallback)
 				if !IsValid(e) then continue end
 
 				table.insert(spawned_models, e)
@@ -3712,43 +3969,8 @@ if SERVER then
 					constraint.TF2ItemBrowser_Item_SubModel(spawned_models[1], e, v.role, v.attach_num, ply)
 				end
 
-				//Set material override on each submodel
-				local mat = effect_mats[data.fx]
-				if mat then
-					e:SetMaterial(mat)
-					duplicator.StoreEntityModifier(e, "material", {MaterialOverride = mat})
-				end
-
-				if data.paint.enabled then
-					local col = data.paint.col[data.team] or data.paint.col[false]
-					GiveMatproxyTF2ItemPaint(ply, e, {
-						ColorR = col.x,
-						ColorG = col.y,
-						ColorB = col.z,
-						Override = data.paint.override[data.team] or data.paint.override[false]
-					})
-				end
-
-				//critglow and EFFECT_JARATE matproxy
-				local col
-				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
-				or v.role == "attached_festive" or v.role == "stat_clock") then
-					col = data.crit.col[data.team] or data.crit.col[false]
-				end
-				if data.fx == EFFECT_JARATE then
-					col = (col or Vector(1,1,1)) * jarate[data.team]
-				end
-				if col then
-					local function bool_to_num(a) if !a then return 0 else return 1 end end
-					GiveMatproxyTF2CritGlow(ply, e, {
-						ColorR = col.x,
-						ColorG = col.y,
-						ColorB = col.z,
-						RedSparks = bool_to_num(v.role == "item" and !data.team and data.crit.sparks_rb),
-						BluSparks = bool_to_num(v.role == "item" and data.team and data.crit.sparks_rb),
-						ColorableSparks = bool_to_num(v.role == "item" and data.crit.sparks_c),
-					})
-				end
+				//Set material override, paint, critglow, particles
+				UpdateItemCustomization(e, v.role)
 			end
 			if !IsValid(spawned_models[1]) then return end
 
@@ -3881,55 +4103,8 @@ if SERVER then
 				end
 				e2:SetSkin(vis.skin)
 
-				//Update material override of each submodel
-				local mat = effect_mats[data.fx]
-				if mat then
-					e2:SetMaterial(mat)
-					duplicator.StoreEntityModifier(e2, "material", {MaterialOverride = mat})
-				elseif table.KeyFromValue(effect_mats, e2:GetMaterial()) then
-					//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
-					e2:SetMaterial("")
-					duplicator.ClearEntityModifier(e2, "material")
-				end
-
-				if data.paint.enabled then
-					local col = data.paint.col[data.team] or data.paint.col[false]
-					GiveMatproxyTF2ItemPaint(ply, e2, {
-						ColorR = col.x,
-						ColorG = col.y,
-						ColorB = col.z,
-						Override = data.paint.override[data.team] or data.paint.override[false]
-					})
-				elseif e2.ProxyentPaintColor then
-					e2.ProxyentPaintColor:Remove()
-					e2.ProxyentPaintColor = nil
-					duplicator.ClearEntityModifier(e2, "MatproxyTF2ItemPaint")
-				end
-
-				//critglow and EFFECT_JARATE matproxy
-				local col
-				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
-				or v.role == "attached_festive" or v.role == "stat_clock") then
-					col = data.crit.col[data.team] or data.crit.col[false]
-				end
-				if data.fx == EFFECT_JARATE then
-					col = (col or Vector(1,1,1)) * jarate[data.team]
-				end
-				if col then
-					local function bool_to_num(a) if !a then return 0 else return 1 end end
-					GiveMatproxyTF2CritGlow(ply, e2, {
-						ColorR = col.x,
-						ColorG = col.y,
-						ColorB = col.z,
-						RedSparks = bool_to_num(v.role == "item" and !data.team and data.crit.sparks_rb),
-						BluSparks = bool_to_num(v.role == "item" and data.team and data.crit.sparks_rb),
-						ColorableSparks = bool_to_num(v.role == "item" and data.crit.sparks_c),
-					})
-				elseif e2.ProxyentCritGlow then
-					e2.ProxyentCritGlow:Remove()
-					e2.ProxyentCritGlow = nil
-					duplicator.ClearEntityModifier(e2, "MatproxyTF2CritGlow")
-				end
+				//Update material override, paint, critglow, particles
+				UpdateItemCustomization(e2, v.role)
 			end
 			//If the input disabled a submodel, then get rid of the ent(s) we were using for it
 			for role, v in pairs (submodels_to_remove) do
@@ -4044,15 +4219,21 @@ if SERVER then
 		timer.Simple(0, function() //wait a frame, because otherwise easy bonemerge can break this constraint when loaded from a dupe/save
 			if !Ent1 or !Ent2 then return end
 
-			Ent1.TF2ItemBrowser_Item_SubModels = Ent1.TF2ItemBrowser_Item_SubModels or {}
-			if Attach_Num != nil then
-				Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent1.TF2ItemBrowser_Item_SubModels[Role] or {}
-				Ent1.TF2ItemBrowser_Item_SubModels[Role][Attach_Num] = Ent2
+			if Role != "peplus" then
+				Ent1.TF2ItemBrowser_Item_SubModels = Ent1.TF2ItemBrowser_Item_SubModels or {}
+				if Attach_Num != nil then
+					Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent1.TF2ItemBrowser_Item_SubModels[Role] or {}
+					Ent1.TF2ItemBrowser_Item_SubModels[Role][Attach_Num] = Ent2
+				else
+					Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
+				end
+				Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
+				Ent1:DeleteOnRemove(Ent2)
 			else
-				Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
+				//this constraint is also used to associate particle effects with an item; don't do submodel stuff for these
+				Ent1.TF2ItemBrowser_Item_Particles = Ent1.TF2ItemBrowser_Item_Particles or {}
+				Ent1.TF2ItemBrowser_Item_Particles[Ent2] = true
 			end
-			Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
-			Ent1:DeleteOnRemove(Ent2)
 			
 			//create a dummy ent for the constraint functions to use
 			local const = ents.Create("info_target")
