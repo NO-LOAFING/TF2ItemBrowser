@@ -3167,8 +3167,9 @@ if CLIENT then
 			end, function(data)
 				self.data.pe_unusual = data
 				if IsValid(button) then
-					button:SetEnabled(data != 0)
+					button:SetEnabled(data != 0 or (i.attributes and i.attributes["attach particle effect"])) //also make this available for the world traveler's stamp effect
 				end
+				if !button:IsEnabled() then self.data.pe_unusual_offset = nil end //if the menu is disabled, then clear its options so they don't get stuck on
 			end)
 			if u_hat then
 				button = vgui.Create("DImageButton", drop:GetParent())
@@ -3177,7 +3178,7 @@ if CLIENT then
 				button:DockMargin(4,0,0,0)
 				button:SetWide(16)
 				button:SetStretchToFit(false)
-				button:SetEnabled(self.data.pe_unusual != 0)
+				button:SetEnabled(self.data.pe_unusual != 0 or (i.attributes and i.attributes["attach particle effect"]))
 				button.DoClick = function()
 					local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 					container:DockPadding(16,16,16,16)
@@ -3217,7 +3218,7 @@ if CLIENT then
 					end
 
 					slider = vgui.Create("DNumSlider", container)
-					//slider:SetText("Offset")
+					slider:SetText("Offset") //this isn't localized but we've got to label it *something* to make it clear when the slider is disabled
 					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
 					slider:SetDefaultValue(0)
 					slider:SetHeight(18)
