@@ -395,7 +395,10 @@ for k, v in pairs (s.items) do
 			[3] = "models/workshop_partner/weapons/c_models/c_shogun_warbanner/c_shogun_warbanner.mdl",
 		}
 		v.extra_wearable_2 = banners[v.attributes["mod soldier buff type"].value] //silly custom "extra_wearable_2" value for additional wearable
-	//Add submodel and selectable inactive/active styles for 1101 The B.A.S.E. Jumper
+	//Add submodel and selectable inactive/active animations for 1101 The B.A.S.E. Jumper.
+	//We hijack the style system to use it for selectable animations, because it already has the model-swap functionality that the parachute needs,
+	//and so we don't have to network a whole extra value for like 4 items, but rename the selector to "animation" so that players don't mistake
+	//the more obscure anims like the hat ones for actual styles.
 	elseif v.item_class == "tf_weapon_parachute" then
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
@@ -409,6 +412,7 @@ for k, v in pairs (s.items) do
 				_anim = {attached = "ACT_PARACHUTE_DEPLOY_IDLE"}
 			}
 		}
+		v._call_styles_animations = true
 		v.visuals.attached_models = {
 			[0] = {
 				model = "models/workshop/weapons/c_models/c_paratooper_pack/c_paratrooper_parachute.mdl"
@@ -431,7 +435,7 @@ for k, v in pairs (s.items) do
 				model_player = "models/buildables/" .. name .. "_placed.mdl"
 			},
 		}
-	//Add selectable inactive/active styles for 1179 The Thermal Thruster
+	//Add selectable inactive/active animations for 1179 The Thermal Thruster
 	elseif v.item_class == "tf_weapon_rocketpack" then
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
@@ -444,6 +448,7 @@ for k, v in pairs (s.items) do
 				_anim = {item = "ACT_ITEM_DEPLOYED_IDLE"}
 			}
 		}
+		v._call_styles_animations = true
 	//Add selectable styles for canteens; the default canteen has separate models for each powerup type, while reskins use skin 0 for empty and skin 1 for any powerup.
 	elseif v.item_class == "tf_powerup_bottle" then
 		if v.attributes["lunchbox adds minicrits"] then //set_weapon_mode
@@ -511,7 +516,7 @@ for k, v in pairs (s.items) do
 			},
 		}
 	end
-	//Catch items that have a visuals.playback_activity table (148 "Engineer Welding Mask" and 745 "The Infernal Orchestrina") and convert those to selectable styles
+	//Catch items that have a visuals.playback_activity table (148 "Engineer Welding Mask" and 745 "The Infernal Orchestrina") and convert those to selectable animations
 	if v.visuals and v.visuals.playback_activity then
 		v.visuals.styles = {
 			[0] = {
@@ -530,6 +535,7 @@ for k, v in pairs (s.items) do
 				_anim = {item = v.visuals.playback_activity.start_taunting}
 			}
 		end
+		v._call_styles_animations = true
 	end
 	//Clear visuals tables that don't contain anything useful, so that we can clear out items with no useful visual 
 	//data at the end of this function (example: noisemakers have "visuals" tables containing only sound paths)
@@ -2180,7 +2186,7 @@ if CLIENT then
 
 		//Current style, based on CEconItemDescription::Generate_StyleDesc (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1268)
 		//Only do this if this icon corresponds to a specific item, otherwise do the store-type list of all the styles below
-		if self.entity and i.visuals and i.visuals.styles then
+		if self.entity and i.visuals and i.visuals.styles and !i._call_styles_animations then
 			local style = GetTFLanguageString(i.visuals.styles[self.data.style].name)
 			if style != "" then
 				table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Style_Desc"), "%s1", style), col = desc_colors.level})
@@ -2301,7 +2307,7 @@ if CLIENT then
 		if !self.entity then
 			local done_spacer
 			//This method also does a list of styles here for store previews; co-opt this for icons that don't correspond to an attached entity
-			if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
+			if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 and !i._call_styles_animations then
 				//valve's method takes up too much space, make this a single line instead
 				local str
 				for k, v in SortedPairs (i.visuals.styles) do
@@ -3039,7 +3045,9 @@ if CLIENT then
 		end)
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-			AddDropdown("Style", function(drop)
+			local name = "Style"
+			if i._call_styles_animations then name = "Animation" end
+			AddDropdown(name, function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true)
 					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
@@ -4264,6 +4272,7 @@ if SERVER then
 				end
 
 				if anim and e2:LookupSequence(anim.anim) != e2:GetSequence() then
+					e2:SetModel(e2:GetModel()) //e2:LookupSequence can get stuck returning -1 for everything unless we give it a nudge like this
 					timer.Simple(0, function() //do this on a timer, otherwise this won't work when changing the entity's model at the same time
 						if !IsValid(e2) then return end
 						e2:SetChannel1Sequence(e2:LookupSequence(anim.anim))
