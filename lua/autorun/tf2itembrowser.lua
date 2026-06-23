@@ -961,7 +961,6 @@ if CLIENT then
 			h = 94*(64/121),
 			scale = 64/121, //tf2 backpack panels are 121x94 (???); scale ours down proportionately
 			gap = 5,
-			columns = 10,
 		},
 		{
 			//name = "Medium", //tf2 backpack icon size; these are already huge when placed in the relatively small browser, no need for larger sizes
@@ -969,10 +968,11 @@ if CLIENT then
 			h = 94,
 			scale = 1,
 			gap = 9,
-			columns = 5,
 		},
 	}
 	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser", 1, #item_icon_sizes):GetInt()
+	local popup_w = 480 //keep the width consistent between popup panels, so that when we switch from mouseoverpanel to spawnpanel, it maintains the same horizontal position
+	local popup_pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 	local betweenitems = 8
 	local betweencategories = 20
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
@@ -1187,15 +1187,15 @@ if CLIENT then
 			window.Right = right_holder
 			local scroll = vgui.Create("DScrollPanel", right_holder)
 			function right_holder:UpdateSize()
-				right_holder:SetWide(scroll.VBar:GetWide() + ((item_icon_sizes[icon_size].w + item_icon_sizes[icon_size].gap) * item_icon_sizes[icon_size].columns))
-				right_holder:DockMargin(item_icon_sizes[icon_size].gap - 6,0,0,0)
+				right_holder:DockMargin(item_icon_sizes[icon_size].gap,0,0,0)
 			end
 			right_holder:UpdateSize()
-			right_holder:Dock(RIGHT)
+			right_holder:Dock(FILL)
 			scroll:Dock(FILL)
 
 			local iconlist = vgui.Create("DPanel", scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
 			iconlist.Paint = function() end
+			iconlist:Dock(FILL)
 
 			local old_OnChildAdded = scroll.OnChildAdded
 			scroll.OnChildAdded = nil //don't dock the loading icon inside the scroll panel, just place it on top of it
@@ -1220,16 +1220,28 @@ if CLIENT then
 
 
 			local left_holder = vgui.Create("DPanel", window)
-			left_holder:DockPadding(24,24,24,24)
-			left_holder:Dock(FILL)
+			left_holder:DockPadding(24,24,24-6,24)
+			left_holder:Dock(LEFT)
 
 			function left_holder:Paint(w,h)
-				TFThinLineBorder(0,0,w,h)
+				//this texture has a blank 6 pixels on the edge, but we want the DHorizontalDivider to be in this blank space,
+				//so adjust both the dock padding above and the draw width here to seamlessly make the edge of the panel line 
+				//up with this part of the texture.
+				TFThinLineBorder(0,0,w+6,h)
 			end
 
 			local filters = vgui.Create("DScrollPanel", left_holder)
 			filters:Dock(FILL)
 			window.filters = filters
+
+			local divider = vgui.Create("DHorizontalDivider", window)
+			divider:Dock(FILL)
+			divider:SetLeft(left_holder)
+			divider:SetRight(right_holder)
+			//divider:SetDividerWidth(8)
+			//divider:SetLeftMin(64)
+			divider:SetRightMin(popup_w) //make sure the right side is always wide enough to fit an item popup
+			divider:SetLeftWidth(215)
 
 
 			TF2ItemBrowser = window
@@ -1470,7 +1482,7 @@ if CLIENT then
 			AddTFButtonSounds(button)
 
 
-			window.RebuildIconList = function(clicked)
+			window.RebuildIconList = function()
 				if filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
 
 				window.icons = {}
@@ -1529,16 +1541,42 @@ if CLIENT then
 				end
 				//Clear the icon list, and resize it to the height of the new list
 				iconlist:Clear()
-				local rows = math.floor((#window.icons_to_add-1)/item_icon_sizes[icon_size].columns)+1
+				local columns, wide = 0, iconlist:GetWide()
+				while true do
+					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap end
+					wide = wide - item_icon_sizes[icon_size].w
+					if wide >= 0 then
+						columns = columns + 1
+					else
+						break
+					end
+				end
+				iconlist.columns = columns
+				local rows = math.floor((#window.icons_to_add-1)/columns)+1
 				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap))
-				iconlist:SetWidth((10*item_icon_sizes[icon_size].w) + (9*item_icon_sizes[icon_size].gap))
 				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
 				scroll:InvalidateLayout()
 				scroll.VBar:SetScroll(0)
 				scroll:SetMouseInputEnabled(false)
 				//MsgN(#window.icons_to_add, " icons to add")
 			end
-			window.RebuildIconList()
+			function iconlist:PerformLayout(w, h)
+				//Rebuild the iconlist if resizing it changed the number of columns
+				local columns, wide = 0, w
+				while true do
+					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap end
+					wide = wide - item_icon_sizes[icon_size].w
+					if wide >= 0 then
+						columns = columns + 1
+					else
+						break
+					end
+				end
+				if columns != iconlist.columns then
+					window.RebuildIconList()
+				end
+			end
+			//window.RebuildIconList() gets called automatically by the initial iconlist:PerformLayout() above
 
 
 			local old_Think = window.Think
@@ -1552,8 +1590,8 @@ if CLIENT then
 						local v = self.icons_to_add[k]
 						if v then
 							local item = iconlist:Add("TF2ItemIcon")
-							local col = (k-1)%item_icon_sizes[icon_size].columns
-							local row = math.floor((k-1)/item_icon_sizes[icon_size].columns)
+							local col = (k-1)%iconlist.columns
+							local row = math.floor((k-1)/iconlist.columns)
 							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap))
 							item.data = v //this will be populated with the default data table for this item once the icon renders
 							self.icons[v] = item
@@ -1604,7 +1642,7 @@ if CLIENT then
 			atticons.icons = {}
 			atticons.Label = vgui.Create("DLabel", atticons_holder)
 			atticons.Label:SetText("")
-			atticons.Label:SetWide(right_holder:GetWide())
+			atticons.Label:SetWide(1000)
 			atticons.Label:SetPos(6,6)
 			function atticons:UpdateSize()
 				atticons:SetHeight(item_icon_sizes[icon_size].h)
@@ -2412,9 +2450,6 @@ if CLIENT then
 		return desc
 
 	end
-
-	local popup_w = 480 //keep the width consistent between popup panels, so that when we switch from mouseoverpanel to spawnpanel, the above func maintains the same horizontal position
-	local popup_pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 
 	function PANEL:AddItemText(pnl, text, font, col)
 		
