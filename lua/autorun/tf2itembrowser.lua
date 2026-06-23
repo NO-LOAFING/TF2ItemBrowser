@@ -954,10 +954,25 @@ if CLIENT then
 	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
 	local OutlinedGreyBox = GWEN.CreateTextureBorder(0, 0, 128, 64, 24, 24, 24, 0, Material("vgui/loadout_round_rect_selected.vmt"))
-	local item_icon_w = 64
-	local item_icon_scale = item_icon_w/121 //tf2 backpack panels are 121x94 (???); scale ours down proportionately
-	local item_icon_h = 94*item_icon_scale
-	local item_icon_gap = 5
+	local item_icon_sizes = {
+		{
+			//name = "Small",
+			w = 64,
+			h = 94*(64/121),
+			scale = 64/121, //tf2 backpack panels are 121x94 (???); scale ours down proportionately
+			gap = 5,
+			columns = 10,
+		},
+		{
+			//name = "Medium", //tf2 backpack icon size; these are already huge when placed in the relatively small browser, no need for larger sizes
+			w = 121,
+			h = 94,
+			scale = 1,
+			gap = 9,
+			columns = 5,
+		},
+	}
+	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser", 1, #item_icon_sizes):GetInt()
 	local betweenitems = 8
 	local betweencategories = 20
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
@@ -1171,7 +1186,11 @@ if CLIENT then
 			right_holder.Paint = function() end
 			window.Right = right_holder
 			local scroll = vgui.Create("DScrollPanel", right_holder)
-			right_holder:SetWide(scroll.VBar:GetWide() + ((item_icon_w+item_icon_gap)*10))
+			function right_holder:UpdateSize()
+				right_holder:SetWide(scroll.VBar:GetWide() + ((item_icon_sizes[icon_size].w + item_icon_sizes[icon_size].gap) * item_icon_sizes[icon_size].columns))
+				right_holder:DockMargin(item_icon_sizes[icon_size].gap - 6,0,0,0)
+			end
+			right_holder:UpdateSize()
 			right_holder:Dock(RIGHT)
 			scroll:Dock(FILL)
 
@@ -1191,7 +1210,7 @@ if CLIENT then
 				surface.SetDrawColor(gui_colors.bgcol.r, gui_colors.bgcol.g, gui_colors.bgcol.b, 192)
 				surface.DrawRect(0,0,w,h)
 	
-				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_gap)/2, h/2
+				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap)/2, h/2
 				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
 				surface.SetMaterial(spinner)
 				surface.DrawTexturedRect(mid_w-50, mid_h-50, 100, 100)
@@ -1252,9 +1271,8 @@ if CLIENT then
 				drop.Label:SetText(label)
 				drop.Label:Dock(LEFT)
 				drop.Combo = vgui.Create("DComboBox", drop)
-				drop.Combo:SetHeight(25)
 				drop.Combo:Dock(FILL)
-				drop:SetHeight(25)
+				drop:SetHeight(20)
 				drop:Dock(TOP)
 				drop:DockMargin(0,0,0,betweenitems)
 				function drop.PerformLayout(_, w, h)
@@ -1511,9 +1529,9 @@ if CLIENT then
 				end
 				//Clear the icon list, and resize it to the height of the new list
 				iconlist:Clear()
-				local rows = math.floor((#window.icons_to_add-1)/10)+1
-				iconlist:SetHeight((rows*item_icon_h) + ((rows-1)*item_icon_gap))
-				iconlist:SetWidth((10*item_icon_w) + (9*item_icon_gap))
+				local rows = math.floor((#window.icons_to_add-1)/item_icon_sizes[icon_size].columns)+1
+				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap))
+				iconlist:SetWidth((10*item_icon_sizes[icon_size].w) + (9*item_icon_sizes[icon_size].gap))
 				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
 				scroll:InvalidateLayout()
 				scroll.VBar:SetScroll(0)
@@ -1534,9 +1552,9 @@ if CLIENT then
 						local v = self.icons_to_add[k]
 						if v then
 							local item = iconlist:Add("TF2ItemIcon")
-							local col = (k-1)%10
-							local row = math.floor((k-1)/10)
-							item:SetPos(col*(item_icon_w+item_icon_gap), row*(item_icon_h+item_icon_gap))
+							local col = (k-1)%item_icon_sizes[icon_size].columns
+							local row = math.floor((k-1)/item_icon_sizes[icon_size].columns)
+							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap))
 							item.data = v //this will be populated with the default data table for this item once the icon renders
 							self.icons[v] = item
 						else
@@ -1581,8 +1599,6 @@ if CLIENT then
 
 			//This also has a scrollbar just in case some goofball wants to attach more than 10 items to one model
 			local atticons = vgui.Create("DHorizontalScroller", atticons_holder)
-			atticons:SetHeight(item_icon_h)
-			atticons:SetOverlap(-item_icon_gap)
 			atticons:Dock(BOTTOM)
 			window.atticons = atticons
 			atticons.icons = {}
@@ -1590,7 +1606,12 @@ if CLIENT then
 			atticons.Label:SetText("")
 			atticons.Label:SetWide(right_holder:GetWide())
 			atticons.Label:SetPos(6,6)
-			atticons_holder:SetTall(item_icon_h + atticons.Label:GetTall() + 8)//(item_icon_h+3+item_icon_gap)
+			function atticons:UpdateSize()
+				atticons:SetHeight(item_icon_sizes[icon_size].h)
+				atticons:SetOverlap(-item_icon_sizes[icon_size].gap)
+				atticons_holder:SetTall(item_icon_sizes[icon_size].h + atticons.Label:GetTall() + 8)//(item_icon_sizes[icon_size].h+3+item_icon_sizes[icon_size].gap)
+			end
+			atticons:UpdateSize()
 
 			function atticons:AddItem(ent, data, forceopen)
 				local item
@@ -1729,6 +1750,23 @@ if CLIENT then
 				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. data)
 			end
 
+			local check = vgui.Create("DCheckBoxLabel", attopts)
+			check:SetText("Large icons")
+			check:SetHeight(15)
+			check:Dock(TOP)
+			check:DockMargin(0,0,0,betweenitems)
+			check:SetChecked(icon_size == 2)
+			check.OnChange = function(_, val)
+				local data = 1
+				if val then data = 2 end
+				LocalPlayer():ConCommand("cl_tf2itembrowser_iconsize " .. data)
+				icon_size = data
+				right_holder:UpdateSize()
+				atticons:UpdateSize()
+				window:SetEntity(window:GetEntity())
+				window.RebuildIconList()
+			end
+
 			attopts:InvalidateLayout(true)
 			attopts:SizeToChildren(false,true)
 
@@ -1856,7 +1894,7 @@ if CLIENT then
 
 	function PANEL:Init()
 
-		self:SetSize(item_icon_w, item_icon_h)
+		self:SetSize(item_icon_sizes[icon_size].w, item_icon_sizes[icon_size].h)
 		self:SetDoubleClickingEnabled(false)
 		self:SetText("")
 
@@ -2133,7 +2171,11 @@ if CLIENT then
 			if tooltip != "" then
 				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString(TF2Items.rarities[self.rarity].loc_key))
 				tooltip = string.Replace(tooltip, "%s2", GetTFLanguageString(i.item_type_name))
-				tooltip = string.Replace(tooltip, "%s3", GetTFLanguageString(wear_strings[self.data.wp.wear]))
+				if !self.data.wp.enabled then
+					tooltip = string.Replace(tooltip, "%s3", GetTFLanguageString(wear_strings[0]))
+				else
+					tooltip = string.Replace(tooltip, "%s3", GetTFLanguageString(wear_strings[self.data.wp.wear]))
+				end
 				table.insert(desc, {str = tooltip, col = rarity_colors[self.rarity]})
 			end
 		else
@@ -2997,9 +3039,8 @@ if CLIENT then
 			drop.Label:SetText(label)
 			drop.Label:Dock(LEFT)
 			drop.Combo = vgui.Create("DComboBox", drop)
-			drop.Combo:SetHeight(25)
 			drop.Combo:Dock(FILL)
-			drop:SetHeight(25)
+			drop:SetHeight(20)
 			drop:Dock(TOP)
 			drop:DockMargin(side_margins,0,side_margins,betweenitems)
 			function drop.PerformLayout(_, w, h)
@@ -3442,7 +3483,7 @@ if CLIENT then
 
 	//dumb modified version of GWEN.CreateTextureBorder (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/derma/derma_gwen.lua#L6-L56),
 	//used to scale down the tf2 backpack textures to match our tiny backpack icons
-	local function GWEN_CreateTextureBorderScaled(_xo, _yo, _wo, _ho, l, t, r, b, material_override, scale)
+	local function GWEN_CreateTextureBorderScaled(_xo, _yo, _wo, _ho, l, t, r, b, material_override)
 
 		local mat = SKIN && SKIN.GwenTexture || material_override
 		if ( material_override && !material_override:IsError() ) then mat = material_override end
@@ -3476,6 +3517,7 @@ if CLIENT then
 			local _b = bottom / texH
 
 			//the only change
+			local scale = item_icon_sizes[icon_size].scale
 			left = math.Round(left * scale)
 			right = math.Round(right * scale)
 			top = math.Round(top * scale)
@@ -3499,9 +3541,9 @@ if CLIENT then
 		end
 
 	end
-	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"), item_icon_scale)
-	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"), item_icon_scale)
-	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"), item_icon_scale)
+	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"))
+	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"))
+	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"))
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
 	function PANEL:Paint(w, h)
