@@ -1606,6 +1606,7 @@ if CLIENT then
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
+					self:UpdateItemConflicts()
 				else
 					for k, v in ipairs (self.ImageQueue) do
 						table.remove(self.ImageQueue, k)
@@ -1659,8 +1660,8 @@ if CLIENT then
 					item.entity = ent
 					atticons:AddPanel(item)
 				else item = atticons.icons[ent] end
-
 				item:SetData(data)
+				window:UpdateItemConflicts()
 				
 				if forceopen then
 					atticons:ScrollToChild(item)
@@ -1871,6 +1872,76 @@ if CLIENT then
 					attopts.fx.IsUpdating = true
 					attopts.fx:ChooseOptionID(1)
 					attopts.fx.IsUpdating = nil
+				end
+			end
+
+			function window:UpdateItemConflicts()
+				//If there's no entity for items to be equipped to, then there's no item conflicts
+				if !IsValid(self:GetEntity()) then return end
+				//Get all equip regions occupied by equipped items, and track how many items are occupying each region
+				local regions = {}
+				for k, v in pairs (atticons.icons) do
+					local r = TF2Items.items[v.data.id].equip_regions
+					if !r then continue end
+					for k2, v2 in pairs (r) do
+						regions[k2] = (regions[k2] or 0) + 1
+						//If this region has an equip_conflicts table, add all of those too 
+						//(i.e. if a whole_head item is equipped, occupy the hat region too)
+						if TF2Items.equip_conflicts[k2] then
+							for k3, v3 in pairs (TF2Items.equip_conflicts[k2]) do
+								regions[k3] = (regions[k3] or 0) + 1
+							end
+						end
+						//If this region is inside another region's equip_conflicts table, add that region too
+						//(i.e. if a hat item is equipped, occupy the whole_head region too)
+						for k3, v3 in pairs (TF2Items.equip_conflicts) do
+							for k4, v4 in pairs (v3) do
+								if r[k4] then
+									regions[k3] = (regions[k3] or 0) + 1
+								end
+							end
+						end
+					end
+				end
+				//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict
+				for k, v in pairs (atticons.icons) do
+					local r = TF2Items.items[v.data.id].equip_regions
+					if !r then continue end
+					local conflicting = false
+					for k2, v2 in pairs (r) do
+						if regions[k2] and regions[k2] > 1 then
+							conflicting = true
+							break
+						end
+					end
+					if !conflicting then conflicting = nil end
+					if v.item_conflict != conflicting then
+						v.item_conflict = conflicting
+						v.itemdesc = v:UpdateItemDescription()
+					end
+				end
+				//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict
+				for k, v in pairs (window.icons) do
+					//these might not have built their data table yet
+					local id = v.data
+					if istable(id) then id = id.id end
+					if !id then continue end
+
+					local r = TF2Items.items[id].equip_regions
+					if !r then continue end
+					local conflicting = false
+					for k2, v2 in pairs (r) do
+						if regions[k2] then
+							conflicting = true
+							break
+						end
+					end
+					if !conflicting then conflicting = nil end
+					if v.item_conflict != conflicting then
+						v.item_conflict = conflicting
+						//don't update the description if it hasn't built its data table yet
+						if istable(v.data) then v.itemdesc = v:UpdateItemDescription() end
+					end
 				end
 			end
 
@@ -2446,6 +2517,13 @@ if CLIENT then
 		//Generate_DropPeriodDesc( pLocalizationProvider, pEconItem ); 
 		//Generate_MarketInformation( pLocalizationProvider, pEconItem );
 		//Generate_DirectX8Warning( pLocalizationProvider, pEconItem );
+
+		//"Grayed out" reason, used when item has a conflict; this is based on CEconItemView::EnsureDescriptionIsBuilt() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_view.cpp#L650-L674)
+		//which is separate from the rest of the item description code
+		if self.item_conflict then
+			table.insert(desc, {str = "", col = desc_colors.negative})
+			table.insert(desc, {str = GetTFLanguageString("#Econ_GreyOutReason_EquipRegionConflict"), col = desc_colors.negative})
+		end
 
 		return desc
 
@@ -3576,9 +3654,10 @@ if CLIENT then
 		end
 
 	end
-	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect.vmt"))
-	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover.vmt"))
-	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected.vmt"))
+	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt")) //these use custom vmts with $vertexcolor added because surface.SetColor won't work on them otherwise
+	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover_vc.vmt"))
+	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected_vc.vmt"))
+	local col_GrayedOut = Color(46,43,42,255) //the only difference between BackpackItemGreyedOutBorder and the standard BackpackItemBorder is that the former is tinted this color
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
 	function PANEL:Paint(w, h)
@@ -3606,16 +3685,22 @@ if CLIENT then
 			end
 		end
 
+		local col
+		if self.item_conflict then col = col_GrayedOut end
 		if (IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self) or IsValid(self.menu) or self:IsDown() then
-			BackpackItemSelectedBorder(0,0,w,h)
+			BackpackItemSelectedBorder(0,0,w,h,col)
 		elseif self:IsHovered() then
-			BackpackItemMouseOverBorder(0,0,w,h)
+			BackpackItemMouseOverBorder(0,0,w,h,col)
 		else
-			BackpackItemBorder(0,0,w,h)
+			BackpackItemBorder(0,0,w,h,col)
 		end
 
 		if self.mat then
-			surface.SetDrawColor(255,255,255,255)
+			if self.item_conflict then 
+				surface.SetDrawColor(96,96,96,255) //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L823-L830
+			else
+				surface.SetDrawColor(255,255,255,255)
+			end
 			surface.SetMaterial(self.mat)
 			//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
 			local diff = (1-(h/w))/2
@@ -3683,6 +3768,7 @@ if CLIENT then
 		if self.entity and TF2ItemBrowser.atticons.icons[self.entity] == self then
 			TF2ItemBrowser.atticons.icons[self.entity] = nil
 			TF2ItemBrowser.atticons:InvalidateLayout()
+			TF2ItemBrowser:UpdateItemConflicts()
 		end
 
 	end
