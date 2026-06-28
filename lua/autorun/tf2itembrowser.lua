@@ -1391,17 +1391,6 @@ if CLIENT then
 			filters.item_set = AddDropdownFilter("Set/Collection", item_sets_populate)
 			filters.item_set:GetParent():DockMargin(0,0,0,betweencategories)
 			filters.item_set.RebuildControls = item_sets_populate //make this func externally accessible so we can rebuild it when picking a new class
-			
-			local check = vgui.Create("DCheckBoxLabel", filters)
-			check:SetText("Hide conflicting items")
-			check:SetHeight(15)
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweencategories)
-			filters.conflicting = check
-			//TODO: gray this out or something unless we're in equip mode, because the concept of conflicting items only applies there
-			check.OnChange = function(_, val)
-				//TODO: update filters? or just set visibilty of existing panels? this option might be impractical, DIconLayout doesn't like it when icons start off hidden.
-			end
 
 			local function AddIncludeExcludeFilter(label) //variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
 				local self = vgui.Create("DPanel", filters)
@@ -1459,6 +1448,7 @@ if CLIENT then
 				return self
 			end
 
+			filters.conflicting = AddIncludeExcludeFilter("Conflicts with equipped") //should this be grayed out or something when there's no parent selected to equip items to?
 			filters.multi_class = AddIncludeExcludeFilter("Multi-class")
 			filters.holiday = AddIncludeExcludeFilter("Holiday restricted")
 			filters.paint = AddIncludeExcludeFilter("Paintable")
@@ -1530,7 +1520,8 @@ if CLIENT then
 					local _, f = filters.item_set:GetSelected()
 					if f != "(any)" and (v._item_set != f and v._item_collection != f) then continue end
 
-					if DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
+					if DoIncludeExcludeFilter(filters.conflicting:GetValue(), window:GetItemHasConflict(k))
+					or DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
 					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
 					or DoIncludeExcludeFilter(filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
 					or DoIncludeExcludeFilter(filters.warpaint:GetValue(), v._paintkit and WP.Weapons.IsSupported(v.model_player))
@@ -1595,6 +1586,7 @@ if CLIENT then
 							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap))
 							item.data = v //this will be populated with the default data table for this item once the icon renders
 							self.icons[v] = item
+							item.item_conflict = self:GetItemHasConflict(v)
 						else
 							//We've gone through the whole table, so we're done here, get rid of it
 							self.icons_to_add = nil
@@ -1606,7 +1598,6 @@ if CLIENT then
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-					self:UpdateItemConflicts()
 				else
 					for k, v in ipairs (self.ImageQueue) do
 						table.remove(self.ImageQueue, k)
@@ -1877,7 +1868,10 @@ if CLIENT then
 
 			function window:UpdateItemConflicts()
 				//If there's no entity for items to be equipped to, then there's no item conflicts
-				if !IsValid(self:GetEntity()) then return end
+				if !IsValid(self:GetEntity()) then
+					self.EquipRegionConflicts = nil
+					return
+				end
 				//Get all equip regions occupied by equipped items, and track how many items are occupying each region
 				local regions = {}
 				for k, v in pairs (atticons.icons) do
@@ -1903,46 +1897,56 @@ if CLIENT then
 						end
 					end
 				end
-				//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict
+				self.EquipRegionConflicts = regions
+				//Update all existing icons
 				for k, v in pairs (atticons.icons) do
-					local r = TF2Items.items[v.data.id].equip_regions
-					if !r then continue end
-					local conflicting = false
-					for k2, v2 in pairs (r) do
-						if regions[k2] and regions[k2] > 1 then
-							conflicting = true
-							break
-						end
-					end
-					if !conflicting then conflicting = nil end
+					local conflicting = self:GetItemHasConflict(v, true)
 					if v.item_conflict != conflicting then
 						v.item_conflict = conflicting
 						v.itemdesc = v:UpdateItemDescription()
 					end
 				end
-				//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict
-				for k, v in pairs (window.icons) do
-					//these might not have built their data table yet
-					local id = v.data
-					if istable(id) then id = id.id end
-					if !id then continue end
-
-					local r = TF2Items.items[id].equip_regions
-					if !r then continue end
-					local conflicting = false
-					for k2, v2 in pairs (r) do
-						if regions[k2] then
-							conflicting = true
-							break
+				if self.filters and self.filters.conflicting and self.filters.conflicting:GetValue() != 0 then //can be nil if the window is being closed
+					//If we have a filter set to hide conflicting/non-conflicting icons, then rebuild the icon list instead
+					self.RebuildIconList()
+				else
+					for k, v in pairs (self.icons) do
+						local conflicting = self:GetItemHasConflict(v)
+						if v.item_conflict != conflicting then
+							v.item_conflict = conflicting
+							//don't update the description if it hasn't built its data table yet
+							if istable(v.data) then v.itemdesc = v:UpdateItemDescription() end
 						end
 					end
-					if !conflicting then conflicting = nil end
-					if v.item_conflict != conflicting then
-						v.item_conflict = conflicting
-						//don't update the description if it hasn't built its data table yet
-						if istable(v.data) then v.itemdesc = v:UpdateItemDescription() end
+				end
+			end
+
+			function window:GetItemHasConflict(item, is_equipped)
+				if !window.EquipRegionConflicts then return end
+				local id
+				if isnumber(item) then
+					//this is an item id number
+					id = item
+				else
+					//this is an item icon panel, grab the id number from its data table
+					//it may not have built its data table yet; in this case, the id number will be in its place
+					id = item.data
+					if istable(id) then id = id.id end
+					if !id then return end
+				end
+
+				local r = TF2Items.items[id]
+				if !r or !r.equip_regions then return end
+				local conflicting
+				for k, v in pairs (r.equip_regions) do
+					//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict.
+					//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict.
+					if window.EquipRegionConflicts[k] and (!is_equipped or window.EquipRegionConflicts[k] > 1) then
+						conflicting = true
+						break
 					end
 				end
+				return conflicting
 			end
 
 
