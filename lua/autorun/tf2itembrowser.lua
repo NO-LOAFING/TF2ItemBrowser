@@ -1102,12 +1102,6 @@ if CLIENT then
 		return text
 	end
 
-	//duplicate function from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L326-L331)
-	local function PackedRGBToTab(n)
-		n = string.Right(bit.tohex(n),6)
-		return {tonumber(string.sub(n,1,2),16), tonumber(string.sub(n,3,4),16), tonumber(string.sub(n,5,6),16)}
-	end
-
 	local paints = {
 		{
 			{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
@@ -2551,6 +2545,50 @@ if CLIENT then
 
 	end
 
+	function PANEL:DrawPaintIcon(x, y, w, h, cols)
+
+		//Draws multi-colored paint icons with a diagonal split down the middle, bbased off The Funny CItemMaterialCustomizationIconPanel::DrawQuad (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L107 / https://www.youtube.com/watch?v=T-BoDW1_9P4&t=7m4s)
+		//note: this function doesn't set the draw texture on its own, so that it can use the paint splat texture (for corner icons) or a solid color (for swatches)
+
+		local fXScale = 1 / #cols
+		local fXUpperLowerOffset = fXScale * 0.65
+		for i, col in ipairs (cols) do
+			i = i-1
+			local fXOffsetL = i * fXScale
+			local fXOffsetR = (i + 1) * fXScale
+
+			// We shift our coordinates on the top slightly to the right (by fXUpperLowerOffset) and on
+			// the bottom slightly to the left (also by fXUpperLowerOffset). The far left side can't move
+			// away from 0 and the far right side can't move away from 1, so the edge case handling makes
+			// this look uglier than it really is.
+			local fXUL, fXUR, fXBL, fXBR
+			if i == 0 then
+				fXUL = fXOffsetL
+				fXBL = fXOffsetL
+			else
+				fXUL = fXOffsetL + fXUpperLowerOffset
+				fXBL = fXOffsetL - fXUpperLowerOffset
+			end
+			if i == #cols - 1 then
+				fXUR = fXOffsetR
+				fXBR = fXOffsetR
+			else 
+				fXUR = fXOffsetR + fXUpperLowerOffset
+				fXBR = fXOffsetR - fXUpperLowerOffset
+			end
+
+			surface.SetDrawColor(col.x, col.y, col.z, 255)
+			surface.DrawPoly({
+				{x = x+(w*fXUL), y = y, u = fXUL, v = 0},
+				{x = x+(w*fXUR), y = y, u = fXUR, v = 0},
+				{x = x+(w*fXBR), y = y+h, u = fXBR, v = 1},
+				{x = x+(w*fXBL), y = y+h, u = fXBL, v = 1}
+			})
+		end
+			
+
+	end
+
 	function PANEL:PositionPopupPanel(pnl)
 
 		//Keeps a popup panel contained within the right side of TF2ItemBrowser (never cover up the options list 
@@ -2657,23 +2695,11 @@ if CLIENT then
 			for k, v in ipairs (mdl.models) do
 				//Update color of halloween spell paints
 				if self.data.paint.enabled then
-					//duplicate code from hat painter, ugh (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2itempaint.lua#L333-L345)
 					local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
 					if override > 0 then
-						local scaledTime = CurTime() * 22 //"arbitrary time scalar people liked"
-						local samplePoint0 = math.Round(scaledTime) % #ProxyentPaintColor_Overrides[override]
-						local samplePoint1 = (samplePoint0 + 1) % #ProxyentPaintColor_Overrides[override]
-						//MsgN(samplePoint0, " ", samplePoint1)
-
-						local delta = scaledTime - math.Round(scaledTime)
-
-						local c0 = PackedRGBToTab(ProxyentPaintColor_Overrides[override][samplePoint0+1]) //+1 because lua tables start at 1, not 0
-						local c1 = PackedRGBToTab(ProxyentPaintColor_Overrides[override][samplePoint1+1]) //^
-
-						v.ProxyentPaintColor.Color = Vector(Lerp(delta, c0[1], c1[1])/255, Lerp(delta, c0[2], c1[2])/255, Lerp(delta, c0[3], c1[3])/255)
+						v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(override)/255
 					end
 				end
-
 				//Render all additional models
 				if v != ent then
 					v:DrawModel()
@@ -3249,25 +3275,17 @@ if CLIENT then
 					end
 				end
 			end)
-			local button = vgui.Create("DImageButton", drop:GetParent())
-			button:SetImage("materials/icon16/color_wheel.png")
-			button:Dock(RIGHT)
-			button:DockMargin(4,0,0,0)
-			button:SetWide(16)
-			button:SetStretchToFit(false)
-			button.DoClick = function()
+			function drop.OpenMenu()
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h)
+					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
 				end
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
 				//so instead make the container behave like a DermaMenu.
 				CloseDermaMenus()
-				container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
-				container:IsMouseInputEnabled(true)
 				container:SetIsMenu(true)
 				function container:GetDeleteSelf() return true end
 				function container:OnRemove() 
@@ -3277,11 +3295,69 @@ if CLIENT then
 				end
 				RegisterDermaMenuForClose(container)
 
+				local icons = vgui.Create("DIconLayout", container)
+				icons:Dock(TOP)
+				local size = 256/10
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local button = vgui.Create("DColorButton", icons)
+					button:SetSize(size, size)
+					local name, cols
+					if data then
+						if data[1] then
+							button:SetColor(Color(data[1].x, data[1].y, data[1].z, 255), true)
+						end
+						name = GetTFLanguageString(data.name)
+						if name == "" then name = nil end
+						if data[1] and data[2] then
+							cols = {[1] = data[1], [2] = data[2]}
+						end
+					else
+						button:SetColor(Color(255,255,255,0))
+					end
+					button:SetTooltip(name or v)
+					button:SetTooltipDelay(0)
+					function button.DoClick()
+						drop:ChooseOption(v, k)
+						container.col.BeingUpdated = true
+						local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
+						container.col:SetColor(Color(_col.x, _col.y, _col.z))
+						container.col.BeingUpdated = nil
+					end
+					if cols or (data and data.override) then
+						function button.Paint(_, w, h)
+							if data.override then
+								if data.override_2 then
+									draw.NoTexture()
+									self:DrawPaintIcon(0, 0, w, h, {ProxyentPaintColor_GetOverrideColor(data.override), ProxyentPaintColor_GetOverrideColor(data.override_2)})
+								else
+									local col = ProxyentPaintColor_GetOverrideColor(data.override)
+									surface.SetDrawColor(col.x, col.y, col.z, 255)
+									button:DrawFilledRect()
+								end
+							else
+								draw.NoTexture()
+								self:DrawPaintIcon(0, 0, w, h, cols)
+							end
+							//from default paint func (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcolorbutton.lua#L61C1-L63C32)
+							surface.SetDrawColor( 0, 0, 0, 200 )
+							surface.DrawRect( 0, 0, w, 1 )
+							surface.DrawRect( 0, 0, 1, h )
+						end
+					end
+				end
+				icons:SetSize((size*10)+16, 16+size*(math.ceil(#drop.Choices/10)))
+				icons:InvalidateLayout()
+
 				local col = vgui.Create("DColorMixer", container)
+				col:SetLabel("Custom Color")
+				col.label:SetDark(false)
+				container.col = col
 				col:SetAlphaBar(false)
 				local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
 				col:SetColor(Color(_col.x, _col.y, _col.z))
 				col.ValueChanged = function(_, _col)
+					if container.col.BeingUpdated then return end
 					_col = Vector(_col.r, _col.g, _col.b)
 					//0,0,0 (and anything darker than 3,3,3) is used by the vmt to mean "no paint color", which means it'll get overwritten by the hat's
 					//default color, so if the player is trying to paint something pure black, then redirect it to a color that actually works.
@@ -3294,10 +3370,19 @@ if CLIENT then
 					drop:SetText("(custom)")
 					pnl.OnSettingChanged()
 				end
-				col:Dock(FILL)
+				col:DockMargin(0,16,0,0)
+				col:InvalidateChildren(true)
+				col:Dock(TOP)
 
 				container:SizeToChildren(true, true)
+				container:SetHeight(icons:GetTall() + 16 + col:GetTall() + 16) //why doesn't SizeToChildren do this right?
+				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
+
+				local x, y = drop:LocalToScreen(0, drop:GetTall())
+				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+				container:SetPos(x, y)
 			end
 		end
 
@@ -3325,25 +3410,17 @@ if CLIENT then
 					self.data.crit.sparks_c = false
 				end
 			end)
-			local button = vgui.Create("DImageButton", drop:GetParent())
-			button:SetImage("materials/icon16/color_wheel.png")
-			button:Dock(RIGHT)
-			button:DockMargin(4,0,0,0)
-			button:SetWide(16)
-			button:SetStretchToFit(false)
-			button.DoClick = function()
+			function drop.OpenMenu()
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h)
+					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
 				end
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
 				//so instead make the container behave like a DermaMenu.
 				CloseDermaMenus()
-				container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
-				container:IsMouseInputEnabled(true)
 				container:SetIsMenu(true)
 				function container:GetDeleteSelf() return true end
 				function container:OnRemove() 
@@ -3353,38 +3430,61 @@ if CLIENT then
 				end
 				RegisterDermaMenuForClose(container)
 
-				local col = vgui.Create("DColorMixer", container)
-				col:SetAlphaBar(false)
-				local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-				col:SetColor(Color(_col.x, _col.y, _col.z))
-				col.ValueChanged = function(_, _col)
-					_col = Vector(_col.r, _col.g, _col.b)
-					self.data.crit.enabled = true
-					self.data.crit.col = {[false] = _col}
-					drop:SetText("(custom)")
-					pnl.OnSettingChanged()
+				//diconlayout and color picker copied from paint dropdown, bah
+				local icons = vgui.Create("DIconLayout", container)
+				icons:Dock(TOP)
+				local size = 256/10
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local button = vgui.Create("DColorButton", icons)
+					button:SetSize(size, size)
+					local name, cols
+					local function GetOverbrightenedColor(col) return col --[[Vector(65,65,65) + (col * 3)]] end //copied from hat painter critglow particle color; otherwise the icons are too dark (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2critglow.lua#L120)
+					if data then
+						if data[1] then
+							local col = GetOverbrightenedColor(data[1])
+							button:SetColor(Color(col.x, col.y, col.z, 255), true)
+						end
+						name = GetTFLanguageString(data.name)
+						if name == "" then name = nil end
+						if data[1] and data[2] then
+							cols = {[1] = GetOverbrightenedColor(data[1]), [2] = GetOverbrightenedColor(data[2])}
+						end
+					else
+						button:SetColor(Color(255,255,255,0))
+					end
+					button:SetTooltip(name or v)
+					button:SetTooltipDelay(0)
+					function button.DoClick()
+						drop:ChooseOption(v, k)
+						container.col.BeingUpdated = true
+						local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+						container.col:SetColor(Color(_col.x, _col.y, _col.z))
+						container.col.BeingUpdated = nil
+						container.check_c:SetChecked(self.data.crit.sparks_c)
+						container.check_rb:SetChecked(self.data.crit.sparks_rb)
+					end
+					if cols then
+						function button.Paint(_, w, h)
+							draw.NoTexture()
+							self:DrawPaintIcon(0, 0, w, h, cols)
+							//from default paint func (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcolorbutton.lua#L61C1-L63C32)
+							surface.SetDrawColor( 0, 0, 0, 200 )
+							surface.DrawRect( 0, 0, w, 1 )
+							surface.DrawRect( 0, 0, 1, h )
+						end
+					end
 				end
-				col:Dock(FILL)
+				icons:SetSize((size*10)+16, 16+size*(math.ceil(#drop.Choices/10)))
+				icons:InvalidateLayout()
 
 				local check = vgui.Create("DCheckBoxLabel", container)
-				check:SetText("Colorable Sparks")
-				check:SetHeight(15)
-				//check:SizeToChildren(true, false)
-				check:DockMargin(0,8,0,0)
-				check:Dock(BOTTOM)
-				check:SetChecked(self.data.crit.sparks_c)
-				check.OnChange = function(_, val)
-					self.data.crit.enabled = true
-					self.data.crit.sparks_c = val
-					pnl.OnSettingChanged()
-				end
-
-				local check = vgui.Create("DCheckBoxLabel", container)
+				container.check_rb = check
 				check:SetText("Team Sparks")
 				check:SetHeight(15)
 				//check:SizeToChildren(true, false)
 				check:DockMargin(0,16,0,0)
-				check:Dock(BOTTOM)
+				check:Dock(TOP)
 				check:SetChecked(self.data.crit.sparks_rb)
 				check.OnChange = function(_, val)
 					self.data.crit.enabled = true
@@ -3392,9 +3492,48 @@ if CLIENT then
 					pnl.OnSettingChanged()
 				end
 
+				local check = vgui.Create("DCheckBoxLabel", container)
+				container.check_c = check
+				check:SetText("Colorable Sparks")
+				check:SetHeight(15)
+				//check:SizeToChildren(true, false)
+				check:DockMargin(0,8,0,0)
+				check:Dock(TOP)
+				check:SetChecked(self.data.crit.sparks_c)
+				check.OnChange = function(_, val)
+					self.data.crit.enabled = true
+					self.data.crit.sparks_c = val
+					pnl.OnSettingChanged()
+				end
+
+				local col = vgui.Create("DColorMixer", container)
+				col:SetLabel("Custom Color")
+				col.label:SetDark(false)
+				container.col = col
+				col:SetAlphaBar(false)
+				local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+				col:SetColor(Color(_col.x, _col.y, _col.z))
+				col.ValueChanged = function(_, _col)
+					if container.col.BeingUpdated then return end
+					_col = Vector(_col.r, _col.g, _col.b)
+					self.data.crit.enabled = true
+					self.data.crit.col = {[false] = _col}
+					drop:SetText("(custom)")
+					pnl.OnSettingChanged()
+				end
+				col:DockMargin(0,16,0,0)
+				col:InvalidateChildren(true)
+				col:Dock(TOP)
+
 				container:SizeToChildren(true, true)
-				container:SetTall(container:GetTall()+15+15+8) //sizetochildren doesn't account for height of checks? why not?
+				container:SetHeight(icons:GetTall() + 16 + col:GetTall() + 16 + container.check_rb:GetTall() + 8 + container.check_c:GetTall() + 16) //why doesn't SizeToChildren do this right?
+				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
+
+				local x, y = drop:LocalToScreen(0, drop:GetTall())
+				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+				container:SetPos(x, y)
 			end
 		end
 
