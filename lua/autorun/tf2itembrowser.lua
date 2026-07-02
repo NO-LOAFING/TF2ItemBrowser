@@ -905,14 +905,14 @@ local function GetItemDefaultParticleEffects(data)
 
 	if i.visuals and i.visuals.attached_particlesystems then
 		for k, v in pairs(i.visuals.attached_particlesystems) do
-			if PEPlus_FindPCFFromEffect(v.system) then
+			if PEPlus_FindPCFsFromEffect(v.system) then
 				table.insert(pe_def, v)
 			end
 		end
 	end
 	if i.attributes and i.attributes["attach particle effect static"] then
 		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect static"].value]
-		if tab and PEPlus_FindPCFFromEffect(tab.system) then
+		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
 			if CLIENT then
 				tab = table.Copy(tab)
 				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value)
@@ -923,7 +923,7 @@ local function GetItemDefaultParticleEffects(data)
 	end
 	if i.attributes and i.attributes["attach particle effect"] then
 		local tab = TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect"].value]
-		if tab and PEPlus_FindPCFFromEffect(tab.system) then
+		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
 			if CLIENT then
 				tab = table.Copy(tab)
 				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value)
@@ -3554,7 +3554,7 @@ if CLIENT then
 				end
 				if u_wep then
 					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
-						if v.use_suffix_name and !PEPlus_FindPCFFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+						if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
 						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
 					end
 				end
@@ -3565,39 +3565,254 @@ if CLIENT then
 					if !button:IsEnabled() then self.data.pe_unusual_offset = nil end //if the menu is disabled, then clear its options so they don't get stuck on
 				end
 			end)
-			if u_hat then
-				button = vgui.Create("DImageButton", drop:GetParent())
-				button:SetImage("materials/icon16/pencil.png")
-				button:Dock(RIGHT)
-				button:DockMargin(4,0,0,0)
-				button:SetWide(16)
-				button:SetStretchToFit(false)
-				button:SetEnabled(self.data.pe_unusual != 0 or (i.attributes and i.attributes["attach particle effect"]))
-				button.DoClick = function()
-					local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-					container:DockPadding(16,16,16,16)
-					function container:Paint(w,h)
-						LoadoutItemPopupBorder(0,0,w,h)
+			function drop.OpenMenu()
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+				end
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local categories = {}
+				for k, v in ipairs ({"Series 1", "Series 2", "Halloween 2011", "Halloween 2012", "Robotic Boogaloo", "Series 3", "Halloween 2013", "Halloween 2014", "End of the Line", "Invasion"}) do
+					categories[v] = {order = k, items = {}}
+				end
+				categories["Other"] = {order = 99999999, items = {}}
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local tab = TF2Items.attribute_controlled_attached_particles_all[data]
+					if tab and tab.system then
+						local name = tab.system
+						if name:EndsWith("_teamcolor_red") and self.data.team then
+							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+						end
+						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+						
+						local pcfs = PEPlus_FindPCFsFromEffect(name)
+						if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
+						local has_been_categorized = false
+						local entry = {name = name, k = k, v = v}
+						for k2, v2 in ipairs (pcfs) do
+							local cat
+							if v2.pcf == "particles/item_fx.pcf" then
+								//All fx introduced before seasonal community updates are in this one pcf, so we have to hard-code their categories
+								if data <= 19 then
+									cat = "Series 1"
+								elseif data <= 36 then
+									cat = "Series 2"
+								elseif data <= 40 then
+									cat = "Halloween 2011"
+								elseif data <= 47 then
+									cat = "Halloween 2012"
+								elseif data <= 62 then //series 3 fx are defined before roboog despite being added a month later?
+									cat = "Series 3"
+								elseif data <= 72 then
+									cat = "Robotic Boogaloo"
+								elseif data <= 80 then
+									cat = "Halloween 2013"
+								elseif data <= 86 then
+									cat = "Halloween 2014"
+								elseif data <= 90 then
+									cat = "End of the Line"
+								elseif data <= 99 then
+									cat = "Invasion"
+								else //this shouldn't happen
+									cat = "Other"
+								end
+							elseif v2.pcf == "particles/invasion_unusuals.pcf" then
+								cat = "Invasion"
+							else
+								//Generate categories for seasonal update pcfs automatically using the file name
+								local season
+								if string.StartsWith(v2.pcf, "particles/summer") then
+									season = "summer"
+								elseif string.StartsWith(v2.pcf, "particles/halloween") then
+									season = "halloween"
+								elseif string.StartsWith(v2.pcf, "particles/smissmas") then
+									season = "smissmas"
+								end
+								if season and string.EndsWith(v2.pcf, "_unusuals.pcf") then
+									local pcf = string.TrimLeft(v2.pcf, "particles/" .. season)
+									pcf = string.TrimRight(pcf, "_unusuals.pcf")
+									//Get the year number from the file path
+									if #pcf != 4 then continue end //make sure the only part of the string left is the year; this will stop working in 8000 years
+									pcf = tonumber(pcf)
+									if !pcf then continue end
+
+									cat = string.NiceName(season) .. " " .. tostring(pcf)
+									if season == "summer" then
+										season = 1
+									elseif season == "halloween" then
+										season = 2
+									elseif season == "smissmas" then
+										season = 3
+									end
+									categories[cat] = categories[cat] or {order = (pcf*10)+season, items = {}}
+								end
+							end //Note: This will also need handling for taunt fx pcfs if taunts are ever properly implemented
+							if cat then
+								entry.pcf = v2.pcf
+								entry.path = v2.path
+								table.insert(categories[cat].items, entry)
+								has_been_categorized = true
+								continue
+							end
+						end
+						if !has_been_categorized then
+							entry.pcf = pcfs[1].pcf
+							entry.path = pcfs[1].path
+							table.insert(categories["Other"].items, entry)
+						end
+					end
+				end
+				//Sort the categories by display order, and discard empty categories
+				local cat2 = {}
+				for k, v in pairs (categories) do
+					if #v.items > 0 then 
+						//add "none" option to the start of every category
+						table.insert(v.items, 1, {k = 1, v = drop.Choices[1], name = drop.Choices[1], pcf = ""})
+						cat2[v.order] = {name = k, items = v.items}
+					end
+				end
+				categories = cat2
+				local default_category
+				//By default, select the category containing the currently selected effect
+				for k, v in SortedPairs (categories) do
+					for _, entry in ipairs (v.items) do
+						local data = drop.Data[entry.k]
+						if self.data.pe_unusual == data then
+							default_category = k
+							break
+						end
+					end
+					if default_category then break end
+				end
+
+				local drop2 = vgui.Create("DComboBox", container) //calling this "drop" causes issues with the parent drop
+				container.drop2 = drop2
+				drop2:Dock(TOP)
+				if table.Count(categories) > 1 then
+					drop2:SetHeight(20)
+				else
+					drop2:SetHeight(0)
+					drop2:SetEnabled(false)
+				end
+				drop2:SetSortItems(false)
+				for k, v in SortedPairs (categories) do
+					drop2:AddChoice(v.name, k, k == default_category)
+				end
+				function drop2.OnSelect(_, index, value, data)
+					icons.SelectCategory(data)
+				end
+				//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
+				function drop2:OpenMenu(pControlOpener)
+					if ( pControlOpener && pControlOpener == self.TextEntry ) then
+						return
 					end
 
-					CloseDermaMenus()
-					container:SetPos(gui.MouseX() + 8, gui.MouseY() + 8)
-					container:IsMouseInputEnabled(true)
-					container:SetIsMenu(true)
-					function container:GetDeleteSelf() return true end
-					function container:OnRemove() 
-						//fix keyboard focus getting stuck on col's textentries if we remove container while focused
-						local chump = vgui.GetKeyboardFocus()
-						if IsValid(chump) then chump:KillFocus() end
-					end
-					RegisterDermaMenuForClose(container)
+					-- Don't do anything if there aren't any options..
+					if ( #self.Choices == 0 ) then return end
 
-					local slider
-					local check = vgui.Create("DCheckBoxLabel", container)
+					-- If the menu still exists and hasn't been deleted
+					-- then just close it and don't open a new one.
+					self:CloseMenu()
+
+					//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
+					self.Menu = DermaMenu(true, container)
+
+					--[[if ( self:GetSortItems() ) then
+						local sorted = {}
+						for k, v in pairs( self.Choices ) do
+							local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
+							if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
+							table.insert( sorted, { id = k, data = v, label = val } )
+						end
+						for k, v in SortedPairsByMemberValue( sorted, "label" ) do
+							local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
+							if ( self.ChoiceIcons[ v.id ] ) then
+								option:SetIcon( self.ChoiceIcons[ v.id ] )
+							end
+							if ( self.Spacers[ v.id ] ) then
+								self.Menu:AddSpacer()
+							end
+						end
+					else]]
+						for k, v in pairs( self.Choices ) do
+							//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
+							local option = self.Menu:AddOption( v )
+							option.DoClick = function()
+								option.m_MenuClicking = false
+								if IsValid(self) then
+									self:ChooseOption( v, k )
+									self:CloseMenu()
+								end
+							end
+							if ( self.ChoiceIcons[ k ] ) then
+								option:SetIcon( self.ChoiceIcons[ k ] )
+							end
+							if ( self.Spacers[ k ] ) then
+								self.Menu:AddSpacer()
+							end
+						end
+					//end
+
+					local x, y = self:LocalToScreen( 0, self:GetTall() )
+
+					self.Menu:SetMinimumWidth( self:GetWide())
+					self.Menu:Open( x, y, false, self )
+
+					self:OnMenuOpened( self.Menu )
+				end
+				function drop2:OnMenuOpened(menu)
+					//Add a checkmark to the currently selected option.
+					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+					//non-spacer children to find the correct one.
+					local sel = drop2:GetSelectedID()
+					local sel_read = 0
+					for i = 1, menu:ChildCount() do
+						local child = menu:GetChild(i)
+						if child:GetName() == "DMenuOption" then
+							sel_read = sel_read + 1
+							if sel_read == sel then
+								child:SetChecked(true)
+								menu:ScrollToChild(child)
+								break
+							end
+						end
+					end
+				end
+
+				local icons_holder = vgui.Create("DPanel", container)
+				icons_holder.Paint = function() end
+				local scroll = vgui.Create("DScrollPanel",icons_holder)
+				icons_holder:DockMargin(0,8,0,0)
+				icons_holder:Dock(TOP)
+				scroll:Dock(FILL)
+
+				local size = 64
+				icons = vgui.Create("DIconLayout", scroll)
+				icons:Dock(FILL)
+
+				local slider, check
+				if u_hat then
+					check = vgui.Create("DCheckBoxLabel", container)
 					check:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
 					check:SetHeight(15)
 					//check:SizeToChildren(true, false)
-					//check:DockMargin(0,8,0,0)
+					check:DockMargin(0,8,0,0)
 					check:Dock(TOP)
 					check:SetChecked(self.data.pe_unusual_offset != nil)
 					check.OnChange = function(_, val)
@@ -3628,11 +3843,73 @@ if CLIENT then
 							pnl.OnSettingChanged()
 						end
 					end
+				end
 
-					//container:SizeToChildren(true, true)
-					container:SetWide(272) //match the width of the color panels, i guess
-					container:SetTall(container:GetTall() + 15 + 8 + 18) //argh
-					container:InvalidateLayout()
+				function icons.SelectCategory(cat, stupid_scroll_fix)
+					icons:Clear()
+					for _, entry in ipairs (categories[cat].items) do
+						//reuse PE+ spawnicons for particle previews because they nicely manage the fx already
+						local icon = vgui.Create("ContentIcon_PEPlus", icons)
+						icon:Setup(entry.pcf, entry.name, entry.path)
+						icon:SetSize(size, size)
+						icon.disable_autohide = true //prevent the particle effect from getting auto-removed when the spawnmenu is closed
+						icon.disable_icons = true //don't show corner icons for cpoint count or extra info, because they aren't useful here
+						icon:SetName("") //hide display name at bottom of icon
+						function icon.DoRightClick() end
+						function icon.DoClick() drop:ChooseOption(entry.v, entry.k) end
+						local old_Paint = icon.Paint
+						function icon:Paint(w,h)
+							//icon's paint func sets the tooltip, so we have to override that func to override the tooltip
+							old_Paint(icon,w,h)
+							icon:SetTooltip(entry.v)
+							//custom appearance for "none" option so it isn't just blank
+							if entry.pcf == "" then
+								surface.SetDrawColor(gui_colors.RedSolid)
+								surface.SetMaterial(close_button)
+								local bd = self.Border
+								local w2 = w * 0.75
+								local h2 = h * 0.75
+								surface.DrawTexturedRect(((w-w2)/2)+bd, ((h-h2)/2)+bd, w2-(bd*2), h2-(bd*2))
+								
+								//surface.DrawTexturedRect(bd,bd,w-(bd*2),h-(bd*2))
+							end
+						end
+						icon:SetTooltipDelay(0)
+					end
+					icons:SetSize((size*5)+16, 16+size*(math.ceil(#categories[cat].items/5)))
+					icons:InvalidateLayout(stupid_scroll_fix)
+					icons_holder:SetWide(icons:GetWide())
+					icons_holder:SetTall(math.min(icons:GetTall(), 275))
+					icons_holder:InvalidateLayout(stupid_scroll_fix)
+					scroll:InvalidateLayout(stupid_scroll_fix)
+
+					//Resize and reposition container whenever the category is changed
+					container:SizeToChildren(true, true)
+					local hat_control_height = 0
+					if u_hat then hat_control_height = 8 + check:GetTall() + 8 + slider:GetTall() end
+					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					
+					container:IsMouseInputEnabled(true)
+					container:InvalidateLayout(stupid_scroll_fix)
+
+					local x, y = drop:LocalToScreen(0, drop:GetTall())
+					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+					container:SetPos(x, y)
+				end
+				icons.SelectCategory(default_category)
+				if icons:GetTall() > 275 then
+					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
+					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
+					//have a scrollbar, so only do this if we need to; this is awful
+					icons.SelectCategory(default_category, true)
+					icons.SelectCategory(default_category, true) 
+				end
+
+				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
+				//prevent this by closing the menu in those cases
+				function container:OnMousePressed()
+					drop2:CloseMenu()
 				end
 			end
 		end
@@ -4290,8 +4567,9 @@ if SERVER then
 					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
 					if name == "drg_pipe_smoke" and i.visuals and i.visuals.styles and i.visuals.styles[data.style].use_smoke_particle_effect == 0 then return end
 
-					local pcf, path = PEPlus_FindPCFFromEffect(name)
-					if !pcf then return end
+					local pcfs = PEPlus_FindPCFsFromEffect(name)
+					if !pcfs then return end
+					local pcf, path = pcfs[1].pcf, pcfs[1].path
 					local p = PEPlus_SpawnParticle(ply, e:GetPos(), name, pcf, path, true)
 					if !IsValid(p) then return end
 
