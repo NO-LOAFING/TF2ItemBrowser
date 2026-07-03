@@ -340,6 +340,7 @@ local used_equip_regions = {}
 local items_by_name = {}
 local paintkit_items_to_ids = {}
 local paintkit_rarities = {}
+local paintkit_collections = {}
 
 for k, v in pairs (s.items) do
 	//clear useless contracts
@@ -722,9 +723,10 @@ for k, v in ipairs (s2) do
 							for k, _ in pairs (s.items[items_by_name[k4]].used_by_classes) do
 								s.item_collections[v2.Key]._classes[k] = true
 							end
-						//Also retrieve paintkit rarities here
+						//Also retrieve paintkit rarities and collections here
 						elseif paintkit_items_to_ids[k4] then
 							paintkit_rarities[paintkit_items_to_ids[k4]] = k3
+							paintkit_collections[paintkit_items_to_ids[k4]] = v2.Key
 						end
 					end
 				else
@@ -1023,8 +1025,8 @@ if CLIENT then
 		neutral		= Color(235,226,202,255),
 		positive	= Color(153,204,255,255),
 		negative	= Color(255,64,64,255),
-		--[[ItemSetName		= Color(225,255,15,255),
-		ItemSetItemEquipped	= Color(149,175,12,255),
+		ItemSetName	= Color(225,255,15,255),
+		--[[ItemSetItemEquipped	= Color(149,175,12,255),
 		ItemSetItemMissing	= Color(139,137,137,255),
 		ItemIsotope		= Color(225,255,15,255),
 		ItemBundleItem		= Color(149,175,12,255),
@@ -2031,10 +2033,10 @@ if CLIENT then
 
 		if !self.default_paint and i.attributes and i.attributes["set item tint RGB"] then
 			tab = {}
-			local col = PackedRGBToTab(i.attributes["set item tint RGB"].value)
+			local col = ProxyentPaintColor_PackedRGBToTab(i.attributes["set item tint RGB"].value)
 			tab[false] = Vector(col[1], col[2], col[3])
 			if i.attributes["set item tint RGB 2"] then
-				col = PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
+				col = ProxyentPaintColor_PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
 				tab[true] = Vector(col[1], col[2], col[3])
 			end
 			self.default_paint = tab
@@ -2453,9 +2455,40 @@ if CLIENT then
 			local item_desc = GetTFLanguageString(i.item_description)
 			if item_desc != "" then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
 		end
+
+		//TF2 code here does Generate_Bundle, Generate_GiftedBy, Generate_DuelingMedal, Generate_MapContributor, Generate_MapStampBundleTooltip,
+		//Generate_FriendlyHat, Generate_SquadSurplusClaimedBy, Generate_MvmChallenges, Generate_DynamicRecipe, Generate_XifierToolTargetItem,
+		//Generate_LootListDesc, Generate_EventDetail; we don't care about any of these
+
+		local done_spacer //this looks better if it shares a spacer with styles/classes below
+		//Item set name, loosely based off CEconItemDescription::Generate_ItemSetDesc (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2696); 
+		//TF2 code here lists all the items in the set/collection and set bonus attributes, but we don't care about the latter,
+		//and for the former, set items are listed elsewhere in dropdowns where players can actually spawn them
+		if i._item_set then
+			if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
+			table.insert(desc, {str = GetTFLanguageString(TF2Items.item_sets[i._item_set].name, true), col = desc_colors.ItemSetName})
+		end
+
+		//TF2 code here does Generate_UnusualifierEffectList; we don't care about this
+
+		//Item collection name; same as above, just show the collection name, not its contents like in CEconItemDescription::Generate_CollectionDesc (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2810)
+		local col = i._item_collection
+		if !col and self.data.wp.enabled then
+			//Get collection from paintkit
+			col = paintkit_collections[self.data.wp.id]
+		end
+		if col then
+			if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
+			table.insert(desc, {str = GetTFLanguageString(TF2Items.item_collections[col].name, true), col = desc_colors.neutral})
+		end
+
+		//TF2 code here does Generate_BonusContentDesc, Generate_ExpirationDesc, Generate_DropPeriodDesc, 
+		//Generate_MarketInformation, Generate_DirectX8Warning; we don't care about any of these
+
+		//In TF2 code, Generate_ItemDesc also does a list of styles for store previews; we want to co-opt this to add extra info to items in 
+		//the browser that don't correspond to an attached entity. In our use case, it looks better if we do this after item sets instead of
+		//further up with item descriptions.
 		if !self.entity then
-			local done_spacer
-			//This method also does a list of styles here for store previews; co-opt this for icons that don't correspond to an attached entity
 			if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 and !i._call_styles_animations then
 				//valve's method takes up too much space, make this a single line instead
 				local str
@@ -2492,29 +2525,21 @@ if CLIENT then
 				if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
 				table.insert(desc, {str = str, col = desc_colors.level})
 			end
+			//Also list equip regions, to make it clear why items conflict with each other
+			if i.equip_regions then
+				local str
+				for k, v in pairs (i.equip_regions) do
+					if !str then
+						str = GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") .. ":" //there's no localized version of "equip region" followed by a colon, so we make do 
+					else
+						str = str .. ", "
+					end
+					str = str .. string.NiceName(k) //equip regions aren't localized anywhere unfortunately, just show english names all the time
+				end
+				if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
+				table.insert(desc, {str = str, col = desc_colors.level})
+			end
 		end
-
-		//TODO: tf2 code does even more stuff here, go through these and see which ones we care about
-		//Generate_Bundle( pLocalizationProvider, pEconItem );
-		//Generate_GiftedBy( pLocalizationProvider, pEconItem );
-		//Generate_DuelingMedal( pLocalizationProvider, pEconItem );
-		//Generate_MapContributor( pLocalizationProvider, pEconItem );
-		//Generate_MapStampBundleTooltip( pLocalizationProvider, pEconItem );
-		//Generate_FriendlyHat( pLocalizationProvider, pEconItem );
-		//Generate_SquadSurplusClaimedBy( pLocalizationProvider, pEconItem );
-		//Generate_MvmChallenges( pLocalizationProvider, pEconItem );
-		//Generate_DynamicRecipe( pLocalizationProvider, pEconItem );
-		//Generate_XifierToolTargetItem( pLocalizationProvider, pEconItem );
-		//Generate_LootListDesc( pLocalizationProvider, pEconItem );
-		//Generate_EventDetail( pLocalizationProvider, pEconItem );
-		//Generate_ItemSetDesc( pLocalizationProvider, pEconItem );
-		//Generate_UnusualifierEffectList( pLocalizationProvider, pEconItem );
-		//Generate_CollectionDesc( pLocalizationProvider, pEconItem );
-		//Generate_BonusContentDesc( pLocalizationProvider, pEconItem );
-		//Generate_ExpirationDesc( pLocalizationProvider, pEconItem );
-		//Generate_DropPeriodDesc( pLocalizationProvider, pEconItem ); 
-		//Generate_MarketInformation( pLocalizationProvider, pEconItem );
-		//Generate_DirectX8Warning( pLocalizationProvider, pEconItem );
 
 		//"Grayed out" reason, used when item has a conflict; this is based on CEconItemView::EnsureDescriptionIsBuilt() (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_view.cpp#L650-L674)
 		//which is separate from the rest of the item description code
