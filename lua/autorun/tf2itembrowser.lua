@@ -994,7 +994,7 @@ if CLIENT then
 		extended = true
 	})
 	local gui_colors = {
-		bgcol		= Color(42,39,37,255), //eyedropped from tf2 loadout screen, don't know what the material is
+		bgcol		= Color(42,39,37,255), //eyedropped from tf2 loadout screen texture, which uses OutlinedGreyBox i think
 		RedSolid	= Color(192,28,0,255),
 	}
 	local quality_colors = {
@@ -1213,9 +1213,11 @@ if CLIENT then
 				if !window.icons_to_add then return end
 
 				local w, h = scroll:GetSize()
+				//this is a solid color instead of using OutlinedGreyBox because its material doesn't seem to work with transparency;
+				//it's subtly off because of gamma or something but it's not noticeable in-game
 				surface.SetDrawColor(gui_colors.bgcol.r, gui_colors.bgcol.g, gui_colors.bgcol.b, 192)
 				surface.DrawRect(0,0,w,h)
-	
+
 				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
 				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
 				surface.SetMaterial(spinner)
@@ -1252,8 +1254,7 @@ if CLIENT then
 
 			TF2ItemBrowser = window
 			function window:Paint(w, h)
-				surface.SetDrawColor(gui_colors.bgcol)
-				surface.DrawRect(0,0,w,h)
+				OutlinedGreyBox(-24,-24,w+48,w+48) //no border, just solid color
 			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
