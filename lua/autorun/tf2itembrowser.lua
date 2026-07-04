@@ -960,16 +960,20 @@ if CLIENT then
 		{
 			//name = "Small",
 			w = 64,
-			h = 94*(64/121),
+			h = math.Round(94*(64/121)),
 			scale = 64/121, //tf2 backpack panels are 121x94 (???); scale ours down proportionately
-			gap = 5,
+			gap_h = math.Round(6*(64/121)),
+			gap_w = math.Round(9*(64/121)),
+			cornericon = math.Round(36*(64/121)),
 		},
 		{
 			//name = "Medium", //tf2 backpack icon size; these are already huge when placed in the relatively small browser, no need for larger sizes
 			w = 121,
 			h = 94,
 			scale = 1,
-			gap = 9,
+			gap_h = 6,
+			gap_w = 9,
+			cornericon = 36,
 		},
 	}
 	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser", 1, #item_icon_sizes):GetInt()
@@ -1048,6 +1052,12 @@ if CLIENT then
 			surface.PlaySound(snd_release)
 		end
 	end
+	local icon_paint = Material("vgui/backpack_jewel_paint_splatter.vmt")
+	local icon_viewmode_pyrovision = Material("vgui/viewmode_pyrovision.vmt")
+	local icon_viewmode_spooky = Material("vgui/viewmode_spooky_off.vmt")
+	local icon_unusual = Material("vgui/viewmode_unusual.vmt")
+	local icon_statclock = Material("vgui/viewmode_statclock.vmt")
+	local icon_strange = Material("vgui/viewmode_strange.vmt")
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
@@ -1183,7 +1193,7 @@ if CLIENT then
 			window.Right = right_holder
 			local scroll = vgui.Create("DScrollPanel", right_holder)
 			function right_holder:UpdateSize()
-				right_holder:DockMargin(item_icon_sizes[icon_size].gap,0,0,0)
+				right_holder:DockMargin(item_icon_sizes[icon_size].gap_w,0,0,0)
 			end
 			right_holder:UpdateSize()
 			right_holder:Dock(FILL)
@@ -1206,7 +1216,7 @@ if CLIENT then
 				surface.SetDrawColor(gui_colors.bgcol.r, gui_colors.bgcol.g, gui_colors.bgcol.b, 192)
 				surface.DrawRect(0,0,w,h)
 	
-				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap)/2, h/2
+				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
 				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
 				surface.SetMaterial(spinner)
 				surface.DrawTexturedRect(mid_w-50, mid_h-50, 100, 100)
@@ -1530,7 +1540,7 @@ if CLIENT then
 				iconlist:Clear()
 				local columns, wide = 0, iconlist:GetWide()
 				while true do
-					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap end
+					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap_w end
 					wide = wide - item_icon_sizes[icon_size].w
 					if wide >= 0 then
 						columns = columns + 1
@@ -1540,7 +1550,7 @@ if CLIENT then
 				end
 				iconlist.columns = columns
 				local rows = math.floor((#window.icons_to_add-1)/columns)+1
-				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap))
+				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap_h))
 				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
 				scroll:InvalidateLayout()
 				scroll.VBar:SetScroll(0)
@@ -1551,7 +1561,7 @@ if CLIENT then
 				//Rebuild the iconlist if resizing it changed the number of columns
 				local columns, wide = 0, w
 				while true do
-					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap end
+					if columns > 0 then wide = wide - item_icon_sizes[icon_size].gap_w end
 					wide = wide - item_icon_sizes[icon_size].w
 					if wide >= 0 then
 						columns = columns + 1
@@ -1579,7 +1589,7 @@ if CLIENT then
 							local item = iconlist:Add("TF2ItemIcon")
 							local col = (k-1)%iconlist.columns
 							local row = math.floor((k-1)/iconlist.columns)
-							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap))
+							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap_w), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap_h))
 							item.data = v //this will be populated with the default data table for this item once the icon renders
 							self.icons[v] = item
 							item.item_conflict = self:GetItemHasConflict(v)
@@ -1634,8 +1644,8 @@ if CLIENT then
 			atticons.Label:SetPos(6,6)
 			function atticons:UpdateSize()
 				atticons:SetHeight(item_icon_sizes[icon_size].h)
-				atticons:SetOverlap(-item_icon_sizes[icon_size].gap)
-				atticons_holder:SetTall(item_icon_sizes[icon_size].h + atticons.Label:GetTall() + 8)//(item_icon_sizes[icon_size].h+3+item_icon_sizes[icon_size].gap)
+				atticons:SetOverlap(-item_icon_sizes[icon_size].gap_w)
+				atticons_holder:SetTall(item_icon_sizes[icon_size].h + atticons.Label:GetTall() + 8)//(item_icon_sizes[icon_size].h+3+item_icon_sizes[icon_size].gap_h)
 			end
 			atticons:UpdateSize()
 
@@ -2072,6 +2082,11 @@ if CLIENT then
 			quality_override = "unique"
 		end
 		self.quality = quality_override or i.item_quality or "unique"
+		//Check if an item isn't strange quality, but would still have stat counting enabled (unusual weapons with stat clocks enabled, or 
+		//unusual australium weapons) - this is used to add "Strange Unusual" to the item name, and to add the strange corner icon
+		if self.quality != "strange" and (self.data.models.stat_clock or (i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].aus_prefix)) then
+			self.secondary_strange_quality = true
+		end
 		local rarity_override
 		if data.wp.enabled then
 			rarity_override = paintkit_rarities[data.wp.id]
@@ -2082,6 +2097,36 @@ if CLIENT then
 
 		self.itemname = self:UpdateItemName()
 		self.itemdesc = self:UpdateItemDescription()
+
+		//add corner icons; order is from the layout function in tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L1919-L1952)
+		local icons = {}
+		if data.paint.enabled and !self.mat_overlay then //don't show paint icons for tools that display paint color in the image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3143-L3144)
+			//note: in tf2 code, this icon is also used to show decal tool image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3138-L3141)
+			local paint = self.data.paint.col[false]
+			if self.data.paint.col[true] then
+				paint = {self.data.paint.col[false], self.data.paint.col[true]}
+			end
+			table.insert(icons, {icon = icon_paint, paint = paint})
+		end
+		//tf2 code also has "tf2_icon", which is used for items that originate from another game, i think? what is this even used by, some in-game implementation of inter-game steam trading? (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3162-L3172)
+		if i.vision_filter_flags == 1 then
+			table.insert(icons, {icon = icon_viewmode_pyrovision})
+		elseif i.holiday_restriction == "halloween_or_fullmoon" or i.holiday_restriction == "halloween" then
+			table.insert(icons, {icon = icon_viewmode_spooky})
+		end
+		if self.data.pe_unusual > 0 or (i.attributes and i.attributes["attach particle effect"]) then //not for quality; this shows for non-unusual items with fx (world traveler) but not for unusual items without fx (headtaker) (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3340-L3356)
+			table.insert(icons, {icon = icon_unusual})
+		end
+		if self.quality == "strange" or self.strange_prefix or self.secondary_strange_quality then
+			if self.data.models.stat_clock then
+				table.insert(icons, {icon = icon_statclock})
+			else
+				table.insert(icons, {icon = icon_strange})
+			end
+		end
+		//tf2 code has "loaner_icon", which we don't care about
+		if #icons == 0 then icons = nil end 
+		self.icons = icons
 
 	end
 
@@ -2200,7 +2245,7 @@ if CLIENT then
 			//tf2 code here sets strange ranks, which we only care about for campaign ranks and handle above, 
 			//but also prepends strange rank onto strange unusual items, which in our use cases, only applies 
 			//to weapons with both an unusual effect and a stat clock/australium enabled.
-			if self.quality != "strange" and (self.data.models.stat_clock or (i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].aus_prefix)) then
+			if self.secondary_strange_quality then
 				quality = GetTFLanguageString("strange") .. " " .. quality
 			end
 		end
@@ -2365,7 +2410,7 @@ if CLIENT then
 		//Holiday restriction, based on CEconItemDescription::Generate_HolidayRestriction https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1447
 		//In practice, the only one used by items this addon can spawn is halloween_and_full_moon
 		if i.holiday_restriction then
-			table.insert(desc, {str = GetTFLanguageString("Econ_holiday_restriction_" .. i.holiday_restriction), col = desc_colors.level}) //might be intended to use negative color if holiday is disabled? not sure if this works in tf2 or if it's necessary here.
+			table.insert(desc, {str = GetTFLanguageString("Econ_holiday_restriction_" .. i.holiday_restriction), col = desc_colors.negative})
 		end
 
 		//TF2 code here does Generate_SaxxyAwardDesc (specific category an award is for), we don't care about this
@@ -2530,7 +2575,7 @@ if CLIENT then
 				local str
 				for k, v in pairs (i.equip_regions) do
 					if !str then
-						str = GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") .. ":" //there's no localized version of "equip region" followed by a colon, so we make do 
+						str = GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") .. ": " //there's no localized version of "equip region" followed by a colon, so we make do 
 					else
 						str = str .. ", "
 					end
@@ -3566,7 +3611,6 @@ if CLIENT then
 		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
 		local u_wep = i.particle_suffix
 		if u_hat or u_wep then
-			local button
 			local drop = AddDropdown("Unusual Effect", function(drop)
 				drop:AddChoice("(none)", 0, !self.data.crit.enabled)
 				drop:AddSpacer()
@@ -3585,10 +3629,6 @@ if CLIENT then
 				end
 			end, function(data)
 				self.data.pe_unusual = data
-				if IsValid(button) then
-					button:SetEnabled(data != 0 or (i.attributes and i.attributes["attach particle effect"])) //also make this available for the world traveler's stamp effect
-					if !button:IsEnabled() then self.data.pe_unusual_offset = nil end //if the menu is disabled, then clear its options so they don't get stuck on
-				end
 			end)
 			function drop.OpenMenu()
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
@@ -4102,7 +4142,9 @@ if CLIENT then
 	local BackpackItemBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt")) //these use custom vmts with $vertexcolor added because surface.SetColor won't work on them otherwise
 	local BackpackItemMouseOverBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover_vc.vmt"))
 	local BackpackItemSelectedBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_selected_vc.vmt"))
-	local col_GrayedOut = Color(46,43,42,255) //the only difference between BackpackItemGreyedOutBorder and the standard BackpackItemBorder is that the former is tinted this color
+	local BackpackItemGreyedOutBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_color.vmt"))
+	//no need for BackpackItemGreyedOutSelectedBorder, it uses the same material as the standard one
+	local col_GrayedOut = Color(46,43,42,255)
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
 	function PANEL:Paint(w, h)
@@ -4134,10 +4176,16 @@ if CLIENT then
 		if self.item_conflict then col = col_GrayedOut end
 		if (IsValid(TF2ItemBrowser.SpawnPanel) and TF2ItemBrowser.SpawnPanel.Owner == self) or IsValid(self.menu) or self:IsDown() then
 			BackpackItemSelectedBorder(0,0,w,h,col)
-		elseif self:IsHovered() then
-			BackpackItemMouseOverBorder(0,0,w,h,col)
 		else
-			BackpackItemBorder(0,0,w,h,col)
+			if !self.item_conflict then
+				if self:IsHovered() then
+					BackpackItemMouseOverBorder(0,0,w,h)
+				else
+					BackpackItemBorder(0,0,w,h)
+				end
+			else
+				BackpackItemGreyedOutBorder(0,0,w,h,col)
+			end
 		end
 
 		if self.mat then
@@ -4167,6 +4215,27 @@ if CLIENT then
 			//show loading icon
 			surface.SetMaterial(spinner)
 			surface.DrawTexturedRect((w/2)-(h/2), 0, h, h)
+		end
+
+		if self.icons then
+			local size = item_icon_sizes[icon_size].cornericon
+			local xpos = w - size - (3 * item_icon_sizes[icon_size].scale) 
+			local ypos = 2 * item_icon_sizes[icon_size].scale
+			for k, v in ipairs (self.icons) do
+				surface.SetMaterial(v.icon)
+				if v.paint then
+					if isvector(v.paint) then
+						surface.SetDrawColor(v.paint[1], v.paint[2], v.paint[3])
+						surface.DrawTexturedRect(xpos, ypos, size, size)
+					else
+						self:DrawPaintIcon(xpos, ypos, size, size, v.paint)
+					end
+				else
+					surface.SetDrawColor(255,255,255)
+					surface.DrawTexturedRect(xpos, ypos, size, size)
+				end
+				ypos = ypos + (size * 0.9) //yes, this is how tf2 code does it, the icons overlap each other slightly (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L1919-L1952)
+			end
 		end
 
 	end
