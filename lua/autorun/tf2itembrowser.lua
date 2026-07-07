@@ -1254,7 +1254,7 @@ if CLIENT then
 
 			TF2ItemBrowser = window
 			function window:Paint(w, h)
-				OutlinedGreyBox(-24,-24,w+48,w+48) //no border, just solid color
+				OutlinedGreyBox(-24,-24,w+48,h+48) //no border, just solid color
 			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
@@ -3026,7 +3026,12 @@ if CLIENT then
 							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
 						end
 						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-						if name == "drg_pipe_smoke" and i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0 then return end
+						if i.visuals and i.visuals.styles then
+							if (name == "drg_pipe_smoke" and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0)
+							or (name == "coin_spin" and i.visuals.styles[self.data.style].use_coin_particle_effect == 0) then
+								return
+							end
+						end
 
 						local part
 						if self.data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
@@ -4590,15 +4595,17 @@ if SERVER then
 		end
 
 		local function UpdateItemCustomization(e, role)
+			local e2 = e.AttachedEntity or e
+
 			//Update material override of each submodel
 			local mat = effect_mats[data.fx]
 			if mat then
-				e:SetMaterial(mat)
-				duplicator.StoreEntityModifier(e, "material", {MaterialOverride = mat})
-			elseif table.KeyFromValue(effect_mats, e:GetMaterial()) then
+				e2:SetMaterial(mat)
+				duplicator.StoreEntityModifier(e2, "material", {MaterialOverride = mat})
+			elseif table.KeyFromValue(effect_mats, e2:GetMaterial()) then
 				//If the ent's current material is an fx material override we *don't* want to use any more, then clear it, but don't clobber unrelated materials
-				e:SetMaterial("")
-				duplicator.ClearEntityModifier(e, "material")
+				e2:SetMaterial("")
+				duplicator.ClearEntityModifier(e2, "material")
 			end
 
 			//paint matproxy
@@ -4660,7 +4667,12 @@ if SERVER then
 						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
 					end
 					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-					if name == "drg_pipe_smoke" and i.visuals and i.visuals.styles and i.visuals.styles[data.style].use_smoke_particle_effect == 0 then return end
+					if i.visuals and i.visuals.styles then
+						if (name == "drg_pipe_smoke" and i.visuals.styles[data.style].use_smoke_particle_effect == 0)
+						or (name == "coin_spin" and i.visuals.styles[data.style].use_coin_particle_effect == 0) then
+							return
+						end
+					end
 
 					local pcfs = PEPlus_FindPCFsFromEffect(name)
 					if !pcfs then return end
@@ -4669,18 +4681,17 @@ if SERVER then
 					if !IsValid(p) then return end
 
 					if data.pe_unusual_offset then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594; yes, this applies to ALL effects attached to the model, even if it makes genteel smoke look dumb (https://www.youtube.com/watch?v=A0CBN92OhrY)
-						local _e2 = e.AttachedEntity or e
 						local bone
-						if _e2:LookupBone("bip_head") then
+						if e2:LookupBone("bip_head") then
 							bone = "bip_head"
 						else
-							if _e2:LookupBone("prp_helmet") then
+							if e2:LookupBone("prp_helmet") then
 								bone = "prp_helmet"
 							else
-								if _e2:LookupBone("prp_hat") then
+								if e2:LookupBone("prp_hat") then
 									bone = "prp_hat"
 								else
-									bone = _e2:GetBoneName(0)
+									bone = e2:GetBoneName(0)
 								end
 							end
 						end
@@ -4697,17 +4708,16 @@ if SERVER then
 					else
 						//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
 						local attachment = -1
-						if tab.attachment then attachment = e:LookupAttachment(tab.attachment) end
+						if tab.attachment then attachment = e2:LookupAttachment(tab.attachment) end
 						if attachment > 0 then
 							if p.ParticleInfo[0].ent then
 								p:AttachToEntity(e, 0, attachment, ply, false)
 							end
 						else
 							if tab.attach_to_rootbone then
-								local _e2 = e.AttachedEntity or e
 								local old_g = p:GetParent()
 								local _g = CreateAdvBonemergeEntity(old_g, e, ply, false, false, true)
-								_g.AdvBone_BoneInfo[0].parent = _e2:GetBoneName(0)
+								_g.AdvBone_BoneInfo[0].parent = e2:GetBoneName(0)
 								if !IsValid(_g) then return end
 								local const = constraint.AdvBoneMerge(e, _g, ply)
 								if _g != old_g then old_g:Remove() end
