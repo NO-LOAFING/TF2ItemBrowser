@@ -340,7 +340,7 @@ local used_equip_regions = {}
 local items_by_name = {}
 local paintkit_items_to_ids = {}
 local paintkit_rarities = {}
-local paintkit_collections = {}
+local paintkit_ids_to_collections = {}
 
 for k, v in pairs (s.items) do
 	//clear useless contracts
@@ -672,6 +672,7 @@ end
 //Also use this opportunity to process item sets and collections in implementation order
 local sets = {}
 local collections = {}
+local paintkit_collections = {}
 
 for k, v in ipairs (s2) do
 	if v.Key == "equip_regions_list" then
@@ -709,6 +710,7 @@ for k, v in ipairs (s2) do
 	elseif v.Key == "item_collections" then
 		for k2, v2 in ipairs (v.Value) do
 			local add_set = false //exclude sets that don't contain any spawnable items
+			local add_paintkit_set = false
 			for k3, v3 in pairs (s.item_collections[v2.Key].items) do
 				//collections are either formatted as a table of items like sets,
 				//or a table of item subtables sorted by rarity.
@@ -725,8 +727,10 @@ for k, v in ipairs (s2) do
 							end
 						//Also retrieve paintkit rarities and collections here
 						elseif paintkit_items_to_ids[k4] then
-							paintkit_rarities[paintkit_items_to_ids[k4]] = k3
-							paintkit_collections[paintkit_items_to_ids[k4]] = v2.Key
+							local id = paintkit_items_to_ids[k4]
+							paintkit_rarities[id] = k3
+							paintkit_ids_to_collections[id] = v2.Key
+							add_paintkit_set = true
 						end
 					end
 				else
@@ -742,6 +746,7 @@ for k, v in ipairs (s2) do
 				end
 			end
 			if add_set then table.insert(collections, v2.Key) end
+			if add_paintkit_set then table.insert(paintkit_collections, v2.Key) end
 		end
 	end
 end
@@ -2522,7 +2527,7 @@ if CLIENT then
 		local col = i._item_collection
 		if !col and self.data.wp.enabled then
 			//Get collection from paintkit
-			col = paintkit_collections[self.data.wp.id]
+			col = paintkit_ids_to_collections[self.data.wp.id]
 		end
 		if col then
 			if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
@@ -4078,6 +4083,263 @@ if CLIENT then
 				end
 				pnl.OnSettingChanged()
 			end)
+			function drop.OpenMenu()
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+				end
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				//the pre-paintkit collections actually have very few paintkits per individual weapon, so collapse them 
+				//into a single category for each update. also collapse the single-paintkit collections containing dragon 
+				//slayer and smissmas sweater into one category, though this doesn't help much.
+				local category_remaps = {
+					Concealed_killer_collection		= "Operation_gun_mettle_master_collection",
+					Craftsmann_collection			= "Operation_gun_mettle_master_collection",
+					Teufort_collection			= "Operation_gun_mettle_master_collection",
+					Powerhouse_collection			= "Operation_gun_mettle_master_collection",
+					tough_break_drop_collection_01		= "operation_tough_break_master_collection",
+					tough_break_drop_collection_02		= "operation_tough_break_master_collection",
+					tough_break_case_collection_01_pyroland	= "operation_tough_break_master_collection",
+					tough_break_case_collection_02_warbirds	= "operation_tough_break_master_collection",
+					UniqueSkins_collection			= "Other",
+					UniqueFreeSkins_collection		= "Other",
+				}
+				local categories = {}
+				categories["Other"] = {order = 99999999, items = {}}
+				for k, v in ipairs (paintkit_collections) do
+					if category_remaps[v] then v = category_remaps[v] end
+					categories[v] = categories[v] or {order = k, items = {}}
+				end
+				
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					if data then 
+						local cat = paintkit_ids_to_collections[data.id] or "Other"
+						if category_remaps[cat] then cat = category_remaps[cat] end
+						table.insert(categories[cat].items, {k = k, v = v, data = data})
+					end
+				end
+				//Sort the categories by display order, and discard empty categories
+				local cat2 = {}
+				for k, v in pairs (categories) do
+					if #v.items > 0 then 
+						//add "none" option to the start of every category
+						table.insert(v.items, 1, {k = 1, v = drop.Choices[1]})
+						local name = k
+						if TF2Items.item_collections[k] then
+							name = GetTFLanguageString(TF2Items.item_collections[k].name, true)
+						end
+						cat2[v.order] = {name = name, items = v.items}
+					end
+				end
+				categories = cat2
+				local default_category
+				//By default, select the category containing the currently selected paintkit
+				for k, v in SortedPairs (categories) do
+					for _, entry in ipairs (v.items) do
+						if (self.data.wp.enabled and entry.data and entry.data.id == self.data.wp.id)
+						or (!self.data.wp.enabled and !entry.data) then
+							default_category = k
+							break
+						end
+					end
+					if default_category then break end
+				end
+				
+				local drop2 = vgui.Create("DComboBox", container) //calling this "drop" causes issues with the parent drop
+				container.drop2 = drop2
+				drop2:Dock(TOP)
+				if table.Count(categories) > 1 then
+					drop2:SetHeight(20)
+				else
+					drop2:SetHeight(0)
+					drop2:SetEnabled(false)
+				end
+				drop2:SetSortItems(false)
+				for k, v in SortedPairs (categories) do
+					drop2:AddChoice(v.name, k, k == default_category)
+				end
+				function drop2.OnSelect(_, index, value, data)
+					icons.SelectCategory(data)
+				end
+				//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
+				//This is all copy-pasted from the unusual selector, lame; definitely make this use some shared method instead if we end up using this for a third thing
+				function drop2:OpenMenu(pControlOpener)
+					if ( pControlOpener && pControlOpener == self.TextEntry ) then
+						return
+					end
+
+					-- Don't do anything if there aren't any options..
+					if ( #self.Choices == 0 ) then return end
+
+					-- If the menu still exists and hasn't been deleted
+					-- then just close it and don't open a new one.
+					self:CloseMenu()
+
+					//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
+					self.Menu = DermaMenu(true, container)
+
+					--[[if ( self:GetSortItems() ) then
+						local sorted = {}
+						for k, v in pairs( self.Choices ) do
+							local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
+							if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
+							table.insert( sorted, { id = k, data = v, label = val } )
+						end
+						for k, v in SortedPairsByMemberValue( sorted, "label" ) do
+							local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
+							if ( self.ChoiceIcons[ v.id ] ) then
+								option:SetIcon( self.ChoiceIcons[ v.id ] )
+							end
+							if ( self.Spacers[ v.id ] ) then
+								self.Menu:AddSpacer()
+							end
+						end
+					else]]
+						for k, v in pairs( self.Choices ) do
+							//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
+							local option = self.Menu:AddOption( v )
+							option.DoClick = function()
+								option.m_MenuClicking = false
+								if IsValid(self) then
+									self:ChooseOption( v, k )
+									self:CloseMenu()
+								end
+							end
+							if ( self.ChoiceIcons[ k ] ) then
+								option:SetIcon( self.ChoiceIcons[ k ] )
+							end
+							if ( self.Spacers[ k ] ) then
+								self.Menu:AddSpacer()
+							end
+						end
+					//end
+
+					local x, y = self:LocalToScreen( 0, self:GetTall() )
+
+					self.Menu:SetMinimumWidth( self:GetWide())
+					self.Menu:Open( x, y, false, self )
+
+					self:OnMenuOpened( self.Menu )
+				end
+				function drop2:OnMenuOpened(menu)
+					//Add a checkmark to the currently selected option.
+					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+					//non-spacer children to find the correct one.
+					local sel = drop2:GetSelectedID()
+					local sel_read = 0
+					for i = 1, menu:ChildCount() do
+						local child = menu:GetChild(i)
+						if child:GetName() == "DMenuOption" then
+							sel_read = sel_read + 1
+							if sel_read == sel then
+								child:SetChecked(true)
+								menu:ScrollToChild(child)
+								break
+							end
+						end
+					end
+				end
+
+				local icons_holder = vgui.Create("DPanel", container)
+				icons_holder.Paint = function() end
+				local scroll = vgui.Create("DScrollPanel",icons_holder)
+				icons_holder:DockMargin(0,8,0,0)
+				icons_holder:Dock(TOP)
+				scroll:Dock(FILL)
+
+				local size = 128
+				icons = vgui.Create("DIconLayout", scroll)
+				icons:Dock(FILL)
+
+				//TODO: create other controls here (wear, id, maybe more?; they need to be declared here so that the following function can grab their height)
+
+				function icons.SelectCategory(cat, stupid_scroll_fix)
+					icons:Clear()
+					for _, entry in ipairs (categories[cat].items) do
+						//TODO: generate icon images and assign them to the contenticons
+						local icon = vgui.Create("ContentIcon", icons)
+						icon:SetSize(size, size)
+						icon:SetName(entry.v)
+						function icon.DoRightClick() end
+						function icon:DoClick()
+							drop:ChooseOption(entry.v, entry.k)
+						end
+						local old_Paint = icon.Paint
+						//"selected" border copied from PropSelect (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/propselect.lua)
+						local border = 0
+						local border_w = 8
+						local matHover = Material( "gui/ps_hover.png", "nocull" )
+						local boxHover = GWEN.CreateTextureBorder( border, border, 64 - border * 2, 64 - border * 2, border_w, border_w, border_w, border_w, matHover )
+						function icon.Paint(_,w,h)
+							old_Paint(icon,w,h)
+							icon:SetTooltip(entry.v)
+							
+							local bd = icon.Border
+							//custom appearance for "none" option so it isn't just blank
+							if !entry.data then
+								surface.SetDrawColor(gui_colors.RedSolid)
+								surface.SetMaterial(close_button_nocircle)
+								local w2 = w * 0.75
+								local h2 = h * 0.75
+								surface.DrawTexturedRect(((w-w2)/2)+bd, ((h-h2)/2)+bd, w2-(bd*2), h2-(bd*2))
+							end
+							//highlight the currently selected option
+							if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
+							or (!self.data.wp.enabled and !entry.data) then
+								boxHover(bd, bd, w-(bd*2), h-(bd*2), color_white)
+							end
+						end
+					end
+					icons:SetSize((size*4)+16, 16+size*(math.ceil(#categories[cat].items/4)))
+					icons:InvalidateLayout(stupid_scroll_fix)
+					icons_holder:SetWide(icons:GetWide())
+					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
+					icons_holder:InvalidateLayout(stupid_scroll_fix)
+					scroll:InvalidateLayout(stupid_scroll_fix)
+
+					//Resize and reposition container whenever the category is changed
+					container:SizeToChildren(true, true)
+					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
+					
+					container:IsMouseInputEnabled(true)
+					container:InvalidateLayout(stupid_scroll_fix)
+
+					local x, y = drop:LocalToScreen(0, drop:GetTall())
+					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+					container:SetPos(x, y)
+				end
+				icons.SelectCategory(default_category)
+				if icons:GetTall() > (size*3.25) then
+					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
+					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
+					//have a scrollbar, so only do this if we need to; this is awful
+					icons.SelectCategory(default_category, true)
+					icons.SelectCategory(default_category, true) 
+				end
+
+				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
+				//prevent this by closing the menu in those cases
+				function container:OnMousePressed()
+					drop2:CloseMenu()
+				end
+			end
 		end
 
 		local button = vgui.Create("DButton", pnl)
