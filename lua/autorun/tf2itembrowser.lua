@@ -3452,7 +3452,7 @@ if CLIENT then
 						end
 					end
 				end
-				icons:SetSize((size*10)+16, 16+size*(math.ceil(#drop.Choices/10)))
+				icons:SetSize((size*10)+16, 16+(size*(math.ceil(#drop.Choices/10))))
 				icons:InvalidateLayout()
 
 				local col = vgui.Create("DColorMixer", container)
@@ -3581,7 +3581,7 @@ if CLIENT then
 						end
 					end
 				end
-				icons:SetSize((size*10)+16, 16+size*(math.ceil(#drop.Choices/10)))
+				icons:SetSize((size*10)+16, 16+(size*(math.ceil(#drop.Choices/10))))
 				icons:InvalidateLayout()
 
 				local check = vgui.Create("DCheckBoxLabel", container)
@@ -3997,7 +3997,7 @@ if CLIENT then
 							end
 						end
 					end
-					icons:SetSize((size*4)+16, 16+size*(math.ceil(#categories[cat].items/4)))
+					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
 					icons:InvalidateLayout(stupid_scroll_fix)
 					icons_holder:SetWide(icons:GetWide())
 					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
@@ -4306,7 +4306,7 @@ if CLIENT then
 							end
 						end
 					end
-					icons:SetSize((size*4)+16, 16+size*(math.ceil(#categories[cat].items/4)))
+					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
 					icons:InvalidateLayout(stupid_scroll_fix)
 					icons_holder:SetWide(icons:GetWide())
 					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
