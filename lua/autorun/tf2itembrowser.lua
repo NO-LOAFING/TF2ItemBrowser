@@ -983,6 +983,7 @@ if CLIENT then
 	local betweencategories = 20
 	local spinner = Material("vgui/animated/tf2_logo_hourglass.vmt")
 	local close_button = Material("vgui/close_button.vmt")
+	local close_button_nocircle = Material("vgui/glyph_close_x.vmt")
 	surface.CreateFont("TF2ItemBrowser_ItemName", {
 		font = "TF2 Build",
 		size = 20, //these are really wimpy units; this matches the size of the item names when spectating players
@@ -2779,6 +2780,8 @@ if CLIENT then
 			end
 			//Render particles
 			for k, v in ipairs (mdl.particles) do
+				//if a particlesystem becomes invalid (i.e. a conflicting effect was loaded) then bail out and refresh the fx
+				if !IsValid(v) then pnl.Refresh() break end
 				v:Render()
 			end
 		end
@@ -2805,7 +2808,7 @@ if CLIENT then
 			mdl.models = {}
 
 			for k, v in ipairs (mdl.particles) do
-				v:StopEmissionAndDestroyImmediately()
+				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
 			end
 			mdl.particles = {}
 
@@ -3081,16 +3084,38 @@ if CLIENT then
 									end
 								end
 							end
+
+							//try to add to pe+ crashcheck list; if there's multiple pcfs to associate with this effect,
+							//then which one to blame is basically just a guess, but it's better than nothing, since all
+							//these fx should only have 1 pcf unless there's a conflict with another game/addon going on
+							local pcfs = PEPlus_FindPCFsFromEffect(name)
+							if pcfs and pcfs[1] then
+								local pcf = PEPlus_GetGamePCF(pcfs[1].pcf, pcfs[1].path)
+								PEPlus_AddParticles_CrashCheck[pcf] = PEPlus_AddParticles_CrashCheck[pcf] or {}
+								PEPlus_AddParticles_CrashCheck[pcf][part] = true
+							end
 						end
 					end
 					if self.data.pe_def then
 						for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
+							//if spawning an effect right now could potentially cause a crash, bail out and try again later
+							if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+								timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end)
+								return
+							end
 							AddEffect(v)
 						end
 					end
 					if self.data.pe_unusual > 0 then
 						local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
-						if tab then AddEffect(tab) end
+						if tab then
+							//if spawning an effect right now could potentially cause a crash, bail out and try again later
+							if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+								timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end)
+								return
+							end
+							AddEffect(tab)
+						end
 					end
 				end
 				ent:SetNoDraw(true)
@@ -3670,6 +3695,8 @@ if CLIENT then
 							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
 						end
 						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+
+						if data == 406 and name == "coin_spin" then continue end //not an unusual, don't add this one
 						
 						local pcfs = PEPlus_FindPCFsFromEffect(name)
 						if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
@@ -3873,7 +3900,7 @@ if CLIENT then
 				icons_holder:Dock(TOP)
 				scroll:Dock(FILL)
 
-				local size = 64
+				local size = 128
 				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 
@@ -3883,7 +3910,7 @@ if CLIENT then
 					check:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
 					check:SetHeight(15)
 					//check:SizeToChildren(true, false)
-					check:DockMargin(0,8,0,0)
+					check:DockMargin(0,16,0,0)
 					check:Dock(TOP)
 					check:SetChecked(self.data.pe_unusual_offset != nil)
 					check.OnChange = function(_, val)
@@ -3925,39 +3952,57 @@ if CLIENT then
 						icon:SetSize(size, size)
 						icon.disable_autohide = true //prevent the particle effect from getting auto-removed when the spawnmenu is closed
 						icon.disable_icons = true //don't show corner icons for cpoint count or extra info, because they aren't useful here
-						icon:SetName("") //hide display name at bottom of icon
+						//icon:SetName("") //hide display name at bottom of icon
+						icon:SetName(entry.v)
 						function icon.DoRightClick() end
-						function icon.DoClick() drop:ChooseOption(entry.v, entry.k) end
+						function icon:DoClick()
+							local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
+
+							//If the icon's effect is currently being overridden by another pcf's effect of the same name, reload the pcf on click instead
+							if self:IsCurrentlyOverridden(pcf, self.name) then
+								surface.PlaySound("common/wpn_select.wav") //TODO: is this a good sound? needs to be different enough from the spawn sound so players can tell that clicking didn't spawn an effect yet.
+								PEPlus_AddParticles(pcf, self.name) //crash prevention
+							else
+								drop:ChooseOption(entry.v, entry.k)
+							end
+						end
 						local old_Paint = icon.Paint
-						function icon:Paint(w,h)
+						//"selected" border copied from PropSelect (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/propselect.lua)
+						local border = 0
+						local border_w = 8
+						local matHover = Material( "gui/ps_hover.png", "nocull" )
+						local boxHover = GWEN.CreateTextureBorder( border, border, 64 - border * 2, 64 - border * 2, border_w, border_w, border_w, border_w, matHover )
+						function icon.Paint(_,w,h)
 							//icon's paint func sets the tooltip, so we have to override that func to override the tooltip
 							old_Paint(icon,w,h)
 							icon:SetTooltip(entry.v)
+
+							local bd = icon.Border
 							//custom appearance for "none" option so it isn't just blank
 							if entry.pcf == "" then
 								surface.SetDrawColor(gui_colors.RedSolid)
-								surface.SetMaterial(close_button)
-								local bd = self.Border
+								surface.SetMaterial(close_button_nocircle)
 								local w2 = w * 0.75
 								local h2 = h * 0.75
 								surface.DrawTexturedRect(((w-w2)/2)+bd, ((h-h2)/2)+bd, w2-(bd*2), h2-(bd*2))
-								
-								//surface.DrawTexturedRect(bd,bd,w-(bd*2),h-(bd*2))
+							end
+							//highlight the currently selected option
+							if self.data.pe_unusual == drop.Data[entry.k] then
+								boxHover(bd, bd, w-(bd*2), h-(bd*2), color_white)
 							end
 						end
-						icon:SetTooltipDelay(0)
 					end
-					icons:SetSize((size*5)+16, 16+size*(math.ceil(#categories[cat].items/5)))
+					icons:SetSize((size*4)+16, 16+size*(math.ceil(#categories[cat].items/4)))
 					icons:InvalidateLayout(stupid_scroll_fix)
 					icons_holder:SetWide(icons:GetWide())
-					icons_holder:SetTall(math.min(icons:GetTall(), 275))
+					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
 					icons_holder:InvalidateLayout(stupid_scroll_fix)
 					scroll:InvalidateLayout(stupid_scroll_fix)
 
 					//Resize and reposition container whenever the category is changed
 					container:SizeToChildren(true, true)
 					local hat_control_height = 0
-					if u_hat then hat_control_height = 8 + check:GetTall() + 8 + slider:GetTall() end
+					if u_hat then hat_control_height = 16 + check:GetTall() + 8 + slider:GetTall() end
 					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
 					
 					container:IsMouseInputEnabled(true)
@@ -3969,7 +4014,7 @@ if CLIENT then
 					container:SetPos(x, y)
 				end
 				icons.SelectCategory(default_category)
-				if icons:GetTall() > 275 then
+				if icons:GetTall() > (size*3.25) then
 					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
 					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
 					//have a scrollbar, so only do this if we need to; this is awful
