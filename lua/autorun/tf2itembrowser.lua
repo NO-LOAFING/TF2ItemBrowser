@@ -2205,7 +2205,7 @@ if CLIENT then
 				enabled = false,
 				id = 0,
 				wear = 1,
-				seed = "0",
+				seed = tostring(WP.RNG.RandomSeed()),
 			}
 		})
 
@@ -3643,6 +3643,90 @@ if CLIENT then
 			end
 		end
 
+		local function AddSubDropdown(container)
+			local drop2 = vgui.Create("DComboBox", container)
+			drop2:Dock(TOP)
+			//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
+			function drop2:OpenMenu(pControlOpener)
+				if ( pControlOpener && pControlOpener == self.TextEntry ) then
+					return
+				end
+
+				-- Don't do anything if there aren't any options..
+				if ( #self.Choices == 0 ) then return end
+
+				-- If the menu still exists and hasn't been deleted
+				-- then just close it and don't open a new one.
+				self:CloseMenu()
+
+				//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
+				self.Menu = DermaMenu(true, container)
+
+				--[[if ( self:GetSortItems() ) then
+					local sorted = {}
+					for k, v in pairs( self.Choices ) do
+						local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
+						if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
+						table.insert( sorted, { id = k, data = v, label = val } )
+					end
+					for k, v in SortedPairsByMemberValue( sorted, "label" ) do
+						local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
+						if ( self.ChoiceIcons[ v.id ] ) then
+							option:SetIcon( self.ChoiceIcons[ v.id ] )
+						end
+						if ( self.Spacers[ v.id ] ) then
+							self.Menu:AddSpacer()
+						end
+					end
+				else]]
+					for k, v in pairs( self.Choices ) do
+						//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
+						local option = self.Menu:AddOption( v )
+						option.DoClick = function()
+							option.m_MenuClicking = false
+							if IsValid(self) then
+								self:ChooseOption( v, k )
+								self:CloseMenu()
+							end
+						end
+						if ( self.ChoiceIcons[ k ] ) then
+							option:SetIcon( self.ChoiceIcons[ k ] )
+						end
+						if ( self.Spacers[ k ] ) then
+							self.Menu:AddSpacer()
+						end
+					end
+				//end
+
+				local x, y = self:LocalToScreen( 0, self:GetTall() )
+
+				self.Menu:SetMinimumWidth( self:GetWide())
+				self.Menu:Open( x, y, false, self )
+
+				self:OnMenuOpened( self.Menu )
+			end
+			function drop2:OnMenuOpened(menu)
+				//Add a checkmark to the currently selected option.
+				//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+				//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+				//non-spacer children to find the correct one.
+				local sel = drop2:GetSelectedID()
+				local sel_read = 0
+				for i = 1, menu:ChildCount() do
+					local child = menu:GetChild(i)
+					if child:GetName() == "DMenuOption" then
+						sel_read = sel_read + 1
+						if sel_read == sel then
+							child:SetChecked(true)
+							menu:ScrollToChild(child)
+							break
+						end
+					end
+				end
+			end
+			return drop2
+		end
+
 		//Add unusual effect dropdown
 		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
 		local u_wep = i.particle_suffix
@@ -3803,8 +3887,7 @@ if CLIENT then
 					if default_category then break end
 				end
 
-				local drop2 = vgui.Create("DComboBox", container) //calling this "drop" causes issues with the parent drop
-				container.drop2 = drop2
+				local drop2 = AddSubDropdown(container) //calling this "drop" causes issues with the parent drop
 				drop2:Dock(TOP)
 				if table.Count(categories) > 1 then
 					drop2:SetHeight(20)
@@ -3819,84 +3902,6 @@ if CLIENT then
 				function drop2.OnSelect(_, index, value, data)
 					icons.SelectCategory(data)
 				end
-				//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
-				function drop2:OpenMenu(pControlOpener)
-					if ( pControlOpener && pControlOpener == self.TextEntry ) then
-						return
-					end
-
-					-- Don't do anything if there aren't any options..
-					if ( #self.Choices == 0 ) then return end
-
-					-- If the menu still exists and hasn't been deleted
-					-- then just close it and don't open a new one.
-					self:CloseMenu()
-
-					//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
-					self.Menu = DermaMenu(true, container)
-
-					--[[if ( self:GetSortItems() ) then
-						local sorted = {}
-						for k, v in pairs( self.Choices ) do
-							local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
-							if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
-							table.insert( sorted, { id = k, data = v, label = val } )
-						end
-						for k, v in SortedPairsByMemberValue( sorted, "label" ) do
-							local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
-							if ( self.ChoiceIcons[ v.id ] ) then
-								option:SetIcon( self.ChoiceIcons[ v.id ] )
-							end
-							if ( self.Spacers[ v.id ] ) then
-								self.Menu:AddSpacer()
-							end
-						end
-					else]]
-						for k, v in pairs( self.Choices ) do
-							//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
-							local option = self.Menu:AddOption( v )
-							option.DoClick = function()
-								option.m_MenuClicking = false
-								if IsValid(self) then
-									self:ChooseOption( v, k )
-									self:CloseMenu()
-								end
-							end
-							if ( self.ChoiceIcons[ k ] ) then
-								option:SetIcon( self.ChoiceIcons[ k ] )
-							end
-							if ( self.Spacers[ k ] ) then
-								self.Menu:AddSpacer()
-							end
-						end
-					//end
-
-					local x, y = self:LocalToScreen( 0, self:GetTall() )
-
-					self.Menu:SetMinimumWidth( self:GetWide())
-					self.Menu:Open( x, y, false, self )
-
-					self:OnMenuOpened( self.Menu )
-				end
-				function drop2:OnMenuOpened(menu)
-					//Add a checkmark to the currently selected option.
-					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-					//non-spacer children to find the correct one.
-					local sel = drop2:GetSelectedID()
-					local sel_read = 0
-					for i = 1, menu:ChildCount() do
-						local child = menu:GetChild(i)
-						if child:GetName() == "DMenuOption" then
-							sel_read = sel_read + 1
-							if sel_read == sel then
-								child:SetChecked(true)
-								menu:ScrollToChild(child)
-								break
-							end
-						end
-					end
-				end
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
@@ -3909,14 +3914,32 @@ if CLIENT then
 				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 
-				local slider, check
+				local slider
 				if u_hat then
-					check = vgui.Create("DCheckBoxLabel", container)
+					slider = vgui.Create("DNumSlider", container)
+					slider:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
+					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
+					slider:SetDefaultValue(0)
+					slider:SetHeight(18)
+					slider:Dock(TOP)
+					slider:DockMargin(0,16,0,0)
+					slider:SetValue(self.data.pe_unusual_offset or 0)
+					slider:SetEnabled(self.data.pe_unusual_offset != nil)
+					function slider.OnValueChanged(_, val)
+						if self.data.pe_unusual_offset != val and self.data.pe_unusual_offset != nil then
+							self.data.pe_unusual_offset = val
+							pnl.OnSettingChanged()
+						end
+					end
+					
+					//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
+					check = vgui.Create("DCheckBox", slider)
 					check:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
 					check:SetHeight(15)
 					//check:SizeToChildren(true, false)
-					check:DockMargin(0,16,0,0)
-					check:Dock(TOP)
+					check:DockMargin(0,0,9,0) //+9 on right emulates DCheckBoxLabel (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcheckbox.lua#L130)
+					check:Dock(LEFT)
+					check:SetZPos(-1) //dock this to the left of the slider's label
 					check:SetChecked(self.data.pe_unusual_offset != nil)
 					check.OnChange = function(_, val)
 						if val then
@@ -3927,24 +3950,6 @@ if CLIENT then
 							slider:SetEnabled(false)
 						end
 						pnl.OnSettingChanged()
-					end
-
-					slider = vgui.Create("DNumSlider", container)
-					slider:SetText("Offset") //this isn't localized but we've got to label it *something* to make it clear when the slider is disabled
-					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
-					slider:SetDefaultValue(0)
-					slider:SetHeight(18)
-					slider:Dock(TOP)
-					slider:DockMargin(0,8,0,0)
-					slider:SetValue(self.data.pe_unusual_offset or 0)
-					slider.LastValue = slider:GetValue() //make sure we only send 1 input per frame - sending 2 inputs was causing an issue where the 1st input would add a particle, and then because constraint.TF2ItemBrowser_Item_SubModel takes a frame to add the 1st particle to the list, the 2nd input would just add a 2nd particle at the same time
-					slider:SetEnabled(self.data.pe_unusual_offset != nil)
-					function slider.OnValueChanged(_, val)
-						if slider.LastValue != val and self.data.pe_unusual_offset != nil then
-							slider.LastValue = val
-							self.data.pe_unusual_offset = val
-							pnl.OnSettingChanged()
-						end
 					end
 				end
 
@@ -4007,7 +4012,7 @@ if CLIENT then
 					//Resize and reposition container whenever the category is changed
 					container:SizeToChildren(true, true)
 					local hat_control_height = 0
-					if u_hat then hat_control_height = 16 + check:GetTall() + 8 + slider:GetTall() end
+					if u_hat then hat_control_height = 16 + slider:GetTall() end
 					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
 					
 					container:IsMouseInputEnabled(true)
@@ -4079,7 +4084,6 @@ if CLIENT then
 				else
 					self.data.wp.enabled = true
 					self.data.wp.id = data.id
-					self.data.wp.seed = tostring(WP.RNG.RandomSeed())
 				end
 				pnl.OnSettingChanged()
 			end)
@@ -4160,8 +4164,7 @@ if CLIENT then
 					if default_category then break end
 				end
 				
-				local drop2 = vgui.Create("DComboBox", container) //calling this "drop" causes issues with the parent drop
-				container.drop2 = drop2
+				local drop2 = AddSubDropdown(container) //calling this "drop" causes issues with the parent drop
 				drop2:Dock(TOP)
 				if table.Count(categories) > 1 then
 					drop2:SetHeight(20)
@@ -4176,85 +4179,6 @@ if CLIENT then
 				function drop2.OnSelect(_, index, value, data)
 					icons.SelectCategory(data)
 				end
-				//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
-				//This is all copy-pasted from the unusual selector, lame; definitely make this use some shared method instead if we end up using this for a third thing
-				function drop2:OpenMenu(pControlOpener)
-					if ( pControlOpener && pControlOpener == self.TextEntry ) then
-						return
-					end
-
-					-- Don't do anything if there aren't any options..
-					if ( #self.Choices == 0 ) then return end
-
-					-- If the menu still exists and hasn't been deleted
-					-- then just close it and don't open a new one.
-					self:CloseMenu()
-
-					//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
-					self.Menu = DermaMenu(true, container)
-
-					--[[if ( self:GetSortItems() ) then
-						local sorted = {}
-						for k, v in pairs( self.Choices ) do
-							local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
-							if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
-							table.insert( sorted, { id = k, data = v, label = val } )
-						end
-						for k, v in SortedPairsByMemberValue( sorted, "label" ) do
-							local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
-							if ( self.ChoiceIcons[ v.id ] ) then
-								option:SetIcon( self.ChoiceIcons[ v.id ] )
-							end
-							if ( self.Spacers[ v.id ] ) then
-								self.Menu:AddSpacer()
-							end
-						end
-					else]]
-						for k, v in pairs( self.Choices ) do
-							//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
-							local option = self.Menu:AddOption( v )
-							option.DoClick = function()
-								option.m_MenuClicking = false
-								if IsValid(self) then
-									self:ChooseOption( v, k )
-									self:CloseMenu()
-								end
-							end
-							if ( self.ChoiceIcons[ k ] ) then
-								option:SetIcon( self.ChoiceIcons[ k ] )
-							end
-							if ( self.Spacers[ k ] ) then
-								self.Menu:AddSpacer()
-							end
-						end
-					//end
-
-					local x, y = self:LocalToScreen( 0, self:GetTall() )
-
-					self.Menu:SetMinimumWidth( self:GetWide())
-					self.Menu:Open( x, y, false, self )
-
-					self:OnMenuOpened( self.Menu )
-				end
-				function drop2:OnMenuOpened(menu)
-					//Add a checkmark to the currently selected option.
-					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-					//non-spacer children to find the correct one.
-					local sel = drop2:GetSelectedID()
-					local sel_read = 0
-					for i = 1, menu:ChildCount() do
-						local child = menu:GetChild(i)
-						if child:GetName() == "DMenuOption" then
-							sel_read = sel_read + 1
-							if sel_read == sel then
-								child:SetChecked(true)
-								menu:ScrollToChild(child)
-								break
-							end
-						end
-					end
-				end
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
@@ -4267,7 +4191,182 @@ if CLIENT then
 				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 
-				//TODO: create other controls here (wear, id, maybe more?; they need to be declared here so that the following function can grab their height)
+				local entrypnl = vgui.Create("Panel", container)
+				entrypnl:SetHeight(20)
+				entrypnl:Dock(TOP)
+				entrypnl:DockMargin(0,16,0,0)
+				local label = vgui.Create("DLabel", entrypnl)
+				label:SetText("Seed")
+				label:Dock(LEFT)
+				local entry = vgui.Create("DTextEntry", entrypnl)
+				entry:SetHeight(20)
+				entry:Dock(FILL)
+				entry:SetNumeric(true)
+				entry:SetText(self.data.wp.seed or "0")
+				entry.OnEnter = function()
+					local val = entry:GetText()
+					if val != self.data.wp.seed then 
+						self.data.wp.seed = val
+						pnl.OnSettingChanged()
+					end
+				end
+				entry.OnFocusChanged = function(_, b) 
+					if !b then entry:OnEnter() end
+				end
+				function entrypnl.PerformLayout(_, w, h)
+					local w2, h2 = label:GetTextSize()
+					//label:SetWide(w2 + 14*2)
+					label:SetWide(w / 2.4)
+				end
+
+				local button = vgui.Create("DButton", entrypnl)
+				button:SetText(GetTFLanguageString("TF_ItemPreview_PaintkitSeed"))
+				button:Dock(RIGHT)
+				button:DockMargin(8,0,0,0)
+				button.DoClick = function()
+					local val = tostring(WP.RNG.RandomSeed())
+					entry:SetText(val)
+					self.data.wp.seed = val
+					pnl.OnSettingChanged()
+				end
+				AddTFButtonSounds(button)
+
+				local slider = vgui.Create("DNumSlider", container)
+				local wear_slider = slider
+				slider:SetText("Wear Level")
+				slider:SetMinMax(1, 5)
+				slider:SetDecimals(0)
+				slider:SetHeight(18)
+				slider:Dock(TOP)
+				slider:DockMargin(0,8,0,0)
+				slider:SetValue(self.data.wp.wear or 1)
+				function slider.OnValueChanged(_, val)
+					val = math.Round(val)
+					slider:SetValue(val) //snap to rounded value; if we don't do this, the displayed value will always be rounded *down* and can get out-of-sync with the actual value
+					if val != self.data.wp.wear then //only send updates on whole numbers
+						self.data.wp.wear = val
+						pnl.OnSettingChanged()
+					end
+				end
+
+				//The rest of these paintkit settings are global convars, not saved to the entity, so categorize them separately
+
+				local drop3 = vgui.Create("Panel", container)
+				drop3.Label = vgui.Create("DLabel", drop3)
+				drop3.Label:SetText("Texture Resolution (Global)")
+				drop3.Label:Dock(LEFT)
+				drop3.Combo = AddSubDropdown(drop3)
+				drop3.Combo:Dock(FILL)
+				drop3:SetHeight(20)
+				drop3:Dock(TOP)
+				drop3:DockMargin(0,16,0,0)
+				function drop3.PerformLayout(_, w, h)
+					drop3.Label:SetWide(w / 2.4)
+				end
+				drop3.Combo:SetSortItems(false)
+				local cv = GetConVar("warpaint_rtt_resolution")
+				if cv then cv = cv:GetString() end
+				drop3.Combo:AddChoice("512x512 (Fast)", "512", cv == "512")
+				drop3.Combo:AddChoice("1024x1024 (Balanced)", "1024", cv == "1024")
+				drop3.Combo:AddChoice("2048x2048 (High Quality)", "2048", cv == "2048")
+				function drop3.Combo.OnSelect(_, index, value, data)
+					RunConsoleCommand("warpaint_rtt_resolution", tostring(data or value))
+					//wait a moment for the convar change to take effect, otherwise the updated skin it generates will use the old 
+					//setting. not sure if this is the right approach (are there circumstances where this isn't enough time?), is 
+					//there something else we should be using to ensure that the convar is updated before rebuilding?
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+
+				local check = vgui.Create("DCheckBoxLabel", container)
+				local intensity_check = check
+				check:SetText("Increased Intensity Wears (Global)")
+				check:SetHeight(15)
+				check:DockMargin(0,8,0,0)
+				check:Dock(TOP)
+				local cv = GetConVar("warpaint_increased_intensity")
+				if cv then cv = cv:GetBool() end
+				check:SetChecked(cv)
+				check.OnChange = function(_, val)
+					if val then val = "1" else val = "0" end
+					RunConsoleCommand("warpaint_increased_intensity", val)
+					container:UpdateHeight()
+					//wait a moment for the convar change to take effect (see above)
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+				//because vertical space is at a premium (we're already covering up too much of the model preview already),
+				//leave out the help text for all the intensity options, and hide the multiplier/double-scratches settings
+				//when we're not using them instead of graying them out
+
+				local slider = vgui.Create("DNumSlider", container)
+				local intensity_slider = slider
+				slider:SetText("Intensity Multiplier")
+				slider:SetMinMax(1, 5)
+				slider:SetDefaultValue(1)
+				slider:Dock(TOP)
+				slider:SetConVar("warpaint_intensity_multiplier")
+				--[[local cv = GetConVar("warpaint_intensity_multiplier")
+				if cv then cv = cv:GetFloat() end]]
+				function slider.OnValueChanged(_, val)
+					val = math.Round(val, 2)
+					if val != slider.LastValue then
+						if slider.LastValue != nil then //OnValueChanged runs automatically when the slider is first created, don't update pnl unnecessarily when that happens
+							//wait a moment for the convar change to take effect (see above)
+							timer.Simple(0.1, function()
+								if IsValid(pnl) then pnl.OnSettingChanged() end
+							end)
+							//MsgN("val changed from ", slider.LastValue, " to ", val)
+						end
+						slider.LastValue = val
+					end
+				end
+
+				local check = vgui.Create("DCheckBoxLabel", container)
+				local scratch_check = check
+				check:SetText("Double Scratches")
+				check:Dock(TOP)
+				local cv = GetConVar("warpaint_double_scratch")
+				if cv then cv = cv:GetBool() end
+				check:SetChecked(cv)
+				check.OnChange = function(_, val)
+					if val then val = "1" else val = "0" end
+					RunConsoleCommand("warpaint_double_scratch", val)
+					container:UpdateHeight()
+					//wait a moment for the convar change to take effect (see above)
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+
+				function container:UpdateHeight()
+					//Resize and reposition container whenever the category is changed or intensity controls are toggled
+					container:SizeToChildren(true, true)
+					local intensity_control_height = 0
+					if intensity_check:GetChecked() then
+						intensity_slider:SetHeight(18)
+						intensity_slider:DockMargin(32,8,0,0)
+						scratch_check:SetHeight(15)
+						scratch_check:DockMargin(32,8,0,0)
+						intensity_control_height = 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall()
+					else
+						intensity_slider:SetHeight(0)
+						intensity_slider:DockMargin(0,0,0,0)
+						scratch_check:SetHeight(0)
+						scratch_check:DockMargin(0,0,0,0)
+					end
+					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					
+					container:IsMouseInputEnabled(true)
+					container:InvalidateLayout(stupid_scroll_fix)
+
+					local x, y = drop:LocalToScreen(0, drop:GetTall())
+					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+					container:SetPos(x, y)
+				end
 
 				function icons.SelectCategory(cat, stupid_scroll_fix)
 					icons:Clear()
@@ -4309,24 +4408,14 @@ if CLIENT then
 					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
 					icons:InvalidateLayout(stupid_scroll_fix)
 					icons_holder:SetWide(icons:GetWide())
-					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
+					icons_holder:SetTall(math.min(icons:GetTall(), size*2.25)) //make this an item shorter than unusuals, so that the extra height from all our controls doesn't cover up the model preview too badly
 					icons_holder:InvalidateLayout(stupid_scroll_fix)
 					scroll:InvalidateLayout(stupid_scroll_fix)
 
-					//Resize and reposition container whenever the category is changed
-					container:SizeToChildren(true, true)
-					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
-					
-					container:IsMouseInputEnabled(true)
-					container:InvalidateLayout(stupid_scroll_fix)
-
-					local x, y = drop:LocalToScreen(0, drop:GetTall())
-					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
-					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
-					container:SetPos(x, y)
+					container:UpdateHeight()
 				end
 				icons.SelectCategory(default_category)
-				if icons:GetTall() > (size*3.25) then
+				if icons:GetTall() > (size*2.25) then
 					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
 					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
 					//have a scrollbar, so only do this if we need to; this is awful
@@ -4765,7 +4854,7 @@ ReadItemDataTable = function()
 			enabled = false,
 			id = 0,
 			wear = 1,
-			seed = "0",
+			seed = tostring(WP.RNG.RandomSeed()),
 		}
 	end
 
