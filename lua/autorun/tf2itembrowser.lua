@@ -2766,9 +2766,32 @@ if CLIENT then
 		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
 		mdl:Dock(FILL)
 		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
+		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
+		mdl:SetAmbientLight(Color(102,102,102))
+		for i = 0, 5 do
+			mdl:SetDirectionalLight(i, Color(102,102,102))
+		end
 		mdl.models = {}
 		mdl.particles = {}
-		function mdl.PostDrawModel(ent)
+		function mdl.PreDrawModel(_, ent)
+			if !ent.LocalModelLights then
+				//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
+				//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
+				local pos = Vector(0,0,200)
+				local mins, maxs = ent:GetRenderBounds()
+				local point_at = ent:GetPos() + Vector(0,0,(maxs.z-mins.z)*0.75)
+				ent.LocalModelLights = {{
+					type = MATERIAL_LIGHT_SPOT,
+					color = Vector(1,1,1),
+					pos = pos,
+					dir = (point_at-pos):GetNormalized(),
+					innerAngle = math.deg(0.035),
+					outerAngle = math.deg(0.873),
+				}}
+			end
+			render.SetLocalModelLights(ent.LocalModelLights)
+		end
+		function mdl.PostDrawModel(_, ent)
 			for k, v in ipairs (mdl.models) do
 				//Update color of halloween spell paints
 				if self.data.paint.enabled then
@@ -2789,6 +2812,14 @@ if CLIENT then
 				if !IsValid(v) then pnl.Refresh() break end
 				v:Render()
 			end
+		end
+		//Scale mouse control by FOV, otherwise mouse movement will be noticeably faster when we're using 
+		//icon_camera and its 54 FOV, compared to the single-digit FOVs set by PositionSpawnIcon
+		local old_CaptureMouse = mdl.CaptureMouse
+		function mdl:CaptureMouse()
+			local dx, dy = old_CaptureMouse(mdl)
+			local scale = 30/mdl:GetFOV()
+			return dx*scale, dy*scale
 		end
 
 		function pnl.Refresh()
@@ -2905,6 +2936,7 @@ if CLIENT then
 							ent:GetSequenceInfo(0)
 
 							ent:ResetSequence(ent:LookupSequence(anim[v.role]))
+							ent.anim = anim //keep track of this so that we don't try to do camera_pos
 							docamera = true
 							local info = ent:GetSequenceInfo(ent:LookupSequence(anim[v.role]))
 							ent:SetRenderBounds(info.bbmin, info.bbmax)
@@ -3140,51 +3172,59 @@ if CLIENT then
 				end
 			end
 			if docamera then
-				//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
-				local mn, mx
-				for k, v in ipairs (mdl.models) do
-					local mn2, mx2 = v:GetRenderBounds()
-					mn2 = mn2 + v:GetPos()
-					mx2 = mx2 + v:GetPos()
-					if !mn then
-						mn, mx = mn2, mx2
-					else
-						mn.x = math.min(mn.x,mn2.x)
-						mn.y = math.min(mn.y,mn2.y)
-						mn.z = math.min(mn.z,mn2.z)
-						mx.x = math.max(mx.x,mx2.x)
-						mx.y = math.max(mx.y,mx2.y)
-						mx.z = math.max(mx.z,mx2.z)
+				local attach = mdl.Entity:GetAttachment(mdl.Entity:LookupAttachment("icon_camera"))
+				if attach and !mdl.Entity.anim and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
+					mdl:SetCamPos(attach.Pos)
+					mdl:SetFOV(54) //from resource\ui\econ\itemmodelpanel.res
+					//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
+					mdl:SetLookAng(attach.Ang)
+				else
+					//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
+					local mn, mx
+					for k, v in ipairs (mdl.models) do
+						local mn2, mx2 = v:GetRenderBounds()
+						mn2 = mn2 + v:GetPos()
+						mx2 = mx2 + v:GetPos()
+						if !mn then
+							mn, mx = mn2, mx2
+						else
+							mn.x = math.min(mn.x,mn2.x)
+							mn.y = math.min(mn.y,mn2.y)
+							mn.z = math.min(mn.z,mn2.z)
+							mx.x = math.max(mx.x,mx2.x)
+							mx.y = math.max(mx.y,mx2.y)
+							mx.z = math.max(mx.z,mx2.z)
+						end
 					end
-				end
-				if mn then
-					local middle = ( mn + mx ) * 0.5
-					local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
+					if mn then
+						local middle = ( mn + mx ) * 0.5
+						local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
 
-					//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
-						
-					if ( size < 900 ) then
-						size = size * ( 1 - ( size / 900 ) )
-					else
-						size = size * ( 1 - ( size / 4096 ) )
+						//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
+							
+						if ( size < 900 ) then
+							size = size * ( 1 - ( size / 900 ) )
+						else
+							size = size * ( 1 - ( size / 4096 ) )
+						end
+
+						size = math.Clamp( size, 5, 1000 )
+
+						local ViewAngle = Angle( 25, 220, 0 )
+						local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
+						local view = {}
+
+						view.fov		= 4 + size * 0.04
+						view.origin		= ViewPos + middle
+						//view.znear		= 1
+						//view.zfar		= ViewPos:Distance( pos ) + size * 2
+						view.angles		= ViewAngle
+
+						//Apply the changes to the camera
+						mdl:SetCamPos(view.origin)
+						mdl:SetFOV(view.fov)
+						mdl:SetLookAng(view.angles)
 					end
-
-					size = math.Clamp( size, 5, 1000 )
-
-					local ViewAngle = Angle( 25, 220, 0 )
-					local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
-					local view = {}
-
-					view.fov		= 4 + size * 0.04
-					view.origin		= ViewPos + middle
-					//view.znear		= 1
-					//view.zfar		= ViewPos:Distance( pos ) + size * 2
-					view.angles		= ViewAngle
-
-					//Apply the changes to the camera
-					mdl:SetCamPos(view.origin)
-					mdl:SetFOV(view.fov)
-					mdl:SetLookAng(view.angles)
 				end
 			end
 
