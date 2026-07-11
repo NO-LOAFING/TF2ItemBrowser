@@ -264,6 +264,12 @@ SafeAmendItem(111, "Baseball Bill's Sports Shine", function(i) i.model_player = 
 SafeAmendItem(117, "Ritzy Rick's Hair Fixative", function(i) i.model_player = nil end)
 SafeAmendItem(118, "Texas Slim's Dome Shine", function(i) i.model_player = nil end)
 
+//these specific item models have icon_camera attachments in nonsense positions, don't use them
+//SafeAmendItem(527, "The Widowmaker", function(i) i._disable_icon_camera = true end) //this one's borderline but at least the item's visible; also even valve have succumbed to this bad camera placement https://steamcommunity.com/market/listings/440/Festivized%20Professional%20Killstreak%20Widowmaker
+SafeAmendItem(528, "The Short Circuit", function(i) i._disable_icon_camera = true end)
+SafeAmendItem(588, "The Pomson 6000", function(i) i._disable_icon_camera = true end)
+SafeAmendItem(1179, "The Thermal Thruster", function(i) i._disable_icon_camera = true end)
+
 //TODO: better backpack icons (and names?) for:
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon and no name
 //1057 MvM GateBotLight Scout (and the others) - missing textures and all use the same name
@@ -2015,6 +2021,57 @@ if CLIENT then
 
 
 
+	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, AND the icon texture renderer used for paintkits and such
+	local function DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
+
+		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
+		render.SuppressEngineLighting(true)
+		render.SetLightingOrigin(models[1]:GetPos())
+
+		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
+		render.ResetModelLighting(0.4, 0.4, 0.4)
+		render.SetColorModulation(1, 1, 1)
+		render.SetBlend(1)
+		for i = 0, 6 do //6? shouldn't it be 5?
+			render.SetModelLighting(i, 0.4, 0.4, 0.4)
+		end
+
+		if !models[1].LocalModelLights then
+			//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
+			//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
+			local pos = Vector(0,0,200)
+			local mins, maxs = models[1]:GetRenderBounds()
+			local point_at = models[1]:GetPos() + Vector(0,0,(maxs.z-mins.z)*0.75)
+			models[1].LocalModelLights = {{
+				type = MATERIAL_LIGHT_SPOT,
+				color = Vector(1,1,1),
+				pos = pos,
+				dir = (point_at-pos):GetNormalized(),
+				innerAngle = math.deg(0.035),
+				outerAngle = math.deg(0.873),
+			}}
+		end
+		render.SetLocalModelLights(models[1].LocalModelLights)
+		render.ClearDepth(false)
+
+		for k, v in ipairs (models) do
+			//Update color of halloween spell paints
+			if v.ProxyentPaintColor and v.ProxyentPaintColor.Override then
+				v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(v.ProxyentPaintColor.Override)/255
+			end
+			//Render all models
+			v:DrawModel()
+			v:FrameAdvance(FrameTime())
+		end
+		//Render particles
+		for k, v in ipairs (particles) do
+			v:Render()
+		end
+
+		render.SuppressEngineLighting(false)
+		cam.End3D()
+
+	end
 
 	local PANEL = {}
 
@@ -2762,56 +2819,27 @@ if CLIENT then
 		end
 		local mdl = mdl_container:Add("DAdjustableModelPanel")
 		pnl.ModelPanel = mdl
-		mdl.FarZ = 32768
 		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
 		mdl:Dock(FILL)
-		mdl.LayoutEntity = function() mdl:GetEntity():FrameAdvance(FrameTime()) end //disable default spinning-model behavior
-		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
-		mdl:SetAmbientLight(Color(102,102,102))
-		for i = 0, 5 do
-			mdl:SetDirectionalLight(i, Color(102,102,102))
-		end
 		mdl.models = {}
 		mdl.particles = {}
-		function mdl.PreDrawModel(_, ent)
-			if !ent.LocalModelLights then
-				//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
-				//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
-				local pos = Vector(0,0,200)
-				local mins, maxs = ent:GetRenderBounds()
-				local point_at = ent:GetPos() + Vector(0,0,(maxs.z-mins.z)*0.75)
-				ent.LocalModelLights = {{
-					type = MATERIAL_LIGHT_SPOT,
-					color = Vector(1,1,1),
-					pos = pos,
-					dir = (point_at-pos):GetNormalized(),
-					innerAngle = math.deg(0.035),
-					outerAngle = math.deg(0.873),
-				}}
-			end
-			render.SetLocalModelLights(ent.LocalModelLights)
-		end
-		function mdl.PostDrawModel(_, ent)
-			for k, v in ipairs (mdl.models) do
-				//Update color of halloween spell paints
-				if self.data.paint.enabled then
-					local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
-					if override > 0 then
-						v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(override)/255
-					end
-				end
-				//Render all additional models
-				if v != ent then
-					v:DrawModel()
-					v:FrameAdvance( --[[( RealTime() - mdl.LastPaint ) * mdl.m_fAnimSpeed]] )
-				end
-			end
-			//Render particles
-			for k, v in ipairs (mdl.particles) do
+		//Custom paint func using our DrawItemModels func
+		function mdl:Paint(w, h)
+			if !self.models or !self.models[1] or !self.particles then return end
+			for k, v in ipairs (self.particles) do
 				//if a particlesystem becomes invalid (i.e. a conflicting effect was loaded) then bail out and refresh the fx
 				if !IsValid(v) then pnl.Refresh() break end
-				v:Render()
 			end
+
+			-- Get the panel's scissor rect, and apply it to model render
+			local enabled, leftx, topy, rightx, bottomy = surface.GetScissorRect()
+			render.SetScissorRect( leftx, topy, rightx, bottomy, enabled )
+
+			local x, y = self:LocalToScreen( 0, 0 )
+			DrawItemModels(x, y, w, h, self.models, self.particles, self.aLookAngle, self.vCamPos, self.fFOV)
+			self.LastPaint = RealTime() //this is in DModelPanel's Paint func, i'm not sure this does anything any more
+
+			render.SetScissorRect( 0, 0, 0, 0, false )
 		end
 		//Scale mouse control by FOV, otherwise mouse movement will be noticeably faster when we're using 
 		//icon_camera and its 54 FOV, compared to the single-digit FOVs set by PositionSpawnIcon
@@ -2936,7 +2964,6 @@ if CLIENT then
 							ent:GetSequenceInfo(0)
 
 							ent:ResetSequence(ent:LookupSequence(anim[v.role]))
-							ent.anim = anim //keep track of this so that we don't try to do camera_pos
 							docamera = true
 							local info = ent:GetSequenceInfo(ent:LookupSequence(anim[v.role]))
 							ent:SetRenderBounds(info.bbmin, info.bbmax)
@@ -2963,9 +2990,12 @@ if CLIENT then
 					//paint matproxy
 					if self.data.paint.enabled then
 						local col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
+						local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
+						if override == 0 then override = nil end
 						ent.ProxyentPaintColor = {
 							IsValid = function() return true end, 
-							Color = Vector(col[1]/255, col[2]/255, col[3]/255)
+							Color = Vector(col[1]/255, col[2]/255, col[3]/255),
+							Override = override //used by DrawItemModels to update the override color
 						}
 					end
 
@@ -3173,7 +3203,7 @@ if CLIENT then
 			end
 			if docamera then
 				local attach = mdl.Entity:GetAttachment(mdl.Entity:LookupAttachment("icon_camera"))
-				if attach and !mdl.Entity.anim and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
+				if attach and !i._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
 					mdl:SetCamPos(attach.Pos)
 					mdl:SetFOV(54) //from resource\ui\econ\itemmodelpanel.res
 					//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
