@@ -1591,6 +1591,8 @@ if CLIENT then
 
 			local old_Think = window.Think
 			window.ImageQueue = {}
+			window.IconRenderQueue = {}
+			window.IconRenderEntsToRemove = {}
 			//this one is global so it carries over between windows
 			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
 			local iconsperframe = 100
@@ -1629,6 +1631,15 @@ if CLIENT then
 						end
 					end
 					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
+					if self.IconRenderQueue[1] then
+						if self.IconRenderQueue[1]() then
+							table.remove(self.IconRenderQueue, 1)
+						end
+					else
+						for ent, _ in pairs (self.IconRenderEntsToRemove) do
+							ent:Remove()
+						end
+					end
 				end
 				//if our selected entity is deleted, then update the attached item list
 				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
@@ -2021,8 +2032,10 @@ if CLIENT then
 
 
 
-	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, AND the icon texture renderer used for paintkits and such
-	local function DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
+	local PANEL = {}
+
+	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, and the icon texture renderer used for paintkits and such
+	function PANEL:DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
 
 		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
 		render.SuppressEngineLighting(true)
@@ -2073,7 +2086,60 @@ if CLIENT then
 
 	end
 
-	local PANEL = {}
+	function PANEL:DoItemModelCamera(models)
+
+		local attach = models[1]:GetAttachment(models[1]:LookupAttachment("icon_camera"))
+		if attach and !TF2Items.items[self.data.id]._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
+			//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
+			return {pos = attach.Pos, fov = 54, ang = attach.Ang} //fov is from resource\ui\econ\itemmodelpanel.res
+		else
+			//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
+			local mn, mx
+			for k, v in ipairs (models) do
+				local mn2, mx2 = v:GetRenderBounds()
+				mn2 = mn2 + v:GetPos()
+				mx2 = mx2 + v:GetPos()
+				if !mn then
+					mn, mx = mn2, mx2
+				else
+					mn.x = math.min(mn.x,mn2.x)
+					mn.y = math.min(mn.y,mn2.y)
+					mn.z = math.min(mn.z,mn2.z)
+					mx.x = math.max(mx.x,mx2.x)
+					mx.y = math.max(mx.y,mx2.y)
+					mx.z = math.max(mx.z,mx2.z)
+				end
+			end
+			if mn then
+				local middle = ( mn + mx ) * 0.5
+				local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
+
+				//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
+					
+				if ( size < 900 ) then
+					size = size * ( 1 - ( size / 900 ) )
+				else
+					size = size * ( 1 - ( size / 4096 ) )
+				end
+
+				size = math.Clamp( size, 5, 1000 )
+
+				local ViewAngle = Angle( 25, 220, 0 )
+				local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
+				local view = {}
+
+				view.fov		= 4 + size * 0.04
+				view.origin		= ViewPos + middle
+				//view.znear		= 1
+				//view.zfar		= ViewPos:Distance( pos ) + size * 2
+				view.angles		= ViewAngle
+
+				//Apply the changes to the camera
+				return {pos = view.origin, fov = view.fov, ang = view.angles}
+			end
+		end
+
+	end
 
 	function PANEL:Init()
 
@@ -2824,9 +2890,9 @@ if CLIENT then
 		mdl.models = {}
 		mdl.particles = {}
 		//Custom paint func using our DrawItemModels func
-		function mdl:Paint(w, h)
-			if !self.models or !self.models[1] or !self.particles then return end
-			for k, v in ipairs (self.particles) do
+		function mdl.Paint(_, w, h)
+			if !mdl.models or !mdl.models[1] or !mdl.particles then return end
+			for k, v in ipairs (mdl.particles) do
 				//if a particlesystem becomes invalid (i.e. a conflicting effect was loaded) then bail out and refresh the fx
 				if !IsValid(v) then pnl.Refresh() break end
 			end
@@ -2835,9 +2901,9 @@ if CLIENT then
 			local enabled, leftx, topy, rightx, bottomy = surface.GetScissorRect()
 			render.SetScissorRect( leftx, topy, rightx, bottomy, enabled )
 
-			local x, y = self:LocalToScreen( 0, 0 )
-			DrawItemModels(x, y, w, h, self.models, self.particles, self.aLookAngle, self.vCamPos, self.fFOV)
-			self.LastPaint = RealTime() //this is in DModelPanel's Paint func, i'm not sure this does anything any more
+			local x, y = mdl:LocalToScreen( 0, 0 )
+			self:DrawItemModels(x, y, w, h, mdl.models, mdl.particles, mdl.aLookAngle, mdl.vCamPos, mdl.fFOV)
+			mdl.LastPaint = RealTime() //this is in DModelPanel's Paint func, i'm not sure this does anything any more
 
 			render.SetScissorRect( 0, 0, 0, 0, false )
 		end
@@ -3202,60 +3268,10 @@ if CLIENT then
 				end
 			end
 			if docamera then
-				local attach = mdl.Entity:GetAttachment(mdl.Entity:LookupAttachment("icon_camera"))
-				if attach and !i._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
-					mdl:SetCamPos(attach.Pos)
-					mdl:SetFOV(54) //from resource\ui\econ\itemmodelpanel.res
-					//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
-					mdl:SetLookAng(attach.Ang)
-				else
-					//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
-					local mn, mx
-					for k, v in ipairs (mdl.models) do
-						local mn2, mx2 = v:GetRenderBounds()
-						mn2 = mn2 + v:GetPos()
-						mx2 = mx2 + v:GetPos()
-						if !mn then
-							mn, mx = mn2, mx2
-						else
-							mn.x = math.min(mn.x,mn2.x)
-							mn.y = math.min(mn.y,mn2.y)
-							mn.z = math.min(mn.z,mn2.z)
-							mx.x = math.max(mx.x,mx2.x)
-							mx.y = math.max(mx.y,mx2.y)
-							mx.z = math.max(mx.z,mx2.z)
-						end
-					end
-					if mn then
-						local middle = ( mn + mx ) * 0.5
-						local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
-
-						//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
-							
-						if ( size < 900 ) then
-							size = size * ( 1 - ( size / 900 ) )
-						else
-							size = size * ( 1 - ( size / 4096 ) )
-						end
-
-						size = math.Clamp( size, 5, 1000 )
-
-						local ViewAngle = Angle( 25, 220, 0 )
-						local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
-						local view = {}
-
-						view.fov		= 4 + size * 0.04
-						view.origin		= ViewPos + middle
-						//view.znear		= 1
-						//view.zfar		= ViewPos:Distance( pos ) + size * 2
-						view.angles		= ViewAngle
-
-						//Apply the changes to the camera
-						mdl:SetCamPos(view.origin)
-						mdl:SetFOV(view.fov)
-						mdl:SetLookAng(view.angles)
-					end
-				end
+				local cam = self:DoItemModelCamera(mdl.models)
+				mdl:SetCamPos(cam.pos)
+				mdl:SetFOV(cam.fov)
+				mdl:SetLookAng(cam.ang)
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -4378,8 +4394,6 @@ if CLIENT then
 				slider:SetDefaultValue(1)
 				slider:Dock(TOP)
 				slider:SetConVar("warpaint_intensity_multiplier")
-				--[[local cv = GetConVar("warpaint_intensity_multiplier")
-				if cv then cv = cv:GetFloat() end]]
 				function slider.OnValueChanged(_, val)
 					val = math.Round(val, 2)
 					if val != slider.LastValue then
@@ -4474,18 +4488,123 @@ if CLIENT then
 								boxHover(bd, bd, w-(bd*2), h-(bd*2), color_white)
 							end
 						end
+						//grab cached spawnicon if it exists, otherwise tell the icon render queue to create one
+						local data = drop.Data[entry.k]
+						if data and data.id then
+							local iconmdl = mdl.models[1]:GetModel()
+							local configs = WP.WarpaintData.GetById(data.id)
+							for _, config in ipairs(configs) do
+								if config.weapon == "paintkit_tool" then
+									iconmdl = "models/items/paintkit_tool.mdl"
+									break
+								end
+							end
+							local iconpath = "tf2itembrowser_paintkiticons/" .. data.id .. "_" .. string.StripExtension(string.GetFileFromFilename(iconmdl)) .. ".png"
+							if file.Exists(iconpath, "DATA") then
+								icon:SetMaterial("data/" .. iconpath)
+							else
+								local ent = ClientsideModel(iconmdl, RENDERGROUP_OTHER)
+								if IsValid(ent) then ent:SetNoDraw(true) end
+								table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
+									//if ent is invalid, then remove from the queue
+									if !IsValid(ent) then
+										return true
+									end
+									//if icon no longer exists, then remove from the queue
+									if !IsValid(icon) then
+										TF2ItemBrowser.IconRenderEntsToRemove[ent] = true
+										return true
+									end
+									
+									//apply paintkit instance to ent; we do this in the render queue func and not 
+									//when spawning ent, so that if multiple icons are queued at once, we can 
+									//spread out the load times.
+									if !ent.WarpaintData then
+										local instance
+										local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
+
+										//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+										if weaponType then
+											-- Try to build a full multi-layer instance if we have a warpaint ID
+											instance = WP.WarpaintData.BuildInstance(
+												data.id,
+												weaponType,
+												"1", //always use the same seed
+												1, //factory new
+												0 //always use red team
+											)
+											if instance then
+												-- Set the matIndex since BuildInstance doesn't set it
+												instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
+											end
+										end
+										//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+										--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+										if !instance then
+											MsgN(i.name, " using warpaint fallback, not good")
+											local pattern
+											for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+												if v.id == self.data.wp.id then
+													pattern = v.primaryTexture
+													break
+												end
+											end
+											instance = WP.WarpaintInstance.New({
+												patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+												seed = self.data.wp.seed,
+												wearLevel = self.data.wp.wear,
+												wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
+												team = _team,
+												weaponType = weaponType,
+												matIndex = WP.Weapons.GetMatIndex(weaponType)
+											})
+										end]]
+										if instance then
+											//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
+											WP.Materials.Apply(ent, instance)
+										else
+											//if we failed to instantiate the material, bail out
+											return true
+										end
+									end
+
+									//Don't render the icon until the paintkit material is no longer a placeholder
+									local wp_state = WP.Materials.GetForEntity(ent)
+									if wp_state == nil or string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+										return false
+									end
+
+									//Render the icon texture
+									local models = {ent}
+									local cam = self:DoItemModelCamera(models)
+									render.SetWriteDepthToDestAlpha(false)
+									render.Clear(0, 0, 0, 0, true, true)
+									self:DrawItemModels(0, 0, size, size, models, {}, cam.ang, cam.pos, cam.fov)
+									local img = render.Capture({format = "png", x = 0, y = 0, w = size, h = size})
+									if !file.IsDir("tf2itembrowser_paintkiticons/", "DATA") then 
+										file.CreateDir("tf2itembrowser_paintkiticons/")
+									end
+									if file.Write(iconpath, img) then
+										icon:SetMaterial("data/" .. iconpath)
+									end
+									TF2ItemBrowser.IconRenderEntsToRemove[ent] = true //removing the entity causes wp_state to return nil on subsequent queued funcs (why?), so instead wait for the queue to be empty before removing these.
+									return true
+								end)
+								icon:SetMaterial(spinner:GetName())
+							end
+						end
 					end
 					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
 					icons:InvalidateLayout(stupid_scroll_fix)
 					icons_holder:SetWide(icons:GetWide())
-					icons_holder:SetTall(math.min(icons:GetTall(), size*2.25)) //make this an item shorter than unusuals, so that the extra height from all our controls doesn't cover up the model preview too badly
+					icons_holder:SetTall(math.min(icons:GetTall(), size*2.5)) //make this an item shorter than unusuals, so that the extra height from all our controls doesn't cover up the model preview too badly
 					icons_holder:InvalidateLayout(stupid_scroll_fix)
 					scroll:InvalidateLayout(stupid_scroll_fix)
 
 					container:UpdateHeight()
 				end
 				icons.SelectCategory(default_category)
-				if icons:GetTall() > (size*2.25) then
+				if icons:GetTall() > (size*2.5) then
 					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
 					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
 					//have a scrollbar, so only do this if we need to; this is awful
