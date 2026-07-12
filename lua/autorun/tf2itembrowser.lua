@@ -4039,7 +4039,7 @@ if CLIENT then
 					end
 				end
 
-				function icons.SelectCategory(cat, stupid_scroll_fix)
+				function icons.SelectCategory(cat)
 					icons:Clear()
 					for _, entry in ipairs (categories[cat].items) do
 						//reuse PE+ spawnicons for particle previews because they nicely manage the fx already
@@ -4088,21 +4088,23 @@ if CLIENT then
 							end
 						end
 					end
-					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
-					icons:InvalidateLayout(stupid_scroll_fix)
+					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
+					icons:SetSize(w, h)
+					icons:InvalidateLayout()
 					icons_holder:SetWide(icons:GetWide())
 					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
-					icons_holder:InvalidateLayout(stupid_scroll_fix)
-					scroll:InvalidateLayout(stupid_scroll_fix)
+					icons_holder:InvalidateLayout()
+					scroll:InvalidateLayout()
 
 					//Resize and reposition container whenever the category is changed
-					container:SizeToChildren(true, true)
 					local hat_control_height = 0
 					if u_hat then hat_control_height = 16 + slider:GetTall() end
-					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
-					
+					container:SetTall(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					if h > icons_holder:GetTall() then w = w + scroll.VBar:GetWide() end //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					container:SetWide(w + 16 + 16)
+
 					container:IsMouseInputEnabled(true)
-					container:InvalidateLayout(stupid_scroll_fix)
+					container:InvalidateLayout()
 
 					local x, y = drop:LocalToScreen(0, drop:GetTall())
 					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
@@ -4110,13 +4112,6 @@ if CLIENT then
 					container:SetPos(x, y)
 				end
 				icons.SelectCategory(default_category)
-				if icons:GetTall() > (size*3.25) then
-					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
-					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
-					//have a scrollbar, so only do this if we need to; this is awful
-					icons.SelectCategory(default_category, true)
-					icons.SelectCategory(default_category, true) 
-				end
 
 				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
 				//prevent this by closing the menu in those cases
@@ -4377,7 +4372,7 @@ if CLIENT then
 				check.OnChange = function(_, val)
 					if val then val = "1" else val = "0" end
 					RunConsoleCommand("warpaint_increased_intensity", val)
-					container:UpdateHeight()
+					container:UpdateSize()
 					//wait a moment for the convar change to take effect (see above)
 					timer.Simple(0.1, function()
 						if IsValid(pnl) then pnl.OnSettingChanged() end
@@ -4418,16 +4413,15 @@ if CLIENT then
 				check.OnChange = function(_, val)
 					if val then val = "1" else val = "0" end
 					RunConsoleCommand("warpaint_double_scratch", val)
-					container:UpdateHeight()
+					container:UpdateSize()
 					//wait a moment for the convar change to take effect (see above)
 					timer.Simple(0.1, function()
 						if IsValid(pnl) then pnl.OnSettingChanged() end
 					end)
 				end
 
-				function container:UpdateHeight()
+				function container:UpdateSize()
 					//Resize and reposition container whenever the category is changed or intensity controls are toggled
-					container:SizeToChildren(true, true)
 					local intensity_control_height = 0
 					if intensity_check:GetChecked() then
 						intensity_slider:SetHeight(18)
@@ -4442,9 +4436,12 @@ if CLIENT then
 						scratch_check:DockMargin(0,0,0,0)
 					end
 					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					local w, h = icons:GetSize()
+					if h > icons_holder:GetTall() then w = w + scroll.VBar:GetWide() end //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					container:SetWide(w + 16 + 16)
 					
 					container:IsMouseInputEnabled(true)
-					container:InvalidateLayout(stupid_scroll_fix)
+					container:InvalidateLayout()
 
 					local x, y = drop:LocalToScreen(0, drop:GetTall())
 					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
@@ -4452,7 +4449,7 @@ if CLIENT then
 					container:SetPos(x, y)
 				end
 
-				function icons.SelectCategory(cat, stupid_scroll_fix)
+				function icons.SelectCategory(cat)
 					icons:Clear()
 					for _, entry in ipairs (categories[cat].items) do
 						//TODO: generate icon images and assign them to the contenticons
@@ -4594,23 +4591,17 @@ if CLIENT then
 							end
 						end
 					end
-					icons:SetSize((size*4)+16, size*(math.ceil(#categories[cat].items/4)))
-					icons:InvalidateLayout(stupid_scroll_fix)
+					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
+					icons:SetSize(w, h)
+					icons:InvalidateLayout()
 					icons_holder:SetWide(icons:GetWide())
 					icons_holder:SetTall(math.min(icons:GetTall(), size*2.5)) //make this an item shorter than unusuals, so that the extra height from all our controls doesn't cover up the model preview too badly
-					icons_holder:InvalidateLayout(stupid_scroll_fix)
-					scroll:InvalidateLayout(stupid_scroll_fix)
+					icons_holder:InvalidateLayout()
+					scroll:InvalidateLayout()
 
-					container:UpdateHeight()
+					container:UpdateSize()
 				end
 				icons.SelectCategory(default_category)
-				if icons:GetTall() > (size*2.5) then
-					//have to do this with instant invalidatelayout, TWICE, or else it won't account for scrollbar width 
-					//on initial startup, but this method also causes it to become too tall for categories that *don't* 
-					//have a scrollbar, so only do this if we need to; this is awful
-					icons.SelectCategory(default_category, true)
-					icons.SelectCategory(default_category, true) 
-				end
 
 				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
 				//prevent this by closing the menu in those cases
