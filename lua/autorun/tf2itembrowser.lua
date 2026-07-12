@@ -3571,7 +3571,7 @@ if CLIENT then
 				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
 
-				local x, y = drop:LocalToScreen(0, drop:GetTall())
+				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
 				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
 				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 				container:SetPos(x, y)
@@ -3722,7 +3722,7 @@ if CLIENT then
 				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
 
-				local x, y = drop:LocalToScreen(0, drop:GetTall())
+				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
 				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
 				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 				container:SetPos(x, y)
@@ -4091,22 +4091,26 @@ if CLIENT then
 					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
 					icons:SetSize(w, h)
 					icons:InvalidateLayout()
-					icons_holder:SetWide(icons:GetWide())
-					icons_holder:SetTall(math.min(icons:GetTall(), size*3.25))
+					icons_holder:SetSize(w, h)
 					icons_holder:InvalidateLayout()
 					scroll:InvalidateLayout()
 
 					//Resize and reposition container whenever the category is changed
 					local hat_control_height = 0
 					if u_hat then hat_control_height = 16 + slider:GetTall() end
-					container:SetTall(drop2:GetTall() + 8 + icons_holder:GetTall() + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
-					if h > icons_holder:GetTall() then w = w + scroll.VBar:GetWide() end //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					container:SetTall(drop2:GetTall() + 8 + h + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					if container:GetTall() > ScrH() then
+						local diff = container:GetTall() - ScrH()
+						icons_holder:SetTall(icons_holder:GetTall() - diff)
+						container:SetTall(container:GetTall() - diff)
+						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					end
 					container:SetWide(w + 16 + 16)
 
 					container:IsMouseInputEnabled(true)
 					container:InvalidateLayout()
 
-					local x, y = drop:LocalToScreen(0, drop:GetTall())
+					local x, y = drop:LocalToScreen(drop:GetWide(), 0)
 					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
 					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 					container:SetPos(x, y)
@@ -4378,9 +4382,15 @@ if CLIENT then
 						if IsValid(pnl) then pnl.OnSettingChanged() end
 					end)
 				end
-				//because vertical space is at a premium (we're already covering up too much of the model preview already),
-				//leave out the help text for all the intensity options, and hide the multiplier/double-scratches settings
-				//when we're not using them instead of graying them out
+				local help = vgui.Create("DLabel", container)
+				help:SetWrap(true)
+				help:SetContentAlignment(5)
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateHeight()
+				help:SetText("Non-TF2-accurate wear with higher visual intensity")
+				help:Dock(TOP)
+				help:DockMargin(22,0,32,0)
+				//help:SetTextColor(self:GetSkin().Colours.Tree.Hover) //no blue color because this doesn't work with the TF2 theme, maybe try something else?
+				local intensity_help = help
 
 				local slider = vgui.Create("DNumSlider", container)
 				local intensity_slider = slider
@@ -4419,6 +4429,15 @@ if CLIENT then
 						if IsValid(pnl) then pnl.OnSettingChanged() end
 					end)
 				end
+				local help = vgui.Create("DLabel", container)
+				help:SetWrap(true)
+				help:SetContentAlignment(5)
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateHeight()
+				help:SetText("Samples scratch texture twice at different UVs for denser wear patterns")
+				help:Dock(TOP)
+				help:DockMargin(22+32,0,32,0)
+				//help:SetTextColor(self:GetSkin().Colours.Tree.Hover) //no blue color because this doesn't work with the TF2 theme, maybe try something else?
+				local scratch_help = help
 
 				function container:UpdateSize()
 					//Resize and reposition container whenever the category is changed or intensity controls are toggled
@@ -4428,22 +4447,32 @@ if CLIENT then
 						intensity_slider:DockMargin(32,8,0,0)
 						scratch_check:SetHeight(15)
 						scratch_check:DockMargin(32,8,0,0)
-						intensity_control_height = 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall()
+						//scratch_help:SetAutoStretchVertical(true)
+						//scratch_help:InvalidateLayout(true)
+						scratch_help:SetTall(20) //default height apparently; can't do AutoStretchVertical here because we can't get an accurate height if we haven't set the container's width yet
+						intensity_control_height = 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall() + scratch_help:GetTall()
 					else
 						intensity_slider:SetHeight(0)
 						intensity_slider:DockMargin(0,0,0,0)
 						scratch_check:SetHeight(0)
 						scratch_check:DockMargin(0,0,0,0)
+						//scratch_help:SetAutoStretchVertical(false)
+						scratch_help:SetTall(0)
 					end
-					container:SetHeight(drop2:GetTall() + 8 + icons_holder:GetTall() + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
 					local w, h = icons:GetSize()
-					if h > icons_holder:GetTall() then w = w + scroll.VBar:GetWide() end //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					container:SetTall(drop2:GetTall() + 8 + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + intensity_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					if container:GetTall() > ScrH() then
+						local diff = container:GetTall() - ScrH()
+						icons_holder:SetTall(icons_holder:GetTall() - diff)
+						container:SetTall(container:GetTall() - diff)
+						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					end
 					container:SetWide(w + 16 + 16)
 					
 					container:IsMouseInputEnabled(true)
 					container:InvalidateLayout()
 
-					local x, y = drop:LocalToScreen(0, drop:GetTall())
+					local x, y = drop:LocalToScreen(drop:GetWide(), 0)
 					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
 					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 					container:SetPos(x, y)
@@ -4452,7 +4481,6 @@ if CLIENT then
 				function icons.SelectCategory(cat)
 					icons:Clear()
 					for _, entry in ipairs (categories[cat].items) do
-						//TODO: generate icon images and assign them to the contenticons
 						local icon = vgui.Create("ContentIcon", icons)
 						icon:SetSize(size, size)
 						icon:SetName(entry.v)
@@ -4594,8 +4622,7 @@ if CLIENT then
 					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
 					icons:SetSize(w, h)
 					icons:InvalidateLayout()
-					icons_holder:SetWide(icons:GetWide())
-					icons_holder:SetTall(math.min(icons:GetTall(), size*2.5)) //make this an item shorter than unusuals, so that the extra height from all our controls doesn't cover up the model preview too badly
+					icons_holder:SetSize(w, h)
 					icons_holder:InvalidateLayout()
 					scroll:InvalidateLayout()
 
