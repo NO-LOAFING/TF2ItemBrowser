@@ -2034,130 +2034,6 @@ if CLIENT then
 
 	local PANEL = {}
 
-	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, and the icon texture renderer used for paintkits and such
-	local LocalModelLights = {
-		//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
-		//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
-		{
-			type = MATERIAL_LIGHT_SPOT,
-			color = Vector(1,1,1),
-			pos = Vector(0,0,200),
-			dir = Vector(0,0,-1), //in code, this is (point_at-pos):GetNormalized(), where point_at is Vector(0,0,(maxs.z-mins.z)*0.75), and mins/maxs are models[1]:GetRenderBounds(); this is always the same no matter what the bounds are
-			innerAngle = math.deg(0.035),
-			outerAngle = math.deg(0.873),
-		},
-		//default light from CPotteryWheelPanel::CreateDefaultLights(), this is nulled out in the same code that creates the spotlight (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/vgui2/matsys_controls/potterywheelpanel.cpp#L323-L333)
-		--[[{
-			type = MATERIAL_LIGHT_DIRECTIONAL,
-			color = Vector(1,1,1),
-			dir = Vector(0,0,-1),
-			pos = Vector(0,0,-1*2.0e6) //not sure if this is necessary, or if code handles it (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/mathlib/lightdesc.cpp#L38-L43)
-		}]]
-		{}, //blank entries are necessary to override any preexisting lightdescs in these slots
-		{},
-		{},
-	}
-	function PANEL:DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
-
-		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
-		render.SuppressEngineLighting(true)
-		render.SetLightingOrigin(vector_origin)
-
-		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
-		//render.ResetModelLighting(0.4, 0.4, 0.4)
-		render.SetAmbientLight(0.4, 0.4, 0.4)
-		render.SetColorModulation(1, 1, 1)
-		render.SetBlend(1)
-		//Stupid hack: while these lighting parameters look correct on the vast majority of models, they're consistently too dark on this 
-		//*one specific model*, which is a problem because we use it to render almost every paintkit icon. i can't fathom why this is happening,
-		//but changing this one value gets us results that look pretty close to the TF2-generated icons when eyeballing it. it'll have to do.
-		if models[1].ModelLightingOverride == nil then
-			models[1].ModelLightingOverride = models[1]:GetModel() == "models/items/paintkit_tool.mdl" //cache this so that the modelpanel doesn't run this check every single frame
-		end
-		for i = 0, 5 do
-			if !models[1].ModelLightingOverride then
-				render.SetModelLighting(i, 0.4, 0.4, 0.4)
-			else
-				render.SetModelLighting(i, 0.875, 0.875, 0.875)
-			end
-		end
-		render.SetLocalModelLights(LocalModelLights)
-		render.ClearDepth(false)
-
-		for k, v in ipairs (models) do
-			//Update color of halloween spell paints
-			if v.ProxyentPaintColor and v.ProxyentPaintColor.Override then
-				v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(v.ProxyentPaintColor.Override)/255
-			end
-			//Render all models
-			v:DrawModel()
-			v:FrameAdvance(FrameTime())
-		end
-		//Render particles
-		for k, v in ipairs (particles) do
-			v:Render()
-		end
-
-		render.SuppressEngineLighting(false)
-		cam.End3D()
-
-	end
-
-	function PANEL:DoItemModelCamera(models)
-
-		local attach = models[1]:GetAttachment(models[1]:LookupAttachment("icon_camera"))
-		if attach and !TF2Items.items[self.data.id]._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
-			//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
-			return {pos = attach.Pos, fov = 54, ang = attach.Ang} //fov is from resource\ui\econ\itemmodelpanel.res
-		else
-			//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
-			local mn, mx
-			for k, v in ipairs (models) do
-				local mn2, mx2 = v:GetRenderBounds()
-				mn2 = mn2 + v:GetPos()
-				mx2 = mx2 + v:GetPos()
-				if !mn then
-					mn, mx = mn2, mx2
-				else
-					mn.x = math.min(mn.x,mn2.x)
-					mn.y = math.min(mn.y,mn2.y)
-					mn.z = math.min(mn.z,mn2.z)
-					mx.x = math.max(mx.x,mx2.x)
-					mx.y = math.max(mx.y,mx2.y)
-					mx.z = math.max(mx.z,mx2.z)
-				end
-			end
-			if mn then
-				local middle = ( mn + mx ) * 0.5
-				local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
-
-				//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
-					
-				if ( size < 900 ) then
-					size = size * ( 1 - ( size / 900 ) )
-				else
-					size = size * ( 1 - ( size / 4096 ) )
-				end
-
-				size = math.Clamp( size, 5, 1000 )
-
-				local ViewAngle = Angle( 25, 220, 0 )
-				local ViewPos = --[[pos +]] ViewAngle:Forward() * size * -15
-				local view = {}
-
-				view.fov		= 4 + size * 0.04
-				view.origin		= ViewPos + middle
-				//view.znear		= 1
-				//view.zfar		= ViewPos:Distance( pos ) + size * 2
-				view.angles		= ViewAngle
-
-				//Apply the changes to the camera
-				return {pos = view.origin, fov = view.fov, ang = view.angles}
-			end
-		end
-
-	end
-
 	function PANEL:Init()
 
 		self:SetSize(item_icon_sizes[icon_size].w, item_icon_sizes[icon_size].h)
@@ -2869,6 +2745,133 @@ if CLIENT then
 
 	end
 
+	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, and the icon texture renderer used for paintkits and such
+	local LocalModelLights = {
+		//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
+		//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
+		{
+			type = MATERIAL_LIGHT_SPOT,
+			color = Vector(1,1,1),
+			pos = Vector(0,0,200),
+			dir = Vector(0,0,-1), //in code, this is (point_at-pos):GetNormalized(), where point_at is Vector(0,0,(maxs.z-mins.z)*0.75), and mins/maxs are models[1]:GetRenderBounds(); this is always the same no matter what the bounds are
+			innerAngle = math.deg(0.035),
+			outerAngle = math.deg(0.873),
+		},
+		{}, //blank entries are necessary to override any preexisting lightdescs in these slots
+		{},
+		{},
+	}
+	function PANEL:DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
+
+		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
+		render.SuppressEngineLighting(true)
+		render.SetLightingOrigin(vector_origin)
+
+		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
+		//render.ResetModelLighting(0.4, 0.4, 0.4)
+		render.SetAmbientLight(0.4, 0.4, 0.4)
+		render.SetColorModulation(1, 1, 1)
+		render.SetBlend(1)
+		//Stupid hack: while these lighting parameters look correct on the vast majority of models, they're consistently too dark on this 
+		//*one specific model*, which is a problem because we use it to render almost every paintkit icon. i can't fathom why this is happening,
+		//but changing this one value gets us results that look pretty close to the TF2-generated icons when eyeballing it. it'll have to do.
+		if models[1].ModelLightingOverride == nil then
+			models[1].ModelLightingOverride = models[1]:GetModel() == "models/items/paintkit_tool.mdl" //cache this so that the modelpanel doesn't run this check every single frame
+		end
+		for i = 0, 5 do
+			if !models[1].ModelLightingOverride then
+				render.SetModelLighting(i, 0.4, 0.4, 0.4)
+			else
+				render.SetModelLighting(i, 0.875, 0.875, 0.875)
+			end
+		end
+		render.SetLocalModelLights(LocalModelLights)
+		render.ClearDepth(false)
+
+		for k, v in ipairs (models) do
+			//Update color of halloween spell paints
+			if v.ProxyentPaintColor and v.ProxyentPaintColor.Override then
+				v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(v.ProxyentPaintColor.Override)/255
+			end
+			//Render all models
+			v:DrawModel()
+			v:FrameAdvance(FrameTime())
+		end
+		//Render particles
+		for k, v in ipairs (particles) do
+			v:Render()
+		end
+
+		render.SuppressEngineLighting(false)
+		cam.End3D()
+
+	end
+
+	function PANEL:DoItemModelCamera(models)
+
+		local attach
+		if models[1] then attach = models[1]:GetAttachment(models[1]:LookupAttachment("icon_camera")) end
+		if attach and !TF2Items.items[self.data.id]._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
+			//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
+			return {
+				pos = attach.Pos, 
+				fov = 54, //from resource\ui\econ\itemmodelpanel.res
+				ang = attach.Ang
+			} 
+		else
+			//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
+			local mn, mx
+			for k, v in ipairs (models) do
+				local mn2, mx2 = v:GetRenderBounds()
+				mn2, mx2 = v:GetRotatedAABB(mn2, mx2)
+				mn2 = mn2 + v:GetPos()
+				mx2 = mx2 + v:GetPos()
+				if !mn then
+					mn, mx = mn2, mx2
+				else
+					mn.x = math.min(mn.x,mn2.x)
+					mn.y = math.min(mn.y,mn2.y)
+					mn.z = math.min(mn.z,mn2.z)
+					mx.x = math.max(mx.x,mx2.x)
+					mx.y = math.max(mx.y,mx2.y)
+					mx.z = math.max(mx.z,mx2.z)
+				end
+			end
+			if mn then
+				local middle = ( mn + mx ) * 0.5
+				local size = math.max( 0, mx.x - mn.x, mx.y - mn.y, mx.z - mn.z )
+
+				//copy of local function RenderSpawnIcon_Prop from lua\includes\util\client.lua, only slightly adapted
+					
+				if ( size < 900 ) then
+					size = size * ( 1 - ( size / 900 ) )
+				else
+					size = size * ( 1 - ( size / 4096 ) )
+				end
+
+				size = math.Clamp( size, 5, 1000 )
+
+				//rotate the angle to account for rotated models
+				local _, ViewAngle = LocalToWorld(vector_origin, Angle( 25, 220, 0 ), vector_origin, models[1]:GetAngles())
+				local ViewPos = models[1]:GetPos() + ViewAngle:Forward() * size * -15
+
+				//Apply the changes to the camera
+				return {
+					pos = ViewPos + middle,
+					fov = 4, // + size * 0.04, //to compensate for GetRotatedAABB bloating up the size a bit, don't add extra fov bloat from size, this isn't necessary for any of these models
+					ang = ViewAngle
+				}
+			end
+		end
+		//fallback values in case there's no models
+		return {
+			pos = vector_origin, 
+			fov = 90, 
+			ang = angle_zero
+		}
+		
+	end
+
 	function PANEL:CreateSpawnPanel()
 
 		local i = TF2Items.items[self.data.id]
@@ -2924,13 +2927,118 @@ if CLIENT then
 
 			render.SetScissorRect( 0, 0, 0, 0, false )
 		end
-		//Scale mouse control by FOV, otherwise mouse movement will be noticeably faster when we're using 
-		//icon_camera and its 54 FOV, compared to the single-digit FOVs set by PositionSpawnIcon
-		local old_CaptureMouse = mdl.CaptureMouse
-		function mdl:CaptureMouse()
-			local dx, dy = old_CaptureMouse(mdl)
-			local scale = 30/mdl:GetFOV()
-			return dx*scale, dy*scale
+		//Modified OnMousePressed to make the orbit movement account for the rotation of the entity
+		function mdl:OnMousePressed( mousecode )
+			-- input.SetCursorPos does not work while main menu is open
+			if ( !MENU_DLL and gui.IsGameUIVisible() ) then return end
+
+			if ( mousecode != MOUSE_LEFT and mousecode != MOUSE_RIGHT ) then return end
+
+			self:SetCursor( "none" )
+			self:MouseCapture( true )
+			self.Capturing = true
+			self.MouseKey = mousecode
+
+			self:SetFirstPerson( true )
+
+			self:CaptureMouse()
+
+			if ( !IsValid( self.Entity ) ) then
+				self.OrbitPoint = vector_origin
+				self.OrbitDistance = ( self.OrbitPoint - self.vCamPos ):Length()
+				return
+			end
+
+			-- Helpers for the orbit movement
+			local pos = self.Entity:GetPos() //new
+			local ang = self.Entity:GetAngles() //new
+			local mins, maxs = self.Entity:GetModelBounds()
+			mins, maxs = self.Entity:GetRotatedAABB(mins, maxs) //new
+			local center = ( mins + maxs ) / 2
+
+			local hit1 = util.IntersectRayWithPlane( self.vCamPos, self.aLookAngle:Forward(), pos, ang:Forward() ) //changed
+			self.OrbitPoint = hit1
+
+			local hit2 = util.IntersectRayWithPlane( self.vCamPos, self.aLookAngle:Forward(), pos, ang:Up() ) //changed
+			if ( ( !hit1 and hit2 ) or hit2 and hit2:Distance(pos) < hit1:Distance(pos) ) then self.OrbitPoint = hit2 end //changed
+
+			local hit3 = util.IntersectRayWithPlane( self.vCamPos, self.aLookAngle:Forward(), pos, -ang:Right() ) //changed
+			if ( ( ( !hit1 or !hit2 ) and hit3 ) or hit3 and hit3:Distance(pos) < hit2:Distance(pos) ) then self.OrbitPoint = hit3 end //changed
+
+			self.OrbitPoint = self.OrbitPoint or center
+			self.OrbitDistance = ( self.OrbitPoint - self.vCamPos ):Length()
+		end
+		//local function required by FirstPersonControls
+		local function IsKeyBindDown(cmd)
+			-- Yes, this is how engine does it for input.LookupBinding
+			for keyCode = 1, BUTTON_CODE_LAST do
+				if ( input.LookupKeyBinding( keyCode ) == cmd and input.IsKeyDown( keyCode ) ) then
+					return true
+				end
+			end
+			return false
+		end
+		//Modified FirstPersonControls to make camera movement account for the roll rotation of the camera (required by the wacky rotations set by icon_camera)
+		function mdl:FirstPersonControls()
+			local x, y = self:CaptureMouse()
+
+			if ( self.MouseKey == MOUSE_LEFT ) then
+
+				//don't scale camera movement with fov for left click (orbit), only right click (pan)
+				local scale = 0.1
+				x = x * -0.5 * scale
+				y = y * 0.5 * scale
+
+				if ( input.IsShiftDown() ) then y = 0 end
+
+				//use RotateAroundAxis instead of just adding the angle, so that it accounts for roll rotation
+				self.aLookAngle:RotateAroundAxis(-self.aLookAngle:Right(), y*4)
+				self.aLookAngle:RotateAroundAxis(self.aLookAngle:Up(), x*4)
+
+				self.vCamPos = self.OrbitPoint - self.aLookAngle:Forward() * self.OrbitDistance
+
+				return
+			end
+
+			local scale = self:GetFOV() / 180
+			x = x * -0.5 * scale
+			y = y * 0.5 * scale
+
+			-- Look around
+			//use RotateAroundAxis instead of just adding the angle, so that it accounts for roll rotation
+			self.aLookAngle:RotateAroundAxis(-self.aLookAngle:Right(), y)
+			self.aLookAngle:RotateAroundAxis(self.aLookAngle:Up(), x)
+
+			local Movement = vector_origin
+
+			if ( IsKeyBindDown( "+forward" ) or input.IsKeyDown( KEY_UP ) ) then
+				Movement = Movement + self.aLookAngle:Forward()
+			end
+
+			if ( IsKeyBindDown( "+back" ) or input.IsKeyDown( KEY_DOWN ) ) then
+				Movement = Movement - self.aLookAngle:Forward()
+			end
+
+			if ( IsKeyBindDown( "+moveleft" ) or input.IsKeyDown( KEY_LEFT ) ) then
+				Movement = Movement - self.aLookAngle:Right()
+			end
+
+			if ( IsKeyBindDown( "+moveright" ) or input.IsKeyDown( KEY_RIGHT ) ) then
+				Movement = Movement + self.aLookAngle:Right()
+			end
+
+			if ( IsKeyBindDown( "+jump" ) or input.IsKeyDown( KEY_SPACE ) ) then
+				Movement = Movement + self.aLookAngle:Up() //changed
+			end
+
+			if ( IsKeyBindDown( "+duck" ) or input.IsKeyDown( KEY_LCONTROL ) ) then
+				Movement = Movement -  self.aLookAngle:Up() //changed
+			end
+
+			local speed = 0.5
+			if ( input.IsShiftDown() ) then speed = 4.0 end
+
+			self.vCamPos = self.vCamPos + Movement * speed * self:GetMovementScale()
 		end
 
 		function pnl.Refresh()
@@ -3015,9 +3123,10 @@ if CLIENT then
 						for k, v in pairs (vis.item_bg) do
 							ent:SetBodygroup(ent:FindBodygroupByName(k), v)
 						end
+						ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
 						local mins, maxs = ent:GetRenderBounds()
+						mins, maxs = ent:GetRotatedAABB(mins, maxs)
 						offset_height_base = maxs.z
-						//ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better but don't play well with mouse control
 					elseif v.attach_num then
 						ent:SetParent(mdl.Entity)
 						ent:AddEffects(EF_BONEMERGE)
@@ -3030,13 +3139,15 @@ if CLIENT then
 						//detail, and it would need both its own gui and either a bunch of new materials or a whole 
 						//custom matproxy, is this worth the trouble?
 					else
+						ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
 						//If we're rendering both the base item and wearables, then reposition wearables above the item
 						if offset_height_base then
 							local mins, maxs = ent:GetRenderBounds()
+							mins, maxs = ent:GetRotatedAABB(mins, maxs)
 							offset_height = offset_height_base - mins.z
 						end
 						if offset_height then
-							ent:SetPos(Vector(0,0,offset_height))
+							ent:SetPos(ent:GetAngles():Up() * offset_height)
 						end
 					end
 
@@ -4546,7 +4657,7 @@ if CLIENT then
 							function icon.RebuildIconTexture()
 								local ent = ClientsideModel(iconmdl, RENDERGROUP_OTHER)
 								if IsValid(ent) then
-									//ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better but don't play well with mouse control
+									ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
 									ent:SetNoDraw(true)
 								end
 								table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
