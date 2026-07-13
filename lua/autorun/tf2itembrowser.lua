@@ -2035,36 +2035,53 @@ if CLIENT then
 	local PANEL = {}
 
 	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, and the icon texture renderer used for paintkits and such
+	local LocalModelLights = {
+		//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
+		//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
+		{
+			type = MATERIAL_LIGHT_SPOT,
+			color = Vector(1,1,1),
+			pos = Vector(0,0,200),
+			dir = Vector(0,0,-1), //in code, this is (point_at-pos):GetNormalized(), where point_at is Vector(0,0,(maxs.z-mins.z)*0.75), and mins/maxs are models[1]:GetRenderBounds(); this is always the same no matter what the bounds are
+			innerAngle = math.deg(0.035),
+			outerAngle = math.deg(0.873),
+		},
+		//default light from CPotteryWheelPanel::CreateDefaultLights(), this is nulled out in the same code that creates the spotlight (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/vgui2/matsys_controls/potterywheelpanel.cpp#L323-L333)
+		--[[{
+			type = MATERIAL_LIGHT_DIRECTIONAL,
+			color = Vector(1,1,1),
+			dir = Vector(0,0,-1),
+			pos = Vector(0,0,-1*2.0e6) //not sure if this is necessary, or if code handles it (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/mathlib/lightdesc.cpp#L38-L43)
+		}]]
+		{}, //blank entries are necessary to override any preexisting lightdescs in these slots
+		{},
+		{},
+	}
 	function PANEL:DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
 
 		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
 		render.SuppressEngineLighting(true)
-		render.SetLightingOrigin(models[1]:GetPos())
+		render.SetLightingOrigin(vector_origin)
 
 		//use lighting from tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L636-L646)
-		render.ResetModelLighting(0.4, 0.4, 0.4)
+		//render.ResetModelLighting(0.4, 0.4, 0.4)
+		render.SetAmbientLight(0.4, 0.4, 0.4)
 		render.SetColorModulation(1, 1, 1)
 		render.SetBlend(1)
-		for i = 0, 6 do //6? shouldn't it be 5?
-			render.SetModelLighting(i, 0.4, 0.4, 0.4)
+		//Stupid hack: while these lighting parameters look correct on the vast majority of models, they're consistently too dark on this 
+		//*one specific model*, which is a problem because we use it to render almost every paintkit icon. i can't fathom why this is happening,
+		//but changing this one value gets us results that look pretty close to the TF2-generated icons when eyeballing it. it'll have to do.
+		if models[1].ModelLightingOverride == nil then
+			models[1].ModelLightingOverride = models[1]:GetModel() == "models/items/paintkit_tool.mdl" //cache this so that the modelpanel doesn't run this check every single frame
 		end
-
-		if !models[1].LocalModelLights then
-			//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
-			//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
-			local pos = Vector(0,0,200)
-			local mins, maxs = models[1]:GetRenderBounds()
-			local point_at = models[1]:GetPos() + Vector(0,0,(maxs.z-mins.z)*0.75)
-			models[1].LocalModelLights = {{
-				type = MATERIAL_LIGHT_SPOT,
-				color = Vector(1,1,1),
-				pos = pos,
-				dir = (point_at-pos):GetNormalized(),
-				innerAngle = math.deg(0.035),
-				outerAngle = math.deg(0.873),
-			}}
+		for i = 0, 5 do
+			if !models[1].ModelLightingOverride then
+				render.SetModelLighting(i, 0.4, 0.4, 0.4)
+			else
+				render.SetModelLighting(i, 0.875, 0.875, 0.875)
+			end
 		end
-		render.SetLocalModelLights(models[1].LocalModelLights)
+		render.SetLocalModelLights(LocalModelLights)
 		render.ClearDepth(false)
 
 		for k, v in ipairs (models) do
@@ -3000,6 +3017,7 @@ if CLIENT then
 						end
 						local mins, maxs = ent:GetRenderBounds()
 						offset_height_base = maxs.z
+						//ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better but don't play well with mouse control
 					elseif v.attach_num then
 						ent:SetParent(mdl.Entity)
 						ent:AddEffects(EF_BONEMERGE)
@@ -4385,7 +4403,7 @@ if CLIENT then
 				local help = vgui.Create("DLabel", container)
 				help:SetWrap(true)
 				help:SetContentAlignment(5)
-				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateHeight()
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
 				help:SetText("Non-TF2-accurate wear with higher visual intensity")
 				help:Dock(TOP)
 				help:DockMargin(22,0,32,0)
@@ -4432,7 +4450,7 @@ if CLIENT then
 				local help = vgui.Create("DLabel", container)
 				help:SetWrap(true)
 				help:SetContentAlignment(5)
-				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateHeight()
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
 				help:SetText("Samples scratch texture twice at different UVs for denser wear patterns")
 				help:Dock(TOP)
 				help:DockMargin(22+32,0,32,0)
@@ -4525,11 +4543,12 @@ if CLIENT then
 								end
 							end
 							local iconpath = "tf2itembrowser_paintkiticons/" .. data.id .. "_" .. string.StripExtension(string.GetFileFromFilename(iconmdl)) .. ".png"
-							if file.Exists(iconpath, "DATA") then
-								icon:SetMaterial("data/" .. iconpath)
-							else
+							function icon.RebuildIconTexture()
 								local ent = ClientsideModel(iconmdl, RENDERGROUP_OTHER)
-								if IsValid(ent) then ent:SetNoDraw(true) end
+								if IsValid(ent) then
+									//ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better but don't play well with mouse control
+									ent:SetNoDraw(true)
+								end
 								table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
 									//if ent is invalid, then remove from the queue
 									if !IsValid(ent) then
@@ -4617,6 +4636,22 @@ if CLIENT then
 								end)
 								icon:SetMaterial(spinner:GetName())
 							end
+							if file.Exists(iconpath, "DATA") then
+								icon:SetMaterial("data/" .. iconpath)
+							else
+								icon.RebuildIconTexture()
+							end
+							function icon.DoRightClick()
+								//TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
+								//local menu = DermaMenu()
+
+								//local opt = menu:AddOption("Re-render", function()
+									icon.RebuildIconTexture()
+								//end)
+								//opt:SetIcon("icon16/picture_save.png")
+
+								//menu:Open()
+							end
 						end
 					end
 					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
@@ -4681,8 +4716,15 @@ if CLIENT then
 			pnl:Remove()
 		end
 
-		//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
 		function pnl.OnRemove()
+			//Clean up models and particles
+			for k, v in ipairs (mdl.models) do
+				v:Remove()
+			end
+			for k, v in ipairs (mdl.particles) do
+				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
+			end
+			//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
 			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
 		end
 
