@@ -1592,7 +1592,6 @@ if CLIENT then
 			local old_Think = window.Think
 			window.ImageQueue = {}
 			window.IconRenderQueue = {}
-			window.IconRenderEntsToRemove = {}
 			//this one is global so it carries over between windows
 			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
 			local iconsperframe = 100
@@ -1631,14 +1630,17 @@ if CLIENT then
 						end
 					end
 					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
-					if self.IconRenderQueue[1] then
-						if self.IconRenderQueue[1]() then
-							table.remove(self.IconRenderQueue, 1)
-						end
+					if self.IconRender_Wait then
+						self.IconRender_Wait = nil
 					else
-						for ent, _ in pairs (self.IconRenderEntsToRemove) do
-							ent:Remove()
+						if self.IconRenderQueue[1] then
+							if self.IconRenderQueue[1]() then
+								table.remove(self.IconRenderQueue, 1)
+							end
+							//wait a frame between each call to prevent issues with WP.Materials.GetForEntity getting stuck forever
+							self.IconRender_Wait = true 
 						end
+						
 					end
 				end
 				//if our selected entity is deleted, then update the attached item list
@@ -2086,13 +2088,25 @@ if CLIENT then
 			self.aus_prefix = i.visuals.styles[data.style].aus_prefix
 		end 
 		img_override = img_override or i.image_inventory
-		if !self.mat or self.mat:GetName() != img_override then
+		//remove self from icon render targets; if needed, we'll re-add ourself later
+		local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
+		if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
+		if data.wp.enabled or data.models.attached_festive then
+			//Queue our paint func to render a custom render target icon
 			self.mat = nil
-			self.ImageToQueue = img_override
-		end
-		if i.image_inventory_overlay then
-			//there aren't many items with overlays, so just load these immediately, no need to queue then
-			self.mat_overlay = Material(i.image_inventory_overlay)
+			self.ImageToQueue = nil
+			self.IconRenderToQueue = true
+		else
+			//Queue our paint func to load a standard icon texture from the game files
+			self.IconRenderToQueue = nil
+			if !self.mat or self.mat:GetName() != img_override then
+				self.mat = nil
+				self.ImageToQueue = img_override
+			end
+			if i.image_inventory_overlay then
+				//there aren't many items with overlays, so just load these immediately, no need to queue then
+				self.mat_overlay = Material(i.image_inventory_overlay)
+			end
 		end
 		local quality_override
 		if data.pe_unusual > 0 then
@@ -2872,6 +2886,333 @@ if CLIENT then
 		
 	end
 
+	function PANEL:CreateItemModelsAndParticles(bailfunc)
+
+		local models = {}
+		local particles = {}
+
+		local i = TF2Items.items[self.data.id]
+		local vis = GetItemModelVisuals(self.data)
+		local submodels = {}
+		if self.data.models.item then
+			table.insert(submodels, {role = "item"})
+			for k, v in ipairs (vis.models.attached or {}) do
+				table.insert(submodels, {role = "attached", attach_num = k})
+			end
+			if self.data.models.attached_festive then
+				for k, v in ipairs (vis.models.attached_festive) do
+					table.insert(submodels, {role = "attached_festive", attach_num = k})
+				end
+			end
+			if self.data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
+		end
+		if self.data.models.wearable then table.insert(submodels, {role = "wearable"}) end
+		if self.data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
+		if self.data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
+		if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
+		local offset_height_base, offset_height, docamera
+		for k, v in ipairs (submodels) do
+			local ent
+			if v.role == "no_model_fallback" then
+				//if this item has no model to show (it only changes bodygroups like gunslinger or service medal),
+				//then instead show a preview of the playermodel with bodygroups changed.
+				local model, skin = "", 0
+				if IsValid(TF2ItemBrowser:GetEntity()) then
+					model = TF2ItemBrowser:GetEntity():GetModel()
+				else
+					for k, v in ipairs (classes) do //convert long class name to short class name
+						if self.data.class == v.longname then
+							model = "models/player/" .. v.shortname .. ".mdl"
+							break
+						end
+					end
+				end
+				if self.data.team then skin = 1 end
+				ent = ClientsideModel(model, RENDERGROUP_OTHER)
+				if !IsValid(ent) then continue end
+
+				ent:SetSkin(skin)
+				for k, v in pairs (vis.ply_bg) do
+					if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+					ent:SetBodygroup(k, v)
+				end
+			else
+				local model = vis.models[v.role]
+				if v.attach_num then
+					model = model[v.attach_num]
+				end
+				ent = ClientsideModel(model, RENDERGROUP_OTHER)
+				if !IsValid(ent) then continue end
+
+				ent:SetSkin(vis.skin)
+				if v.role == "item" then
+					for k, v in pairs (vis.item_bg) do
+						ent:SetBodygroup(ent:FindBodygroupByName(k), v)
+					end
+					ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
+					local mins, maxs = ent:GetRenderBounds()
+					mins, maxs = ent:GetRotatedAABB(mins, maxs)
+					offset_height_base = maxs.z
+				elseif v.attach_num then
+					ent:SetParent(models[1])
+					ent:AddEffects(EF_BONEMERGE)
+				elseif v.role == "stat_clock" then
+					ent:SetParent(models[1])
+					ent:AddEffects(EF_BONEMERGE)
+					local scl = vis.stat_clock_scale or 1
+					ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
+					//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
+					//detail, and it would need both its own gui and either a bunch of new materials or a whole 
+					//custom matproxy, is this worth the trouble?
+				else
+					ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
+					//If we're rendering both the base item and wearables, then reposition wearables above the item
+					if offset_height_base then
+						local mins, maxs = ent:GetRenderBounds()
+						mins, maxs = ent:GetRotatedAABB(mins, maxs)
+						offset_height = offset_height_base - mins.z
+					end
+					if offset_height then
+						ent:SetPos(ent:GetAngles():Up() * offset_height)
+					end
+				end
+
+				if i.visuals and i.visuals.styles and i.visuals.styles[self.data.style] then
+					local anim = i.visuals.styles[self.data.style]._anim
+					if anim and anim[v.role] then
+						//we have to give the engine a nudge here to make it load the sequence info for the model, 
+						//otherwise LookupSequence won't return anything useful until we spawn the model in the world
+						ent:GetSequenceInfo(0)
+
+						ent:ResetSequence(ent:LookupSequence(anim[v.role]))
+						local info = ent:GetSequenceInfo(ent:LookupSequence(anim[v.role]))
+						ent:SetRenderBounds(info.bbmin, info.bbmax)
+					end
+				end
+
+				//material overrides
+				local mat
+				if self.data.fx == EFFECT_UBER then
+					if !self.data.team then
+						mat = "models/effects/invulnfx_red"
+					else
+						mat = "models/effects/invulnfx_blue"
+					end
+				elseif self.data.fx == EFFECT_GOLD then
+					mat = "models/player/shared/gold_player"
+				elseif self.data.fx == EFFECT_ICE then
+					mat = "models/player/shared/ice_player"
+				elseif i.visuals and i.visuals.material_override then
+					mat = i.visuals.material_override
+				end
+				if mat then ent:SetMaterial(mat) end
+
+				//paint matproxy
+				if self.data.paint.enabled then
+					local col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
+					local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
+					if override == 0 then override = nil end
+					ent.ProxyentPaintColor = {
+						IsValid = function() return true end, 
+						Color = Vector(col[1]/255, col[2]/255, col[3]/255),
+						Override = override //used by DrawItemModels to update the override color
+					}
+				end
+
+				//critglow and EFFECT_JARATE matproxy
+				local col
+				if self.data.crit.enabled and (v.role == "item" or v.role == "attached" 
+				or v.role == "attached_festive" or v.role == "stat_clock") then
+					col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+				end
+				if self.data.fx == EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * jarate[self.data.team]
+				end
+				if col then
+					ent.ProxyentCritGlow = {
+						IsValid = function() return true end, 
+						Color = col
+					}
+				end
+
+				//crit spark particles
+				if self.data.crit.enabled and v.role == "item" then
+					if self.data.crit.sparks_rb then
+						local pname = "critgun_weaponmodel_red"
+						if self.data.team then pname = "critgun_weaponmodel_blu" end
+						local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
+						if IsValid(part) then
+							part:SetShouldDraw(false)
+							table.insert(particles, part)
+						end
+					end
+					if self.data.crit.sparks_c then
+						local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
+						if IsValid(part) then
+							local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+							col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+							part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
+							part:SetShouldDraw(false)
+							table.insert(particles, part)
+						end
+					end
+				end
+
+				//war paint
+				if self.data.wp.enabled and v.role == "item"  then
+					local instance
+					local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
+					local _team = 0
+					if self.data.team then _team = 1 end
+
+					//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+					if weaponType then
+							-- Try to build a full multi-layer instance if we have a warpaint ID
+						instance = WP.WarpaintData.BuildInstance(
+							self.data.wp.id,
+							weaponType,
+							self.data.wp.seed,
+							self.data.wp.wear,
+							_team
+						)
+						if instance then
+							-- Set the matIndex since BuildInstance doesn't set it
+							instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
+						end
+					end
+					//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+					--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+					if !instance then
+						MsgN(i.name, " using warpaint fallback, not good")
+						local pattern
+						for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+							if v.id == self.data.wp.id then
+								pattern = v.primaryTexture
+								break
+							end
+						end
+						instance = WP.WarpaintInstance.New({
+							patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+							seed = self.data.wp.seed,
+							wearLevel = self.data.wp.wear,
+							wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
+							team = _team,
+							weaponType = weaponType,
+							matIndex = WP.Weapons.GetMatIndex(weaponType)
+						})
+					end]]
+					if instance then
+						//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
+						local success = WP.Materials.Apply(ent, instance)
+						if success then ent:SetSkin(0) end
+					end
+				end
+			end
+			//add particle effects to both base items and fallbacks
+			if v.role == "item" or v.role == "no_model_fallback" then
+				local function AddEffect(tab)
+					local name = tab.system
+					if name:EndsWith("_teamcolor_red") and self.data.team then
+						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+					end
+					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+					if i.visuals and i.visuals.styles then
+						if (name == "drg_pipe_smoke" and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0)
+						or (name == "coin_spin" and i.visuals.styles[self.data.style].use_coin_particle_effect == 0) then
+							return
+						end
+					end
+
+					local part
+					if self.data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
+						ent:InvalidateBoneCache()
+						local manip = Vector(0, self.data.pe_unusual_offset or 0, 0)
+						local bone = ent:LookupBone("bip_head")
+						if bone then
+							manip = -manip
+						else
+							bone = ent:LookupBone("prp_helmet")
+							if !bone then bone = ent:LookupBone("prp_hat") end
+							if !bone then bone = 0 end
+						end
+
+						part = CreateParticleSystem(ent, name, PATTACH_CUSTOMORIGIN, 0)
+						if IsValid(part) then
+							part:SetControlPointEntity(0, ent)
+							
+							ent:DrawModel() //give model a nudge to make GetBoneMatrix return something
+							bone = ent:GetBoneMatrix(bone)
+							bone:Translate(manip)
+							part:SetControlPoint(0, bone:GetTranslation())
+							part:SetControlPointOrientation(0, bone:GetAngles())
+						end
+					else
+						//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
+						local attachment = -1
+						if tab.attachment then attachment = ent:LookupAttachment(tab.attachment) end
+						if attachment > 0 then
+							part = CreateParticleSystem(ent, name, PATTACH_POINT_FOLLOW, attachment)
+						else
+							if tab.attach_to_rootbone then
+								part = CreateParticleSystem(ent, name, PATTACH_WORLDORIGIN + 1) //PATTACH_ROOTBONE_FOLLOW
+							else
+								part = CreateParticleSystem(ent, name, PATTACH_ABSORIGIN_FOLLOW)
+							end
+						end
+					end
+					if IsValid(part) then
+						part:SetShouldDraw(false)
+						table.insert(particles, part)
+						for i = 1, 5 do
+							if tab["control_point_" .. i] then
+								local attachment = ent:LookupAttachment(tab["control_point_" .. i])
+								if attachment > 0 then
+									part:AddControlPoint(i, ent, PATTACH_POINT_FOLLOW, tab["control_point_" .. i]) //unlike CreateParticleSystem, this takes an attachment name, not id number
+								end
+							end
+						end
+
+						//try to add to pe+ crashcheck list; if there's multiple pcfs to associate with this effect,
+						//then which one to blame is basically just a guess, but it's better than nothing, since all
+						//these fx should only have 1 pcf unless there's a conflict with another game/addon going on
+						local pcfs = PEPlus_FindPCFsFromEffect(name)
+						if pcfs and pcfs[1] then
+							local pcf = PEPlus_GetGamePCF(pcfs[1].pcf, pcfs[1].path)
+							PEPlus_AddParticles_CrashCheck[pcf] = PEPlus_AddParticles_CrashCheck[pcf] or {}
+							PEPlus_AddParticles_CrashCheck[pcf][part] = true
+						end
+					end
+				end
+				if self.data.pe_def then
+					for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
+						//if spawning an effect right now could potentially cause a crash, bail out and try again later
+						if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+							if bailfunc then bailfunc() end
+							return
+						end
+						AddEffect(v)
+					end
+				end
+				if self.data.pe_unusual > 0 then
+					local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
+					if tab then
+						//if spawning an effect right now could potentially cause a crash, bail out and try again later
+						if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+							if bailfunc then bailfunc() end
+							return
+						end
+						AddEffect(tab)
+					end
+				end
+			end
+			ent:SetNoDraw(true)
+			ent:SetIK(false)
+			table.insert(models, ent)
+		end
+		return models, particles
+
+	end
+
 	function PANEL:CreateSpawnPanel()
 
 		local i = TF2Items.items[self.data.id]
@@ -3055,352 +3396,37 @@ if CLIENT then
 			end
 			local vis = GetItemModelVisuals(self.data)
 
-			mdl.previous_models = {}
 			for k, v in ipairs (mdl.models) do
-				mdl.previous_models[k] = v:GetModel()
 				v:Remove()
 			end
-			mdl.models = {}
 
 			for k, v in ipairs (mdl.particles) do
 				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
 			end
-			mdl.particles = {}
 
-			local submodels = {}
-			if self.data.models.item then
-				table.insert(submodels, {role = "item"})
-				for k, v in ipairs (vis.models.attached or {}) do
-					table.insert(submodels, {role = "attached", attach_num = k})
-				end
-				if self.data.models.attached_festive then
-					for k, v in ipairs (vis.models.attached_festive) do
-						table.insert(submodels, {role = "attached_festive", attach_num = k})
-					end
-				end
-				if self.data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
-			end
-			if self.data.models.wearable then table.insert(submodels, {role = "wearable"}) end
-			if self.data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
-			if self.data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
-			if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
-			local offset_height_base, offset_height, docamera
-			for k, v in ipairs (submodels) do
-				local ent
-				if v.role == "no_model_fallback" then
-					//if this item has no model to show (it only changes bodygroups like gunslinger or service medal),
-					//then instead show a preview of the playermodel with bodygroups changed.
-					local model, skin = "", 0
-					if IsValid(TF2ItemBrowser:GetEntity()) then
-						model = TF2ItemBrowser:GetEntity():GetModel()
-					else
-						for k, v in ipairs (classes) do //convert long class name to short class name
-							if self.data.class == v.longname then
-								model = "models/player/" .. v.shortname .. ".mdl"
-								break
-							end
-						end
-					end
-					if self.data.team then skin = 1 end
-					ent = ClientsideModel(model, RENDERGROUP_OTHER)
-					if !IsValid(ent) then return end
+			local models, particles = self:CreateItemModelsAndParticles(function()
+				timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
+			end)
+			mdl.models = models or {}
+			mdl.particles = particles or {}
+			mdl.Entity = mdl.models[1]
 
-					ent:SetSkin(skin)
-					for k, v in pairs (vis.ply_bg) do
-						if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-						ent:SetBodygroup(k, v)
-					end
-				else
-					local model = vis.models[v.role]
-					if v.attach_num then
-						model = model[v.attach_num]
-					end
-					ent = ClientsideModel(model, RENDERGROUP_OTHER)
-					if !IsValid(ent) then return end
-
-					ent:SetSkin(vis.skin)
-					if v.role == "item" then
-						for k, v in pairs (vis.item_bg) do
-							ent:SetBodygroup(ent:FindBodygroupByName(k), v)
-						end
-						ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
-						local mins, maxs = ent:GetRenderBounds()
-						mins, maxs = ent:GetRotatedAABB(mins, maxs)
-						offset_height_base = maxs.z
-					elseif v.attach_num then
-						ent:SetParent(mdl.Entity)
-						ent:AddEffects(EF_BONEMERGE)
-					elseif v.role == "stat_clock" then
-						ent:SetParent(mdl.Entity)
-						ent:AddEffects(EF_BONEMERGE)
-						local scl = vis.stat_clock_scale or 1
-						ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
-						//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
-						//detail, and it would need both its own gui and either a bunch of new materials or a whole 
-						//custom matproxy, is this worth the trouble?
-					else
-						ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
-						//If we're rendering both the base item and wearables, then reposition wearables above the item
-						if offset_height_base then
-							local mins, maxs = ent:GetRenderBounds()
-							mins, maxs = ent:GetRotatedAABB(mins, maxs)
-							offset_height = offset_height_base - mins.z
-						end
-						if offset_height then
-							ent:SetPos(ent:GetAngles():Up() * offset_height)
-						end
-					end
-
-					if i.visuals and i.visuals.styles and i.visuals.styles[self.data.style] then
-						local anim = i.visuals.styles[self.data.style]._anim
-						if anim and anim[v.role] then
-							//we have to give the engine a nudge here to make it load the sequence info for the model, 
-							//otherwise LookupSequence won't return anything useful until we spawn the model in the world
-							ent:GetSequenceInfo(0)
-
-							ent:ResetSequence(ent:LookupSequence(anim[v.role]))
-							docamera = true
-							local info = ent:GetSequenceInfo(ent:LookupSequence(anim[v.role]))
-							ent:SetRenderBounds(info.bbmin, info.bbmax)
-						end
-					end
-
-					//material overrides
-					local mat
-					if self.data.fx == EFFECT_UBER then
-						if !self.data.team then
-							mat = "models/effects/invulnfx_red"
-						else
-							mat = "models/effects/invulnfx_blue"
-						end
-					elseif self.data.fx == EFFECT_GOLD then
-						mat = "models/player/shared/gold_player"
-					elseif self.data.fx == EFFECT_ICE then
-						mat = "models/player/shared/ice_player"
-					elseif i.visuals and i.visuals.material_override then
-						mat = i.visuals.material_override
-					end
-					if mat then ent:SetMaterial(mat) end
-
-					//paint matproxy
-					if self.data.paint.enabled then
-						local col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
-						local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
-						if override == 0 then override = nil end
-						ent.ProxyentPaintColor = {
-							IsValid = function() return true end, 
-							Color = Vector(col[1]/255, col[2]/255, col[3]/255),
-							Override = override //used by DrawItemModels to update the override color
-						}
-					end
-
-					//critglow and EFFECT_JARATE matproxy
-					local col
-					if self.data.crit.enabled and (v.role == "item" or v.role == "attached" 
-					or v.role == "attached_festive" or v.role == "stat_clock") then
-						col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-					end
-					if self.data.fx == EFFECT_JARATE then
-						col = (col or Vector(1,1,1)) * jarate[self.data.team]
-					end
-					if col then
-						ent.ProxyentCritGlow = {
-							IsValid = function() return true end, 
-							Color = col
-						}
-					end
-
-					//crit spark particles
-					if self.data.crit.enabled and v.role == "item" then
-						if self.data.crit.sparks_rb then
-							local pname = "critgun_weaponmodel_red"
-							if self.data.team then pname = "critgun_weaponmodel_blu" end
-							local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
-							if IsValid(part) then
-								part:SetShouldDraw(false)
-								table.insert(mdl.particles, part)
-							end
-						end
-						if self.data.crit.sparks_c then
-							local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
-							if IsValid(part) then
-								local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-								col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
-								part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
-								part:SetShouldDraw(false)
-								table.insert(mdl.particles, part)
-							end
-						end
-					end
-
-					//war paint
-					if self.data.wp.enabled and v.role == "item"  then
-						local instance
-						local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
-						local _team = 0
-						if self.data.team then _team = 1 end
-
-						//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
-						if weaponType then
-							 -- Try to build a full multi-layer instance if we have a warpaint ID
-							instance = WP.WarpaintData.BuildInstance(
-								self.data.wp.id,
-								weaponType,
-								self.data.wp.seed,
-								self.data.wp.wear,
-								_team
-							)
-							if instance then
-								-- Set the matIndex since BuildInstance doesn't set it
-								instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
-							end
-						end
-						//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
-						--[[-- Fallback to simple instance if multi-layer failed or wasn't available
-						if !instance then
-							MsgN(i.name, " using warpaint fallback, not good")
-							local pattern
-							for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
-								if v.id == self.data.wp.id then
-									pattern = v.primaryTexture
-									break
-								end
-							end
-							instance = WP.WarpaintInstance.New({
-								patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
-								seed = self.data.wp.seed,
-								wearLevel = self.data.wp.wear,
-								wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
-								team = _team,
-								weaponType = weaponType,
-								matIndex = WP.Weapons.GetMatIndex(weaponType)
-							})
-						end]]
-						if instance then
-							//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
-							local success = WP.Materials.Apply(ent, instance)
-							if success then ent:SetSkin(0) end
-						end
-					end
-				end
-				//add particle effects to both base items and fallbacks
-				if v.role == "item" or v.role == "no_model_fallback" then
-					local function AddEffect(tab)
-						local name = tab.system
-						if name:EndsWith("_teamcolor_red") and self.data.team then
-							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
-						end
-						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-						if i.visuals and i.visuals.styles then
-							if (name == "drg_pipe_smoke" and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0)
-							or (name == "coin_spin" and i.visuals.styles[self.data.style].use_coin_particle_effect == 0) then
-								return
-							end
-						end
-
-						local part
-						if self.data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
-							ent:InvalidateBoneCache()
-							local manip = Vector(0, self.data.pe_unusual_offset or 0, 0)
-							local bone = ent:LookupBone("bip_head")
-							if bone then
-								manip = -manip
-							else
-								bone = ent:LookupBone("prp_helmet")
-								if !bone then bone = ent:LookupBone("prp_hat") end
-								if !bone then bone = 0 end
-							end
-
-							part = CreateParticleSystem(ent, name, PATTACH_CUSTOMORIGIN, 0)
-							if IsValid(part) then
-								part:SetControlPointEntity(0, ent)
-								
-								ent:DrawModel() //give model a nudge to make GetBoneMatrix return something
-								bone = ent:GetBoneMatrix(bone)
-								bone:Translate(manip)
-								part:SetControlPoint(0, bone:GetTranslation())
-								part:SetControlPointOrientation(0, bone:GetAngles())
-							end
-						else
-							//try to use an attachment point by default, or fall back to root bone/origin otherwise (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_entity.cpp#L1749)
-							local attachment = -1
-							if tab.attachment then attachment = ent:LookupAttachment(tab.attachment) end
-							if attachment > 0 then
-								part = CreateParticleSystem(ent, name, PATTACH_POINT_FOLLOW, attachment)
-							else
-								if tab.attach_to_rootbone then
-									part = CreateParticleSystem(ent, name, PATTACH_WORLDORIGIN + 1) //PATTACH_ROOTBONE_FOLLOW
-								else
-									part = CreateParticleSystem(ent, name, PATTACH_ABSORIGIN_FOLLOW)
-								end
-							end
-						end
-						if IsValid(part) then
-							part:SetShouldDraw(false)
-							table.insert(mdl.particles, part)
-							for i = 1, 5 do
-								if tab["control_point_" .. i] then
-									local attachment = ent:LookupAttachment(tab["control_point_" .. i])
-									if attachment > 0 then
-										part:AddControlPoint(i, ent, PATTACH_POINT_FOLLOW, tab["control_point_" .. i]) //unlike CreateParticleSystem, this takes an attachment name, not id number
-									end
-								end
-							end
-
-							//try to add to pe+ crashcheck list; if there's multiple pcfs to associate with this effect,
-							//then which one to blame is basically just a guess, but it's better than nothing, since all
-							//these fx should only have 1 pcf unless there's a conflict with another game/addon going on
-							local pcfs = PEPlus_FindPCFsFromEffect(name)
-							if pcfs and pcfs[1] then
-								local pcf = PEPlus_GetGamePCF(pcfs[1].pcf, pcfs[1].path)
-								PEPlus_AddParticles_CrashCheck[pcf] = PEPlus_AddParticles_CrashCheck[pcf] or {}
-								PEPlus_AddParticles_CrashCheck[pcf][part] = true
-							end
-						end
-					end
-					if self.data.pe_def then
-						for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
-							//if spawning an effect right now could potentially cause a crash, bail out and try again later
-							if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
-								timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end)
-								return
-							end
-							AddEffect(v)
-						end
-					end
-					if self.data.pe_unusual > 0 then
-						local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
-						if tab then
-							//if spawning an effect right now could potentially cause a crash, bail out and try again later
-							if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
-								timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end)
-								return
-							end
-							AddEffect(tab)
-						end
-					end
-				end
-				ent:SetNoDraw(true)
-				ent:SetIK(false)
-				if k == 1 then mdl.Entity = ent end
-				table.insert(mdl.models, ent)
-			end
-
-			//don't recenter the camera if the models or animation didn't change
-			if !docamera then docamera = #mdl.models != #mdl.previous_models end
-			if !docamera then
-				for k, v in ipairs (mdl.models) do
-					if v:GetModel() != mdl.previous_models[k] then
+			//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
+			local cam = self:DoItemModelCamera(mdl.models)
+			local docamera = mdl.old_cam == nil
+			if mdl.old_cam then
+				for k, v in pairs (cam) do
+					if v != mdl.old_cam[k] then
 						docamera = true
 						break
 					end
 				end
 			end
 			if docamera then
-				local cam = self:DoItemModelCamera(mdl.models)
-				mdl:SetCamPos(cam.pos)
+				mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
 				mdl:SetFOV(cam.fov)
-				mdl:SetLookAng(cam.ang)
+				mdl:SetLookAng(Angle(cam.ang))
+				mdl.old_cam = cam
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -4667,7 +4693,7 @@ if CLIENT then
 									end
 									//if icon no longer exists, then remove from the queue
 									if !IsValid(icon) then
-										TF2ItemBrowser.IconRenderEntsToRemove[ent] = true
+										ent:Remove()
 										return true
 									end
 									
@@ -4725,7 +4751,14 @@ if CLIENT then
 
 									//Don't render the icon until the paintkit material is no longer a placeholder
 									local wp_state = WP.Materials.GetForEntity(ent)
-									if wp_state == nil or string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+									if wp_state == nil then
+										//If WP.Materials.GetForEntity got stuck and can't retrieve the 
+										//material (usually caused by removing an ent with a WP material), 
+										//then bail out and start over
+										ent:Remove()
+										icon.RebuildIconTexture()
+										return true
+									elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
 										return false
 									end
 
@@ -4742,7 +4775,7 @@ if CLIENT then
 									if file.Write(iconpath, img) then
 										icon:SetMaterial("data/" .. iconpath)
 									end
-									TF2ItemBrowser.IconRenderEntsToRemove[ent] = true //removing the entity causes wp_state to return nil on subsequent queued funcs (why?), so instead wait for the queue to be empty before removing these.
+									ent:Remove()
 									return true
 								end)
 								icon:SetMaterial(spinner:GetName())
@@ -4909,6 +4942,7 @@ if CLIENT then
 	local col_GrayedOut = Color(46,43,42,255)
 	//more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
 
+	TF2ItemBrowser_IconRTs = {}
 	function PANEL:Paint(w, h)
 
 		//This is a newly created icon being drawn for the first time, populate its data table
@@ -4973,6 +5007,95 @@ if CLIENT then
 				table.insert(TF2ItemBrowser.ImageQueue, {pnl = self, img = self.ImageToQueue})
 			end
 			self.ImageToQueue = nil
+		elseif self.IconRenderToQueue then
+			self.IconRenderToQueue = nil
+			local models, particles = self:CreateItemModelsAndParticles(function()
+				self.IconRenderToQueue = true //bail function
+			end)
+			if models then
+				local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
+				if !rtkey then
+					for i = 1, 128 do
+						//get first nil key we can find; as icons are removed from this list, they can leave gaps for us to take
+						if TF2ItemBrowser_IconRTs[i] == nil then
+							TF2ItemBrowser_IconRTs[i] = self
+							rtkey = i
+							break
+						end
+					end
+				end
+				if rtkey == nil then return end
+				local rtname = "TF2ItemBrowser_IconRT_" .. tostring(rtkey)
+				local rt = GetRenderTarget(rtname, 256, 256) //256 is larger than the 128 used by existing tf2 backpack icons, but generating textures with 128 creates noticeable anti-aliasing artifacts
+				--[[local rt = GetRenderTargetEx(rtname, //same texture parameters as all tf2 backpack icon vtfs; commented out because DXT5 keeps generating solid black textures, and using BGRA8888 looks the same as default
+					128, 128,
+					RT_SIZE_NO_CHANGE,
+					MATERIAL_RT_DEPTH_SEPARATE, //MATERIAL_RT_DEPTH_NONE,
+					bit.bor(
+						256, //TEXTUREFLAGS_NOMIP
+						512, //TEXTUREFLAGS_NOLOD
+						8192 //TEXTUREFLAGS_EIGHTBITALPHA	
+					),
+					0,
+					IMAGE_FORMAT_BGRA8888//15 //IMAGE_FORMAT_DXT5 	
+				)]]
+				if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return end
+
+				local function CleanUpModelsAndParticles()
+					for k, v in ipairs (models) do
+						v:Remove()
+					end
+					for k, v in ipairs (particles) do
+						if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
+					end
+				end
+
+				table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
+					//if ent is invalid, then remove from the queue
+					if !models or !IsValid(models[1]) then
+						return true
+					end
+					//if icon no longer exists, then remove from the queue
+					if !IsValid(self) then
+						CleanUpModelsAndParticles()
+						return true
+					end
+
+					//Don't render the icon until the paintkit material is no longer a placeholder
+					if self.data.wp.enabled then
+						local wp_state = WP.Materials.GetForEntity(models[1])
+						if wp_state == nil then
+							//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
+							//caused by removing an ent with a WP material), then bail out and start over
+							CleanUpModelsAndParticles()
+							self.IconRenderToQueue = true
+							return true
+						elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+							return false
+						end
+					end
+
+					//Render the icon texture
+					render.PushRenderTarget(rt, 0, 0, 256, 256)
+					local cam = self:DoItemModelCamera(models)
+					render.SetWriteDepthToDestAlpha(false)
+					render.Clear(0, 0, 0, 0, true, true)
+					self:DrawItemModels(0, 0, 256, 256, models, particles, cam.ang, cam.pos, cam.fov)
+					render.PopRenderTarget()
+
+					local mat = CreateMaterial(rtname, "UnlitGeneric", {
+						["$basetexture"] = "color/white",
+						["$translucent"] = "1",
+						["$vertexcolor"] = "1"
+					})
+					mat:SetTexture("$basetexture", rt)
+					//self:SetMaterial("!" .. rtname)
+					self.mat = mat
+
+					CleanUpModelsAndParticles()
+					return true
+				end)
+			end
 		else
 			//show loading icon
 			surface.SetMaterial(spinner)
@@ -5046,6 +5169,10 @@ if CLIENT then
 			TF2ItemBrowser.atticons:InvalidateLayout()
 			TF2ItemBrowser:UpdateItemConflicts()
 		end
+
+		//remove self from icon render targets
+		local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
+		if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
 
 	end
 
