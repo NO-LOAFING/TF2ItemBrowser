@@ -976,6 +976,7 @@ if CLIENT then
 			gap_h = math.Round(6*(64/121)),
 			gap_w = math.Round(9*(64/121)),
 			cornericon = math.Round(36*(64/121)),
+			rticon_minusw = math.Round(15*(64/121)),
 		},
 		{
 			//name = "Medium", //tf2 backpack icon size; these are already huge when placed in the relatively small browser, no need for larger sizes
@@ -985,6 +986,7 @@ if CLIENT then
 			gap_h = 6,
 			gap_w = 9,
 			cornericon = 36,
+			rticon_minusw = 15,
 		},
 	}
 	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser", 1, #item_icon_sizes):GetInt()
@@ -1629,19 +1631,11 @@ if CLIENT then
 							end
 						end
 					end
-					//MsgN("#self.ImageQueue = ", #self.ImageQueue)
-					if self.IconRender_Wait then
-						self.IconRender_Wait = nil
-					else
-						if self.IconRenderQueue[1] then
-							if self.IconRenderQueue[1]() then
-								table.remove(self.IconRenderQueue, 1)
-							end
-							//wait a frame between each call to prevent issues with WP.Materials.GetForEntity getting stuck forever
-							self.IconRender_Wait = true 
+					if self.IconRenderQueue[1] then
+						if self.IconRenderQueue[1]() then
+							table.remove(self.IconRenderQueue, 1)
 						end
-						
-					end
+					end	
 				end
 				//if our selected entity is deleted, then update the attached item list
 				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
@@ -2088,16 +2082,16 @@ if CLIENT then
 			self.aus_prefix = i.visuals.styles[data.style].aus_prefix
 		end 
 		img_override = img_override or i.image_inventory
-		//remove self from icon render targets; if needed, we'll re-add ourself later
+		//remove self from icon render targets; we'll re-add ourself later if needed
 		local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 		if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
 		if data.wp.enabled or data.models.attached_festive then
-			//Queue our paint func to render a custom render target icon
+			//Tell our paint func to queue rendering a custom rendertarget icon
 			self.mat = nil
 			self.ImageToQueue = nil
 			self.IconRenderToQueue = true
 		else
-			//Queue our paint func to load a standard icon texture from the game files
+			//Tell our paint func to queue loading a standard icon texture from the game files
 			self.IconRenderToQueue = nil
 			if !self.mat or self.mat:GetName() != img_override then
 				self.mat = nil
@@ -3067,7 +3061,7 @@ if CLIENT then
 
 					//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
 					if weaponType then
-							-- Try to build a full multi-layer instance if we have a warpaint ID
+						-- Try to build a full multi-layer instance if we have a warpaint ID
 						instance = WP.WarpaintData.BuildInstance(
 							self.data.wp.id,
 							weaponType,
@@ -3104,7 +3098,10 @@ if CLIENT then
 					if instance then
 						//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
 						local success = WP.Materials.Apply(ent, instance)
-						if success then ent:SetSkin(0) end
+						if success then
+							ent:SetSkin(0)
+						end
+						ent.instance = instance
 					end
 				end
 			end
@@ -4743,6 +4740,7 @@ if CLIENT then
 										if instance then
 											//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
 											WP.Materials.Apply(ent, instance)
+											ent.instance = instance
 										else
 											//if we failed to instantiate the material, bail out
 											return true
@@ -4752,12 +4750,11 @@ if CLIENT then
 									//Don't render the icon until the paintkit material is no longer a placeholder
 									local wp_state = WP.Materials.GetForEntity(ent)
 									if wp_state == nil then
-										//If WP.Materials.GetForEntity got stuck and can't retrieve the 
-										//material (usually caused by removing an ent with a WP material), 
-										//then bail out and start over
-										ent:Remove()
-										icon.RebuildIconTexture()
-										return true
+										//If WP.Materials.GetForEntity got stuck and can't retrieve 
+										//the material (usually caused by removing an ent with a WP 
+										//material), then reinstantiate it and try again
+										WP.Materials.Apply(ent, ent.instance)
+										return false
 									elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
 										return false
 									end
@@ -4991,16 +4988,27 @@ if CLIENT then
 				surface.SetDrawColor(255,255,255,255)
 			end
 			surface.SetMaterial(self.mat)
+			local x, y, w2, h2 = 0, 0, w, h
+			//Draw rendertarget icons at a slightly smaller size to match their appearance in TF2, otherwise they'll butt right up against the edges of the panel
+			if self.mat_isrticon then
+				local minusw = item_icon_sizes[icon_size].rticon_minusw
+				local minush = h*(minusw/w)
+				x = x + (minusw/2)
+				y = y + (minush/2)
+				w2 = w - minusw
+				h2 = h - minush
+			end
 			//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
-			local diff = (1-(h/w))/2
-			surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+			local diff = (1-(h2/w2))/2
+			surface.DrawTexturedRectUV(x,y,w2,h2,0,0+diff,1,1-diff)
 			if self.mat_overlay then
 				local col = self.data.paint.col[false]
 				surface.SetDrawColor(col.x, col.y, col.z, 255)
 				surface.SetMaterial(self.mat_overlay)
-				surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+				surface.DrawTexturedRectUV(x,y,w2,h2,0,0+diff,1,1-diff)
 			end
 		elseif self.ImageToQueue then
+			self.mat_isrticon = nil
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
 			else
@@ -5009,9 +5017,12 @@ if CLIENT then
 			self.ImageToQueue = nil
 		elseif self.IconRenderToQueue then
 			self.IconRenderToQueue = nil
+			local oldteam = self.data.team
+			self.data.team = false //spawnicons should always use red team; in tf2 this is a little inconsistent, and uses team colors for warpaints but always red for festivizer/statclock models; we can't really do this without adding special handling to recreate this bug, so instead try to match all prerendered spawnicons
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				self.IconRenderToQueue = true //bail function
 			end)
+			self.data.team = oldteam
 			if models then
 				local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 				if !rtkey then
@@ -5026,7 +5037,7 @@ if CLIENT then
 				end
 				if rtkey == nil then return end
 				local rtname = "TF2ItemBrowser_IconRT_" .. tostring(rtkey)
-				local rt = GetRenderTarget(rtname, 256, 256) //256 is larger than the 128 used by existing tf2 backpack icons, but generating textures with 128 creates noticeable anti-aliasing artifacts
+				local rt = GetRenderTarget(rtname, 128, 128)
 				--[[local rt = GetRenderTargetEx(rtname, //same texture parameters as all tf2 backpack icon vtfs; commented out because DXT5 keeps generating solid black textures, and using BGRA8888 looks the same as default
 					128, 128,
 					RT_SIZE_NO_CHANGE,
@@ -5066,21 +5077,20 @@ if CLIENT then
 						local wp_state = WP.Materials.GetForEntity(models[1])
 						if wp_state == nil then
 							//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
-							//caused by removing an ent with a WP material), then bail out and start over
-							CleanUpModelsAndParticles()
-							self.IconRenderToQueue = true
-							return true
+							//caused by removing an ent with a WP material), then reinstantiate it and try again
+							WP.Materials.Apply(models[1], models[1].instance)
+							return false
 						elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
 							return false
 						end
 					end
 
 					//Render the icon texture
-					render.PushRenderTarget(rt, 0, 0, 256, 256)
+					render.PushRenderTarget(rt, 0, 0, 128, 128)
 					local cam = self:DoItemModelCamera(models)
 					render.SetWriteDepthToDestAlpha(false)
 					render.Clear(0, 0, 0, 0, true, true)
-					self:DrawItemModels(0, 0, 256, 256, models, particles, cam.ang, cam.pos, cam.fov)
+					self:DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
 					render.PopRenderTarget()
 
 					local mat = CreateMaterial(rtname, "UnlitGeneric", {
@@ -5091,6 +5101,7 @@ if CLIENT then
 					mat:SetTexture("$basetexture", rt)
 					//self:SetMaterial("!" .. rtname)
 					self.mat = mat
+					self.mat_isrticon = true
 
 					CleanUpModelsAndParticles()
 					return true
