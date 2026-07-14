@@ -5012,7 +5012,7 @@ if CLIENT then
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
 			else
-				table.insert(TF2ItemBrowser.ImageQueue, {pnl = self, img = self.ImageToQueue})
+				table.insert(TF2ItemBrowser.ImageQueue, 1, {pnl = self, img = self.ImageToQueue})
 			end
 			self.ImageToQueue = nil
 		elseif self.IconRenderToQueue then
