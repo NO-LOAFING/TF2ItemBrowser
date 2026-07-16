@@ -4106,45 +4106,94 @@ if CLIENT then
 				local cat2 = {}
 				for k, v in pairs (categories) do
 					if #v.items > 0 then 
-						//add "none" option to the start of every category
-						table.insert(v.items, 1, {k = 1, v = drop.Choices[1], name = drop.Choices[1], pcf = ""})
 						cat2[v.order] = {name = k, items = v.items}
 					end
 				end
 				categories = cat2
-				local default_category
-				//By default, select the category containing the currently selected effect
-				for k, v in SortedPairs (categories) do
-					for _, entry in ipairs (v.items) do
-						local data = drop.Data[entry.k]
-						if self.data.pe_unusual == data then
-							default_category = k
-							break
+				local function GetDefaultCategory()
+					local default_category, fallback_default_category
+					//By default, select the category containing the currently selected option
+					for k, v in SortedPairs (categories) do
+						for _, entry in ipairs (v.items) do
+							local data = drop.Data[entry.k]
+							if self.data.pe_unusual == data then
+								default_category = k
+								break
+							end
 						end
+						if default_category then break end
+						if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
 					end
-					if default_category then break end
+					return default_category or fallback_default_category
 				end
 
-				local drop2 = AddSubDropdown(container) //calling this "drop" causes issues with the parent drop
-				drop2:Dock(TOP)
+				local search_holder
 				if table.Count(categories) > 1 then
-					drop2:SetHeight(20)
-				else
-					drop2:SetHeight(0)
-					drop2:SetEnabled(false)
-				end
-				drop2:SetSortItems(false)
-				for k, v in SortedPairs (categories) do
-					drop2:AddChoice(v.name, k, k == default_category)
-				end
-				function drop2.OnSelect(_, index, value, data)
-					icons.SelectCategory(data)
+					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
+					search_holder.Paint = function() end
+					search_holder:SetHeight(20)
+					search_holder:Dock(TOP)
+					local drop2, search
+
+					drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
+					drop2:DockMargin(0,0,8,0)
+					drop2:Dock(LEFT)
+					drop2:SetSortItems(false)
+					local selected = GetDefaultCategory()
+					for k, v in SortedPairs (categories) do
+						drop2:AddChoice(v.name, k, k == selected)
+					end
+					function drop2.OnSelect(_, index, value, data)
+						search:SetText("")
+						icons.SelectCategory(data)
+					end
+
+					search = vgui.Create("DTextEntry", search_holder)
+					search:Dock(FILL)
+					search:SetPlaceholderText("#spawnmenu.filter")
+					search:SetUpdateOnType(true)
+					search.OnValueChange = function(_, p)
+						if #p == 0 then
+							//Search is empty, go back to using the category dropdown
+							//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+							local selected = GetDefaultCategory()
+							for k, v in pairs (drop2.Data) do
+								if v == selected then
+									drop2:ChooseOptionID(k)
+								end
+							end
+						else
+							//Search is populated, stop using categories and show all matching options
+							p = p:lower()
+							local tab = {}
+							for k, v in SortedPairs (categories) do
+								for _, entry in ipairs (v.items) do
+									if entry.v:lower():find(p, 1, true) then
+										table.insert(tab, entry)
+									end
+								end
+							end
+							icons.RebuildIcons(tab)
+							drop2:SetText("")
+						end
+					end
+					function search_holder.PerformLayout(_, w, h)
+						drop2:SetWide((w/2)-4)
+					end
+
+					//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
+					//prevent this by closing the menu in those cases
+					function container:OnMousePressed()
+						drop2:CloseMenu()
+					end
 				end
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
 				local scroll = vgui.Create("DScrollPanel",icons_holder)
-				icons_holder:DockMargin(0,8,0,0)
+				if search_holder then
+					icons_holder:DockMargin(0,8,0,0)
+				end
 				icons_holder:Dock(TOP)
 				scroll:Dock(FILL)
 
@@ -4192,8 +4241,13 @@ if CLIENT then
 				end
 
 				function icons.SelectCategory(cat)
+					icons.RebuildIcons(table.Copy(categories[cat].items))
+				end
+				function icons.RebuildIcons(tab)
 					icons:Clear()
-					for _, entry in ipairs (categories[cat].items) do
+					//add "none" option to the start of every category or search
+					table.insert(tab, 1, {k = 1, v = drop.Choices[1], name = drop.Choices[1], pcf = ""})
+					for _, entry in ipairs (tab) do
 						//reuse PE+ spawnicons for particle previews because they nicely manage the fx already
 						local icon = vgui.Create("ContentIcon_PEPlus", icons)
 						icon:Setup(entry.pcf, entry.name, entry.path)
@@ -4240,7 +4294,7 @@ if CLIENT then
 							end
 						end
 					end
-					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
+					local w, h = size*4, size*(math.ceil(#tab/4))
 					icons:SetSize(w, h)
 					icons:InvalidateLayout()
 					icons_holder:SetSize(w, h)
@@ -4248,9 +4302,10 @@ if CLIENT then
 					scroll:InvalidateLayout()
 
 					//Resize and reposition container whenever the category is changed
-					local hat_control_height = 0
-					if u_hat then hat_control_height = 16 + slider:GetTall() end
-					container:SetTall(drop2:GetTall() + 8 + h + hat_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					local control_height = 0
+					if search_holder then control_height = search_holder:GetTall() + 8 end
+					if u_hat then control_height = control_height + 16 + slider:GetTall() end
+					container:SetTall(control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
 						icons_holder:SetTall(icons_holder:GetTall() - diff)
@@ -4267,13 +4322,7 @@ if CLIENT then
 					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 					container:SetPos(x, y)
 				end
-				icons.SelectCategory(default_category)
-
-				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
-				//prevent this by closing the menu in those cases
-				function container:OnMousePressed()
-					drop2:CloseMenu()
-				end
+				icons.SelectCategory(GetDefaultCategory())
 			end
 		end
 
@@ -4378,8 +4427,6 @@ if CLIENT then
 				local cat2 = {}
 				for k, v in pairs (categories) do
 					if #v.items > 0 then 
-						//add "none" option to the start of every category
-						table.insert(v.items, 1, {k = 1, v = drop.Choices[1]})
 						local name = k
 						if TF2Items.item_collections[k] then
 							name = GetTFLanguageString(TF2Items.item_collections[k].name, true)
@@ -4388,39 +4435,90 @@ if CLIENT then
 					end
 				end
 				categories = cat2
-				local default_category
-				//By default, select the category containing the currently selected paintkit
-				for k, v in SortedPairs (categories) do
-					for _, entry in ipairs (v.items) do
-						if (self.data.wp.enabled and entry.data and entry.data.id == self.data.wp.id)
-						or (!self.data.wp.enabled and !entry.data) then
-							default_category = k
-							break
+				local function GetDefaultCategory()
+					local default_category, fallback_default_category
+					//By default, select the category containing the currently selected option
+					for k, v in SortedPairs (categories) do
+						for _, entry in ipairs (v.items) do
+							if (self.data.wp.enabled and entry.data and entry.data.id == self.data.wp.id)
+							or (!self.data.wp.enabled and !entry.data) then
+								default_category = k
+								break
+							end
+						end
+						if default_category then break end
+						if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
+					end
+					return default_category or fallback_default_category
+				end
+
+				local search_holder
+				if table.Count(categories) > 1 then
+					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
+					search_holder.Paint = function() end
+					search_holder:SetHeight(20)
+					search_holder:Dock(TOP)
+					local drop2, search
+
+					drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
+					drop2:DockMargin(0,0,8,0)
+					drop2:Dock(LEFT)
+					drop2:SetSortItems(false)
+					local selected = GetDefaultCategory()
+					for k, v in SortedPairs (categories) do
+						drop2:AddChoice(v.name, k, k == selected)
+					end
+					function drop2.OnSelect(_, index, value, data)
+						search:SetText("")
+						icons.SelectCategory(data)
+					end
+
+					search = vgui.Create("DTextEntry", search_holder)
+					search:Dock(FILL)
+					search:SetPlaceholderText("#spawnmenu.filter")
+					search:SetUpdateOnType(true)
+					search.OnValueChange = function(_, p)
+						if #p == 0 then
+							//Search is empty, go back to using the category dropdown
+							//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+							local selected = GetDefaultCategory()
+							for k, v in pairs (drop2.Data) do
+								if v == selected then
+									drop2:ChooseOptionID(k)
+								end
+							end
+						else
+							//Search is populated, stop using categories and show all matching options
+							p = p:lower()
+							local tab = {}
+							for k, v in SortedPairs (categories) do
+								for _, entry in ipairs (v.items) do
+									if entry.v:lower():find(p, 1, true) then
+										table.insert(tab, entry)
+									end
+								end
+							end
+							icons.RebuildIcons(tab)
+							drop2:SetText("")
 						end
 					end
-					if default_category then break end
-				end
-				
-				local drop2 = AddSubDropdown(container) //calling this "drop" causes issues with the parent drop
-				drop2:Dock(TOP)
-				if table.Count(categories) > 1 then
-					drop2:SetHeight(20)
-				else
-					drop2:SetHeight(0)
-					drop2:SetEnabled(false)
-				end
-				drop2:SetSortItems(false)
-				for k, v in SortedPairs (categories) do
-					drop2:AddChoice(v.name, k, k == default_category)
-				end
-				function drop2.OnSelect(_, index, value, data)
-					icons.SelectCategory(data)
+					function search_holder.PerformLayout(_, w, h)
+						drop2:SetWide((w/2)-4)
+					end
+
+					//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
+					//prevent this by closing the menu in those cases
+					function container:OnMousePressed()
+						drop2:CloseMenu()
+					end
 				end
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
 				local scroll = vgui.Create("DScrollPanel",icons_holder)
-				icons_holder:DockMargin(0,8,0,0)
+				if search_holder then
+					icons_holder:DockMargin(0,8,0,0)
+				end
 				icons_holder:Dock(TOP)
 				scroll:Dock(FILL)
 
@@ -4593,7 +4691,8 @@ if CLIENT then
 
 				function container:UpdateSize()
 					//Resize and reposition container whenever the category is changed or intensity controls are toggled
-					local intensity_control_height = 0
+					local control_height = 0
+					if search_holder then control_height = search_holder:GetTall() + 8 end
 					if intensity_check:GetChecked() then
 						intensity_slider:SetHeight(18)
 						intensity_slider:DockMargin(32,8,0,0)
@@ -4602,7 +4701,7 @@ if CLIENT then
 						//scratch_help:SetAutoStretchVertical(true)
 						//scratch_help:InvalidateLayout(true)
 						scratch_help:SetTall(20) //default height apparently; can't do AutoStretchVertical here because we can't get an accurate height if we haven't set the container's width yet
-						intensity_control_height = 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall() + scratch_help:GetTall()
+						control_height = control_height + 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall() + scratch_help:GetTall()
 					else
 						intensity_slider:SetHeight(0)
 						intensity_slider:DockMargin(0,0,0,0)
@@ -4612,7 +4711,7 @@ if CLIENT then
 						scratch_help:SetTall(0)
 					end
 					local w, h = icons:GetSize()
-					container:SetTall(drop2:GetTall() + 8 + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + intensity_control_height + 16 + 16) //why doesn't SizeToChildren do this right?
+					container:SetTall(control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
 						icons_holder:SetTall(icons_holder:GetTall() - diff)
@@ -4631,8 +4730,17 @@ if CLIENT then
 				end
 
 				function icons.SelectCategory(cat)
-					icons:Clear()
+					local tab = {}
 					for _, entry in ipairs (categories[cat].items) do
+						table.insert(tab, entry)
+					end
+					icons.RebuildIcons(tab)
+				end
+				function icons.RebuildIcons(tab)
+					icons:Clear()
+					//add "none" option to the start of every category or search
+					table.insert(tab, 1, {k = 1, v = drop.Choices[1]})
+					for _, entry in ipairs (tab) do
 						local icon = vgui.Create("ContentIcon", icons)
 						icon:SetSize(size, size)
 						icon:SetName(entry.v)
@@ -4795,7 +4903,7 @@ if CLIENT then
 							end
 						end
 					end
-					local w, h = size*4, size*(math.ceil(#categories[cat].items/4))
+					local w, h = size*4, size*(math.ceil(#tab/4))
 					icons:SetSize(w, h)
 					icons:InvalidateLayout()
 					icons_holder:SetSize(w, h)
@@ -4804,13 +4912,7 @@ if CLIENT then
 
 					container:UpdateSize()
 				end
-				icons.SelectCategory(default_category)
-
-				//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
-				//prevent this by closing the menu in those cases
-				function container:OnMousePressed()
-					drop2:CloseMenu()
-				end
+				icons.SelectCategory(GetDefaultCategory())
 			end
 		end
 
