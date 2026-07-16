@@ -3881,6 +3881,20 @@ if CLIENT then
 			end
 		end
 
+		local submenu
+		local function SubmenuLoseFocus(pnl)
+			if IsValid(pnl) and pnl != submenu --[[and !pnl.m_bIsMenuComponent]] then
+				local par = pnl:GetParent()
+				if !IsValid(par) or SubmenuLoseFocus(par) then
+					return true
+				end
+			end
+		end
+		hook.Add("VGUIMousePressed", "TF2ItemBrowser_SubMenuLoseFocus", function(pnl, mcode)
+			if IsValid(submenu) and SubmenuLoseFocus(pnl) then
+				submenu:Remove()
+			end
+		end)
 		local function AddSubDropdown(container)
 			local drop2 = vgui.Create("DComboBox", container)
 			drop2:Dock(TOP)
@@ -3897,8 +3911,10 @@ if CLIENT then
 				-- then just close it and don't open a new one.
 				self:CloseMenu()
 
-				//Change 1 of 2: Make sure that opening this menu doesn't close the unusual dropdown
-				self.Menu = DermaMenu(true, container)
+				//Change 1 of 2: Make sure that opening this menu doesn't close the parent dropdown, and associate it with the hook above
+				if IsValid(submenu) then submenu:Remove() end
+				submenu = DermaMenu(true, container)
+				self.Menu = submenu
 
 				--[[if ( self:GetSortItems() ) then
 					local sorted = {}
@@ -3918,7 +3934,7 @@ if CLIENT then
 					end
 				else]]
 					for k, v in pairs( self.Choices ) do
-						//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the whole menu tree (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
+						//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the parent dropdown (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
 						local option = self.Menu:AddOption( v )
 						option.DoClick = function()
 							option.m_MenuClicking = false
@@ -4179,12 +4195,6 @@ if CLIENT then
 					end
 					function search_holder.PerformLayout(_, w, h)
 						drop2:SetWide((w/2)-4)
-					end
-
-					//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
-					//prevent this by closing the menu in those cases
-					function container:OnMousePressed()
-						drop2:CloseMenu()
 					end
 				end
 
@@ -4504,12 +4514,6 @@ if CLIENT then
 					end
 					function search_holder.PerformLayout(_, w, h)
 						drop2:SetWide((w/2)-4)
-					end
-
-					//drop2's dropdown menu loses focus if we click behind it onto the container, and gets stuck;
-					//prevent this by closing the menu in those cases
-					function container:OnMousePressed()
-						drop2:CloseMenu()
 					end
 				end
 
