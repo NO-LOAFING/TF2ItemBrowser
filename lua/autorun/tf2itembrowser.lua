@@ -1007,9 +1007,29 @@ if CLIENT then
 		size = 18, //on the tf2 backpack screen, desc text is 15px high, but to match our smaller item name text, this is 11px high instead
 		extended = true
 	})
+	surface.CreateFont("TF2ItemBrowser_ItemDesc_Smaller", {
+		font = "TF2 Secondary",
+		size = 15, //even smaller variant only used for control labels like checkboxes; any smaller and it's too hard to read, any larger and there's no room between wearable types for banners
+		extended = true
+	})
+	surface.CreateFont("TF2ItemBrowser_GUISymbols", {
+		font = "Marlett", //no idea if this is linux-friendly
+		size = 22,
+		weight = 0,
+		symbol = true
+	})
 	local gui_colors = {
-		bgcol		= Color(42,39,37,255), //eyedropped from tf2 loadout screen texture, which uses OutlinedGreyBox i think
+		TanDark		= Color(117,107,94,255),
+		TanLight	= Color(235,226,202,255),
+		TanDarker	= Color(46,43,42,255),
+
+		//colors used by CheckButton in tf2_clientscheme.res
+		Yellow		= Color(251,235,202,255),
+		TransparentBlack= Color(0,0,0,196),
+
 		RedSolid	= Color(192,28,0,255),
+		LightRed	= Color(200,80,60,255),
+		TFOrange	= Color(145,73,59,255),
 	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
@@ -1052,6 +1072,13 @@ if CLIENT then
 		ItemFlag		= Color(117,107,94,255),]]
 		ItemLimitedQuantity	= Color(225,209,0,255),
 	}
+	local icon_paint = Material("vgui/backpack_jewel_paint_splatter.vmt")
+	local icon_viewmode_pyrovision = Material("vgui/viewmode_pyrovision.vmt")
+	local icon_viewmode_spooky = Material("vgui/viewmode_spooky_off.vmt")
+	local icon_unusual = Material("vgui/viewmode_unusual.vmt")
+	local icon_statclock = Material("vgui/viewmode_statclock.vmt")
+	local icon_strange = Material("vgui/viewmode_strange.vmt")
+
 	local snd_hover = "ui/item_info_mouseover.wav"
 	local snd_click = "tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
 	local snd_release = "tf_buttonclickrelease.wav" //^
@@ -1066,12 +1093,65 @@ if CLIENT then
 			surface.PlaySound(snd_release)
 		end
 	end
-	local icon_paint = Material("vgui/backpack_jewel_paint_splatter.vmt")
-	local icon_viewmode_pyrovision = Material("vgui/viewmode_pyrovision.vmt")
-	local icon_viewmode_spooky = Material("vgui/viewmode_spooky_off.vmt")
-	local icon_unusual = Material("vgui/viewmode_unusual.vmt")
-	local icon_statclock = Material("vgui/viewmode_statclock.vmt")
-	local icon_strange = Material("vgui/viewmode_strange.vmt")
+
+	local function TFStyleVGUI(class, par)
+		local pnl = vgui.Create(class, par)
+		if IsValid(pnl) then
+			local function CheckBoxPaint(self,w,h)
+				local x, y = w/2, h/2
+				local col = gui_colors.TransparentBlack
+				if !self:IsEnabled() then col = gui_colors.TanDark end //override used in testitembotcontrols.res
+				surface.SetDrawColor(col)
+				surface.DrawRect(0,0,w,h)
+
+				col = gui_colors.Yellow
+				if self.NegativeCheck then col = gui_colors.LightRed end
+				surface.SetDrawColor(col)
+				surface.DrawOutlinedRect(0,0,w,h,2)
+				
+				if self:GetChecked() then
+					if self.NegativeCheck then
+						//totally overengineered programmatically-generated X symbol because the one in Marlett won't center correctly
+						local e = 5 //distance from edge
+						local l = 2 //line width
+						draw.NoTexture()
+						surface.DrawPoly({
+							{x=e,y=e+l}, {x=e,y=e}, {x=e+l,y=e}, //upper left corner
+							{x=w-e,y=h-e-l}, {x=w-e,y=h-e}, {x=w-e-l,y=h-e} //lower right corner
+						})
+						surface.DrawPoly({
+							{x=w-e-l, y=e}, {x=w-e, y=e}, {x=w-e, y=e+l}, //upper right corner
+							{x=e+l, y=h-e}, {x=e, y=h-e}, {x=e, y=h-e-l}} //lower left corner
+						)
+					else
+						//this is how the source engine code draws the *entire* checkbox, just symbols from the Marlett font (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/vgui2/vgui_controls/CheckButton.cpp#L23-L58);
+						//we use Draw(OutlinedRect) instead for the box because those symbols don't scale well at this size
+						draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 1, 0, col)
+					end
+				end
+			end
+			if class == "DCheckBox" then
+				pnl.Paint = CheckBoxPaint
+				pnl:SetSize(20,20)
+			elseif class == "DCheckBoxLabel" then
+				pnl.Button.Paint = CheckBoxPaint
+				pnl:SetHeight(20)
+				function pnl:PerformLayout()
+					local x = self.m_iIndent || 0
+
+					self.Button:SetSize( 20, 20 ) //the only change
+					self.Button:SetPos( x, math.floor( ( self:GetTall() - self.Button:GetTall() ) / 2 ) )
+
+					self.Label:SizeToContents()
+					self.Label:SetPos( x + self.Button:GetWide() + 9, math.floor( ( self:GetTall() - self.Label:GetTall() ) / 2 ) )
+				end
+				pnl.Label:SetColor(gui_colors.Yellow)
+				pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			end
+		end
+		return pnl
+	end
+
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
 	local GetTextSize = surface.GetTextSize
@@ -1194,7 +1274,7 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 935,
+		width		= 945,
 		height		= 650,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
@@ -1227,9 +1307,7 @@ if CLIENT then
 				if !window.icons_to_add then return end
 
 				local w, h = scroll:GetSize()
-				//this is a solid color instead of using OutlinedGreyBox because its material doesn't seem to work with transparency;
-				//it's subtly off because of gamma or something but it's not noticeable in-game
-				surface.SetDrawColor(gui_colors.bgcol.r, gui_colors.bgcol.g, gui_colors.bgcol.b, 192)
+				surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
 				surface.DrawRect(0,0,w,h)
 
 				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
@@ -1263,12 +1341,13 @@ if CLIENT then
 			//divider:SetDividerWidth(8)
 			//divider:SetLeftMin(64)
 			divider:SetRightMin(popup_w) //make sure the right side is always wide enough to fit an item popup
-			divider:SetLeftWidth(215)
+			divider:SetLeftWidth(225)
 
 
 			TF2ItemBrowser = window
 			function window:Paint(w, h)
-				OutlinedGreyBox(-24,-24,w+48,h+48) //no border, just solid color
+				surface.SetDrawColor(gui_colors.TanDarker)
+				surface.DrawRect(0,0,w,h)
 			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
@@ -1415,18 +1494,12 @@ if CLIENT then
 
 			local function AddIncludeExcludeFilter(label) //variant of checkboxes with both (+ (must include)) and (- (must exclude)) options
 				local self = vgui.Create("DPanel", filters)
-				self:SetTall(15)
-				self.Button1 = vgui.Create("DCheckBox", self)
+				self:SetTall(20)
+				self.Button1 = TFStyleVGUI("DCheckBox", self)
 				self.Button1.OnChange = function(_, val) self:OnChange(val, self.Button1) end
-				self.Button2 = vgui.Create("DCheckBox", self)
+				self.Button2 = TFStyleVGUI("DCheckBox", self)
 				self.Button2.OnChange = function(_, val) self:OnChange(val, self.Button2) end
-				local _oldpaint = self.Button2.Paint
-				function self.Button2:Paint(w,h)
-					//ugly temporary visuals for exclude button
-					_oldpaint(self,w,h)
-					surface.SetDrawColor(255,64,0,128)
-					surface.DrawRect(0,0,w,h)
-				end
+				self.Button2.NegativeCheck = true //use different visuals
 				self.Label = vgui.Create("DLabel", self)
 				self.Label:SetText(label)
 				self.Label:SetMouseInputEnabled(true)
@@ -1437,12 +1510,14 @@ if CLIENT then
 					elseif v == 1 then self.Button2:SetValue(true)
 					else self.Button2:SetValue(false) end
 				end 
+				self.Label:SetColor(gui_colors.Yellow) //same color and font as TFStyleVGUI DCheckBoxLabel
+				self.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 				self.Paint = function() end
 				function self:PerformLayout()
-					self.Button1:SetSize(15, 15)
+					self.Button1:SetSize(20, 20)
 					self.Button1:SetPos(0, math.floor((self:GetTall() - self.Button1:GetTall()) / 2))
 
-					self.Button2:SetSize(15, 15)
+					self.Button2:SetSize(20, 20)
 					self.Button2:SetPos(self.Button1:GetWide() + 2, math.floor((self:GetTall() - self.Button2:GetTall()) / 2))
 
 					self.Label:SizeToContents()
@@ -1712,9 +1787,8 @@ if CLIENT then
 			AddTFButtonSounds(button)
 
 			//TODO: make this use red/blu team icons later
-			local check = vgui.Create("DCheckBoxLabel", attopts)
+			local check = TFStyleVGUI("DCheckBoxLabel", attopts)
 			check:SetText("BLU")
-			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweenitems)
 			attopts.team = check
@@ -1806,9 +1880,8 @@ if CLIENT then
 				LocalPlayer():ConCommand("cl_tf2itembrowser_advbone " .. data)
 			end
 
-			local check = vgui.Create("DCheckBoxLabel", attopts)
+			local check = TFStyleVGUI("DCheckBoxLabel", attopts)
 			check:SetText("Large icons")
-			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweenitems)
 			check:SetChecked(icon_size == 2)
@@ -3481,16 +3554,15 @@ if CLIENT then
 		end	
 
 		local checks = vgui.Create("Panel", pnl) //container for submodel controls
-		checks:SetHeight(15)
+		checks:SetHeight(20)
 		checks:Dock(TOP)
 		checks.checks = {}
 		for k, v in SortedPairs (self.data.models) do
-			local check = vgui.Create("DCheckBoxLabel", checks)
+			local check = TFStyleVGUI("DCheckBoxLabel", checks)
 			check.model = k
 			local text = string.NiceName(k)
 			if k == "attached_festive" then text = "Festivizer" end
 			check:SetText(text)
-			check:SetHeight(15)
 			check:Dock(LEFT)
 			check:SetChecked(v)
 			check.OnChange = function(_, val)
@@ -3822,11 +3894,9 @@ if CLIENT then
 				icons:SetSize((size*10)+16, 16+(size*(math.ceil(#drop.Choices/10))))
 				icons:InvalidateLayout()
 
-				local check = vgui.Create("DCheckBoxLabel", container)
+				local check = TFStyleVGUI("DCheckBoxLabel", container)
 				container.check_rb = check
 				check:SetText("Team Sparks")
-				check:SetHeight(15)
-				//check:SizeToChildren(true, false)
 				check:DockMargin(0,16,0,0)
 				check:Dock(TOP)
 				check:SetChecked(self.data.crit.sparks_rb)
@@ -3836,11 +3906,9 @@ if CLIENT then
 					pnl.OnSettingChanged()
 				end
 
-				local check = vgui.Create("DCheckBoxLabel", container)
+				local check = TFStyleVGUI("DCheckBoxLabel", container)
 				container.check_c = check
 				check:SetText("Colorable Sparks")
-				check:SetHeight(15)
-				//check:SizeToChildren(true, false)
 				check:DockMargin(0,8,0,0)
 				check:Dock(TOP)
 				check:SetChecked(self.data.crit.sparks_c)
@@ -4217,7 +4285,7 @@ if CLIENT then
 					slider:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
 					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
 					slider:SetDefaultValue(0)
-					slider:SetHeight(18)
+					slider:SetHeight(20)
 					slider:Dock(TOP)
 					slider:DockMargin(0,16,0,0)
 					slider:SetValue(self.data.pe_unusual_offset or 0)
@@ -4230,10 +4298,7 @@ if CLIENT then
 					end
 					
 					//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
-					check = vgui.Create("DCheckBox", slider)
-					check:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
-					check:SetHeight(15)
-					//check:SizeToChildren(true, false)
+					check = TFStyleVGUI("DCheckBox", slider)
 					check:DockMargin(0,0,9,0) //+9 on right emulates DCheckBoxLabel (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcheckbox.lua#L130)
 					check:Dock(LEFT)
 					check:SetZPos(-1) //dock this to the left of the slider's label
@@ -4352,9 +4417,8 @@ if CLIENT then
 				end
 				name = name .. k
 			end
-			local check = vgui.Create("DCheckBoxLabel", pnl)
+			local check = TFStyleVGUI("DCheckBoxLabel", pnl)
 			check:SetText("Add default particle effects (" .. name .. ")")
-			check:SetHeight(15)
 			check:Dock(TOP)
 			check:DockMargin(side_margins,0,side_margins,betweenitems)
 			check:SetChecked(self.data.pe_def)
@@ -4618,10 +4682,9 @@ if CLIENT then
 					end)
 				end
 
-				local check = vgui.Create("DCheckBoxLabel", container)
+				local check = TFStyleVGUI("DCheckBoxLabel", container)
 				local intensity_check = check
 				check:SetText("Increased Intensity Wears (Global)")
-				check:SetHeight(15)
 				check:DockMargin(0,8,0,0)
 				check:Dock(TOP)
 				local cv = GetConVar("warpaint_increased_intensity")
@@ -4667,7 +4730,7 @@ if CLIENT then
 					end
 				end
 
-				local check = vgui.Create("DCheckBoxLabel", container)
+				local check = TFStyleVGUI("DCheckBoxLabel", container)
 				local scratch_check = check
 				check:SetText("Double Scratches")
 				check:Dock(TOP)
@@ -4700,7 +4763,7 @@ if CLIENT then
 					if intensity_check:GetChecked() then
 						intensity_slider:SetHeight(18)
 						intensity_slider:DockMargin(32,8,0,0)
-						scratch_check:SetHeight(15)
+						scratch_check:SetHeight(20)
 						scratch_check:DockMargin(32,8,0,0)
 						//scratch_help:SetAutoStretchVertical(true)
 						//scratch_help:InvalidateLayout(true)
