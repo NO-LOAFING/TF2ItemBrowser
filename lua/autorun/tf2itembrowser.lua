@@ -1148,7 +1148,71 @@ if CLIENT then
 				end
 				pnl.Label:SetColor(gui_colors.Yellow)
 				pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			elseif class == "DComboBox" then
+				pnl:SetColor(gui_colors.TanLight)
+				pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				pnl.DropButton:Remove()
+				function pnl:Paint(w,h)
+					local col = gui_colors.TanLight
+					surface.SetDrawColor(col)
+					surface.DrawOutlinedRect(0,0,w,h,1)
+
+					surface.SetFont("TF2ItemBrowser_GUISymbols")
+					local _w, _h = surface.GetTextSize("u")
+					draw.SimpleText("u", "TF2ItemBrowser_GUISymbols", w-_w, 0, col)
+				end
+				function pnl:PerformLayout() end
+				function pnl:OnMenuOpened(menu)
+					//TF2 styling
+					function menu:Paint(w, h)
+						surface.SetDrawColor(color_black) //tf2 does this by having a TransparentBlack background and TransparentBlack buttons? whatever, this is the same
+						surface.DrawRect(0,0,w,h)
+					end
+					for _, v in ipairs (menu:GetCanvas():GetChildren()) do
+						local name = v:GetName()
+						if name == "DMenuOption" then
+							v:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+							function v:Paint(w, h)
+								local col = gui_colors.TanLight
+								if self.Hovered or self.Highlight then
+									surface.SetDrawColor(gui_colors.TanLight)
+									surface.DrawRect(0,0,w,h)
+									col = gui_colors.TanDark
+								end
+								self:SetColor(col)
+								if self:GetChecked() then
+									//self:GetSkin().tex.Menu_Check( 5, h / 2 - 7, 15, 15 )
+									draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 4, h/2-10, col)
+								end
+							end
+						elseif name == "DPanel" and v:GetTall() == 1 then //spacer
+							function v:Paint(w, h)
+								surface.SetDrawColor(gui_colors.TanLight)
+								surface.DrawRect(0,0,w,h)
+							end
+						end
+					end
+					//Not TF2 related, but every DComboBox here already had this as its OnMenuOpened func, so do this here instead:
+					//Add a checkmark to the currently selected option.
+					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+					//non-spacer children to find the correct one.
+					local sel = self:GetSelectedID()
+					local sel_read = 0
+					for i = 1, menu:ChildCount() do
+						local child = menu:GetChild(i)
+						if child:GetName() == "DMenuOption" then
+							sel_read = sel_read + 1
+							if sel_read == sel then
+								child:SetChecked(true)
+								menu:ScrollToChild(child)
+								break
+							end
+						end
+					end
+				end
 			end
+			//TODO: "t" for gui symbol up arrow
 		end
 		return pnl
 	end
@@ -1395,9 +1459,11 @@ if CLIENT then
 			local function AddDropdownFilter(label, populatefunc, select_extras)
 				local drop = vgui.Create("Panel", filters)
 				drop.Label = vgui.Create("DLabel", drop)
+				drop.Label:SetColor(gui_colors.TanLight)
+				drop.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 				drop.Label:SetText(label)
 				drop.Label:Dock(LEFT)
-				drop.Combo = vgui.Create("DComboBox", drop)
+				drop.Combo = TFStyleVGUI("DComboBox", drop)
 				drop.Combo:Dock(FILL)
 				drop:SetHeight(20)
 				drop:Dock(TOP)
@@ -1410,25 +1476,6 @@ if CLIENT then
 				function drop.Combo.OnSelect(_, index, value, data)
 					if select_extras then select_extras() end
 					window.RebuildIconList()
-				end
-				function drop.Combo:OnMenuOpened(menu)
-					//Add a checkmark to the currently selected option.
-					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-					//non-spacer children to find the correct one.
-					local sel = drop.Combo:GetSelectedID()
-					local sel_read = 0
-					for i = 1, menu:ChildCount() do
-						local child = menu:GetChild(i)
-						if child:GetName() == "DMenuOption" then
-							sel_read = sel_read + 1
-							if sel_read == sel then
-								child:SetChecked(true)
-								menu:ScrollToChild(child)
-								break
-							end
-						end
-					end
 				end
 				return drop.Combo
 			end
@@ -3699,9 +3746,11 @@ if CLIENT then
 		local function AddDropdown(label, populatefunc, select_extras)
 			local drop = vgui.Create("Panel", pnl)
 			drop.Label = vgui.Create("DLabel", drop)
+			drop.Label:SetColor(gui_colors.TanLight)
+			drop.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 			drop.Label:SetText(label)
 			drop.Label:Dock(LEFT)
-			drop.Combo = vgui.Create("DComboBox", drop)
+			drop.Combo = TFStyleVGUI("DComboBox", drop)
 			drop.Combo:Dock(FILL)
 			drop:SetHeight(20)
 			drop:Dock(TOP)
@@ -3715,25 +3764,6 @@ if CLIENT then
 				if select_extras then select_extras(data) end
 				drop.Combo.value = data
 				pnl.OnSettingChanged()
-			end
-			function drop.Combo:OnMenuOpened(menu)
-				//Add a checkmark to the currently selected option.
-				//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-				//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-				//non-spacer children to find the correct one.
-				local sel = drop.Combo:GetSelectedID()
-				local sel_read = 0
-				for i = 1, menu:ChildCount() do
-					local child = menu:GetChild(i)
-					if child:GetName() == "DMenuOption" then
-						sel_read = sel_read + 1
-						if sel_read == sel then
-							child:SetChecked(true)
-							menu:ScrollToChild(child)
-							break
-						end
-					end
-				end
 			end
 			return drop.Combo
 		end
@@ -4068,7 +4098,7 @@ if CLIENT then
 			end
 		end)
 		local function AddSubDropdown(container)
-			local drop2 = vgui.Create("DComboBox", container)
+			local drop2 = TFStyleVGUI("DComboBox", container)
 			drop2:Dock(TOP)
 			//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
 			function drop2:OpenMenu(pControlOpener)
@@ -4130,25 +4160,6 @@ if CLIENT then
 				self.Menu:Open( x, y, false, self )
 
 				self:OnMenuOpened( self.Menu )
-			end
-			function drop2:OnMenuOpened(menu)
-				//Add a checkmark to the currently selected option.
-				//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-				//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-				//non-spacer children to find the correct one.
-				local sel = drop2:GetSelectedID()
-				local sel_read = 0
-				for i = 1, menu:ChildCount() do
-					local child = menu:GetChild(i)
-					if child:GetName() == "DMenuOption" then
-						sel_read = sel_read + 1
-						if sel_read == sel then
-							child:SetChecked(true)
-							menu:ScrollToChild(child)
-							break
-						end
-					end
-				end
 			end
 			return drop2
 		end
@@ -4760,6 +4771,8 @@ if CLIENT then
 
 				local drop3 = vgui.Create("Panel", container)
 				drop3.Label = vgui.Create("DLabel", drop3)
+				drop3.Label:SetColor(gui_colors.TanLight)
+				drop3.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 				drop3.Label:SetText("Texture Resolution (Global)")
 				drop3.Label:Dock(LEFT)
 				drop3.Combo = AddSubDropdown(drop3)
