@@ -1078,7 +1078,6 @@ if CLIENT then
 	local icon_unusual = Material("vgui/viewmode_unusual.vmt")
 	local icon_statclock = Material("vgui/viewmode_statclock.vmt")
 	local icon_strange = Material("vgui/viewmode_strange.vmt")
-
 	local snd_hover = "ui/item_info_mouseover.wav"
 	local snd_click = "tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
 	local snd_release = "tf_buttonclickrelease.wav" //^
@@ -1093,6 +1092,8 @@ if CLIENT then
 			surface.PlaySound(snd_release)
 		end
 	end
+	local icon_red = Material("vgui/store/store_redteam.vmt")
+	local icon_blu = Material("vgui/store/store_blueteam.vmt")
 
 	local function TFStyleVGUI(class, par)
 		local pnl = vgui.Create(class, par)
@@ -1274,71 +1275,67 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 945,
-		height		= 650,
+		width		= 949,
+		height		= 692,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
 			window:SetTitle("TF2 Item Browser")
 			window:SetIcon("games/16/tf.png")
+			window:DockPadding(8, 24--[[ + 8]], 8, 8)
 
 			local right_holder = vgui.Create("DPanel", window)
 			right_holder.Paint = function() end
 			window.Right = right_holder
-			local scroll = vgui.Create("DScrollPanel", right_holder)
-			function right_holder:UpdateSize()
-				right_holder:DockMargin(item_icon_sizes[icon_size].gap_w,0,0,0)
-			end
-			right_holder:UpdateSize()
+			local right_scroll = vgui.Create("DScrollPanel", right_holder)
 			right_holder:Dock(FILL)
-			scroll:Dock(FILL)
+			right_scroll:Dock(FILL)
 
-			local iconlist = vgui.Create("DPanel", scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
+			local iconlist = vgui.Create("DPanel", right_scroll) //(note: this was a DIconLayout before, but since we already know the size of every icon, it's a lot faster to just use simple math to set the list height and icon locations, instead of all the performance-heavy size calculations used by DIconLayout)
 			iconlist.Paint = function() end
 			iconlist:Dock(FILL)
 
-			local old_OnChildAdded = scroll.OnChildAdded
-			scroll.OnChildAdded = nil //don't dock the loading icon inside the scroll panel, just place it on top of it
-			local iconlist_loading = vgui.Create("DPanel", scroll)
+			local old_OnChildAdded = right_scroll.OnChildAdded
+			right_scroll.OnChildAdded = nil //don't dock the loading icon inside the scroll panel, just place it on top of it
+			local iconlist_loading = vgui.Create("DPanel", right_scroll)
 			iconlist_loading:Dock(FILL)
 			//iconlist_loading:SetZPos(10) //this needs to render above the iconlist
 			iconlist_loading:SetMouseInputEnabled(false)
 			function iconlist_loading:Paint(w, h)
 				if !window.icons_to_add then return end
 
-				local w, h = scroll:GetSize()
+				local w, h = right_scroll:GetSize()
 				surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
 				surface.DrawRect(0,0,w,h)
 
-				local mid_w, mid_h = (w-scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
+				local mid_w, mid_h = (w-right_scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
 				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
 				surface.SetMaterial(spinner)
 				surface.DrawTexturedRect(mid_w-50, mid_h-50, 100, 100)
 				//TODO: this is okay, but i want to do better. add a progress bar and text listing tostring(window.icons_to_add_key-1) .. "/" .. tostring(#window.icons_to_add)
 			end
-			scroll.OnChildAdded = old_OnChildAdded
+			right_scroll.OnChildAdded = old_OnChildAdded
 
 
-			local left_holder = vgui.Create("DPanel", window)
-			left_holder:DockPadding(24,24,24-6,24)
+			local left_holder = vgui.Create("Panel", window)
+			left_holder:DockMargin(0,0,8,0) //space for the DHorizonalDivider's control to fit in
 			left_holder:Dock(LEFT)
+			local left_scroll = vgui.Create("DScrollPanel", left_holder)
+			left_scroll:Dock(FILL)
 
-			function left_holder:Paint(w,h)
-				//this texture has a blank 6 pixels on the edge, but we want the DHorizontalDivider to be in this blank space,
-				//so adjust both the dock padding above and the draw width here to seamlessly make the edge of the panel line 
-				//up with this part of the texture.
-				TFThinLineBorder(0,0,w+6,h)
-			end
-
-			local filters = vgui.Create("DScrollPanel", left_holder)
-			filters:Dock(FILL)
+			local filters = vgui.Create("DPanel", left_scroll)
+			filters:Dock(TOP)
+			filters:DockPadding(16,16,16,16)
 			window.filters = filters
+			function filters:Paint(w,h)
+				draw.RoundedBox(12, 0,0,w,h, Color(0,0,0,128))
+			end
 
 			local divider = vgui.Create("DHorizontalDivider", window)
 			divider:Dock(FILL)
 			divider:SetLeft(left_holder)
 			divider:SetRight(right_holder)
-			//divider:SetDividerWidth(8)
+			divider:SetDividerWidth(8)
 			//divider:SetLeftMin(64)
 			divider:SetRightMin(popup_w) //make sure the right side is always wide enough to fit an item popup
 			divider:SetLeftWidth(225)
@@ -1352,10 +1349,18 @@ if CLIENT then
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
 			local p3, _, p4, _ = left_holder:GetDockPadding()
-			window:SetMinWidth(p1 + p2 + p3 + p4 + filters.VBar:GetWide() + scroll:GetWide())
+			window:SetMinWidth(p1 + p2 + p3 + p4 + right_scroll.VBar:GetWide() + right_scroll:GetWide())
 
 
-			//ugly temporary filter options
+			local text = vgui.Create("DLabel", filters)
+			text:SetWrap(true)
+			text:SetContentAlignment(5)
+			text:SetAutoStretchVertical(true)
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.TanLight)
+			text:SetText("Filters:")
+			text:Dock(TOP)
+			text:DockMargin(-8,-8,0,betweenitems)
 
 			local search = vgui.Create("DTextEntry", filters)
 			search:SetHeight(20)
@@ -1567,6 +1572,13 @@ if CLIENT then
 			end
 			AddTFButtonSounds(button)
 
+			filters:InvalidateLayout(true)
+			filters:SizeToChildren(false,true)
+			timer.Simple(0.1,function()
+				filters:InvalidateLayout(true)
+				filters:SizeToChildren(false,true)
+			end)
+
 
 			window.RebuildIconList = function()
 				if filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
@@ -1642,9 +1654,9 @@ if CLIENT then
 				local rows = math.floor((#window.icons_to_add-1)/columns)+1
 				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap_h))
 				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
-				scroll:InvalidateLayout()
-				scroll.VBar:SetScroll(0)
-				scroll:SetMouseInputEnabled(false)
+				right_scroll:InvalidateLayout()
+				right_scroll.VBar:SetScroll(0)
+				right_scroll:SetMouseInputEnabled(false)
 				//MsgN(#window.icons_to_add, " icons to add")
 			end
 			function iconlist:PerformLayout(w, h)
@@ -1689,7 +1701,7 @@ if CLIENT then
 							self.icons_to_add = nil
 							self.icons_to_add_key = nil
 							//Allow the list to be scrolled and clicked on now that it's fully loaded
-							scroll:SetMouseInputEnabled(true)
+							right_scroll:SetMouseInputEnabled(true)
 							break
 						end
 					end
@@ -1761,38 +1773,62 @@ if CLIENT then
 				end
 			end
 
-			local attopts = vgui.Create("DPanel", left_holder)
+			local attopts = vgui.Create("DPanel", left_scroll)
 			attopts.Paint = function() end
-			attopts:Dock(BOTTOM)
+			attopts:Dock(TOP)
+			attopts:DockMargin(0,8,0,0)
+			attopts:DockPadding(16,16,16,16)
 			window.attopts = attopts
+			function attopts:Paint(w,h)
+				draw.RoundedBox(12, 0,0,w,h, Color(0,0,0,128))
+			end
 
-			local text = vgui.Create("DLabel", left_holder) //SizeToContents gets finicky with this one if we put it inside attopts
+			local text = vgui.Create("DLabel", attopts)
 			text:SetWrap(true)
 			text:SetContentAlignment(5)
 			text:SetAutoStretchVertical(true)
-			text:SetText("Right-click a model in the context menu to select it and attach items.")
-			text:Dock(BOTTOM)
-			text:DockMargin(0,0,0,betweenitems)
-			attopts.emptytext = text
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.TanLight)
+			text:SetText("Settings:")
+			text:Dock(TOP)
+			text:DockMargin(-8,-8,0,betweenitems)
 
-			local button = vgui.Create("DButton", attopts)
-			button:SetText("")
-			button:SetHeight(20)
-			button:Dock(TOP)
-			button:DockMargin(0,0,0,betweenitems)
-			attopts.deselect = button
-			button.DoClick = function()
-				window:SetEntity(NULL)
+			local buttons = vgui.Create("Panel", attopts)
+			buttons:Dock(TOP)
+			buttons:DockMargin(0,0,0,betweenitems)
+			buttons:SetTall(26)
+			local function ButtonPaint(self, w, h, icon, desired_value)
+				//opacity values from TeamNavPanel in inspectionpanel_cosmetic.res
+				if buttons.Value == desired_value or self:IsDown() then
+					surface.SetDrawColor(255,255,255,255)
+				elseif self:IsHovered() then
+					surface.SetDrawColor(255,255,255,128)
+				else
+					surface.SetDrawColor(255,255,255,77)
+				end
+				surface.SetMaterial(icon)
+				surface.DrawTexturedRect(0,0,w,w) //keep aspect ratio the same, cut off the blank bottom of the texture
 			end
-			AddTFButtonSounds(button)
+			buttons.Button1 = vgui.Create("DButton", buttons)
+			function buttons.Button1.DoClick() buttons:SetValue(false) end
+			function buttons.Button1:Paint(w,h) ButtonPaint(self,w,h,icon_red,false) end
+			buttons.Button1:SetText("")
+			AddTFButtonSounds(buttons.Button1)
+			buttons.Button2 = vgui.Create("DButton", buttons)
+			function buttons.Button2.DoClick() buttons:SetValue(true) end
+			function buttons.Button2:Paint(w,h) ButtonPaint(self,w,h,icon_blu, true) end
+			buttons.Button2:SetText("")
+			AddTFButtonSounds(buttons.Button2)
+			function buttons:PerformLayout()
+				local w,h = self:GetSize()
+				self.Button1:SetSize(42, h)
+				self.Button1:SetPos((w/2)-4-42, 0)
 
-			//TODO: make this use red/blu team icons later
-			local check = TFStyleVGUI("DCheckBoxLabel", attopts)
-			check:SetText("BLU")
-			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
-			attopts.team = check
-			check.OnChange = function(_, val)
+				self.Button2:SetSize(42, h)
+				self.Button2:SetPos((w/2)+4, 0)
+			end
+			buttons.SetValue = function(_, val)
+				buttons.Value = val
 				local ent = window:GetEntity()
 				if IsValid(ent) then
 					local skintoset
@@ -1824,6 +1860,8 @@ if CLIENT then
 					window.SpawnPanel.Refresh()
 				end
 			end
+			buttons.Value = false
+			attopts.team = buttons
 
 			local drop = AddDropdownFilter("Effects", function(self)
 				self:AddChoice("(none)", EFFECT_NONE, true)
@@ -1883,21 +1921,45 @@ if CLIENT then
 			local check = TFStyleVGUI("DCheckBoxLabel", attopts)
 			check:SetText("Large icons")
 			check:Dock(TOP)
-			check:DockMargin(0,0,0,betweenitems)
+			check:DockMargin(0,0,0,betweencategories)
 			check:SetChecked(icon_size == 2)
 			check.OnChange = function(_, val)
 				local data = 1
 				if val then data = 2 end
 				LocalPlayer():ConCommand("cl_tf2itembrowser_iconsize " .. data)
 				icon_size = data
-				right_holder:UpdateSize()
 				atticons:UpdateSize()
 				window:SetEntity(window:GetEntity())
 				window.RebuildIconList()
 			end
 
+			local text = vgui.Create("DLabel", attopts)
+			text:SetWrap(true)
+			text:SetContentAlignment(5)
+			text:SetAutoStretchVertical(true)
+			text:SetText("Right-click a model in the context menu to select it and attach items.")
+			text:Dock(TOP)
+			text:DockMargin(0,0,0,betweencategories)
+			text:InvalidateLayout()
+			attopts.emptytext = text
+
+			local button = vgui.Create("DButton", attopts)
+			button:SetText("")
+			button:SetHeight(20)
+			button:Dock(TOP)
+			button:DockMargin(0,0,0,betweencategories)
+			attopts.deselect = button
+			button.DoClick = function()
+				window:SetEntity(NULL)
+			end
+			AddTFButtonSounds(button)
+
 			attopts:InvalidateLayout(true)
 			attopts:SizeToChildren(false,true)
+			timer.Simple(0.1,function()
+				attopts:InvalidateLayout(true)
+				attopts:SizeToChildren(false,true)
+			end)
 
 			AccessorFunc(window, "m_Entity", "Entity")
 			function window:SetEntity(ent)
@@ -1926,7 +1988,7 @@ if CLIENT then
 					atticons.Label:SetText("Attached to " .. mdl .. ":")
 					attopts.deselect:SetText("Deselect " .. mdl)
 
-					attopts.team:SetChecked(ent:GetSkin() % 2 != 0)
+					attopts.team:SetValue(ent:GetSkin() % 2 != 0)
 
 					//Try to figure out if the selected ent has fx applied
 					attopts.fx.IsUpdating = true
@@ -1956,9 +2018,9 @@ if CLIENT then
 					attopts:InvalidateLayout(true)
 					attopts:SizeToChildren(false,true)
 
-					//Reset soem options that were specific to the selected ent
+					//Reset some options that were specific to the selected ent
 					filters.class:ChooseOptionID(1)
-					attopts.team:SetChecked(false)
+					attopts.team:SetValue(false)
 					attopts.fx.IsUpdating = true
 					attopts.fx:ChooseOptionID(1)
 					attopts.fx.IsUpdating = nil
@@ -2253,7 +2315,7 @@ if CLIENT then
 			end
 		end
 
-		local team = TF2ItemBrowser.attopts.team:GetChecked()
+		local team = TF2ItemBrowser.attopts.team.Value
 
 		local style = 0
 		if i.visuals and i.visuals.styles then
@@ -2704,7 +2766,32 @@ if CLIENT then
 	function PANEL:AddItemText(pnl, text, font, col)
 		
 		local h = 0
-		for _, v in ipairs (string.Explode("\n", textWrap(text, font, popup_w-(popup_pad*2)))) do
+		local max_w = popup_w-(popup_pad*2)
+		local tab = string.Explode("\n", textWrap(text, font, max_w))
+		for k, v in ipairs (tab) do
+			//textWrap has an edge case where if a string has two spaces in a row, it won't get the width of the additional space.
+			//This is bad because it thinks the text including the double-space is less wide than it is, so it doesn't wrap the
+			//text where it should, and returns a string that's too long to fit here. 
+			//This happens with: 528 The Short Circuit, 13217 Holographic Harvest Lahsuniya Ratna 2022
+			local _w, _ = surface.GetTextSize(v)
+			if _w > max_w then
+				MsgN("got overlong description string: ", v)
+				//Find the LAST space in the string to get the word that goes over the limit, and move it into the next line
+				local _end, loops = 0, 0
+				while true do
+					loops = loops + 1
+					if loops > 50 then MsgN("whoops") break end
+					local _, _end2 = string.find(v, " ", _end+1, true)
+					if _end2 != nil then
+						_end = _end2
+					else
+						break
+					end
+				end
+				tab[k+1] = string.sub(v, _end+1) .. " " .. (tab[k+1] or "")
+				v = string.sub(v, 1, _end-1)
+			end
+
 			local label = pnl:Add("DLabel")
 			label:Dock(TOP)
 			label:SetFont(font)
@@ -3460,7 +3547,7 @@ if CLIENT then
 
 			//update these every time we open or refresh the panel, since they can change after the icon has been created
 			if !IsValid(ent) then 
-				self.data.team = TF2ItemBrowser.attopts.team:GetChecked()
+				self.data.team = TF2ItemBrowser.attopts.team.Value
 				local _, f = TF2ItemBrowser.attopts.fx:GetSelected()
 				self.data.fx = f
 			end
