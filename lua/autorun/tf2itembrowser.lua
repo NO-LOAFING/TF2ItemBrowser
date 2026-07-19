@@ -1275,8 +1275,8 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 949,
-		height		= 692,
+		width		= 954,
+		height		= 694,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
@@ -1338,7 +1338,7 @@ if CLIENT then
 			divider:SetDividerWidth(8)
 			//divider:SetLeftMin(64)
 			divider:SetRightMin(popup_w) //make sure the right side is always wide enough to fit an item popup
-			divider:SetLeftWidth(225)
+			divider:SetLeftWidth(230)
 
 
 			TF2ItemBrowser = window
@@ -1352,15 +1352,25 @@ if CLIENT then
 			window:SetMinWidth(p1 + p2 + p3 + p4 + right_scroll.VBar:GetWide() + right_scroll:GetWide())
 
 
-			local text = vgui.Create("DLabel", filters)
-			text:SetWrap(true)
-			text:SetContentAlignment(5)
+			local text_holder = vgui.Create("Panel", filters)
+			text_holder:Dock(TOP)
+			text_holder:DockMargin(-8,-8,-8,betweenitems)
+			local text = vgui.Create("DLabel", text_holder)
+			text:SetContentAlignment(7) //top left
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemName")
 			text:SetColor(gui_colors.TanLight)
 			text:SetText("Filters:")
-			text:Dock(TOP)
-			text:DockMargin(-8,-8,0,betweenitems)
+			text:Dock(FILL)
+			text_holder:SetTall(text:GetTall())
+			local text = vgui.Create("DLabel", text_holder)
+			text:SetContentAlignment(9) //top right
+			text:SetAutoStretchVertical(true)
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.TanDark)
+			text:SetText(("(10030 items)"))
+			text:Dock(FILL)
+			window.ItemCountText = text
 
 			local search = vgui.Create("DTextEntry", filters)
 			search:SetHeight(20)
@@ -1657,7 +1667,11 @@ if CLIENT then
 				right_scroll:InvalidateLayout()
 				right_scroll.VBar:SetScroll(0)
 				right_scroll:SetMouseInputEnabled(false)
-				//MsgN(#window.icons_to_add, " icons to add")
+				if #window.icons_to_add != 1 then
+					window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " items)")
+				else
+					window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " item)")
+				end
 			end
 			function iconlist:PerformLayout(w, h)
 				//Rebuild the iconlist if resizing it changed the number of columns
@@ -1733,7 +1747,7 @@ if CLIENT then
 
 
 			local atticons_holder = vgui.Create("DPanel", right_holder)
-			atticons_holder:DockPadding(0,10,0,0)
+			//atticons_holder:DockPadding(0,0,0,0)
 			atticons_holder:Dock(BOTTOM)
 			window.atticons_holder = atticons_holder
 			function atticons_holder:Paint(w,h)
@@ -1746,13 +1760,16 @@ if CLIENT then
 			window.atticons = atticons
 			atticons.icons = {}
 			atticons.Label = vgui.Create("DLabel", atticons_holder)
+			atticons.Label:SetContentAlignment(4) //middle left
+			atticons.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			atticons.Label:SetColor(gui_colors.TanLight)
 			atticons.Label:SetText("")
-			atticons.Label:SetWide(1000)
-			atticons.Label:SetPos(6,6)
+			atticons.Label:Dock(FILL)
+			atticons.Label:DockMargin(0,4,0,0)
 			function atticons:UpdateSize()
 				atticons:SetHeight(item_icon_sizes[icon_size].h)
 				atticons:SetOverlap(-item_icon_sizes[icon_size].gap_w)
-				atticons_holder:SetTall(item_icon_sizes[icon_size].h + atticons.Label:GetTall() + 8)//(item_icon_sizes[icon_size].h+3+item_icon_sizes[icon_size].gap_h)
+				atticons_holder:SetTall(item_icon_sizes[icon_size].h + 24)
 			end
 			atticons:UpdateSize()
 
@@ -1784,8 +1801,7 @@ if CLIENT then
 			end
 
 			local text = vgui.Create("DLabel", attopts)
-			text:SetWrap(true)
-			text:SetContentAlignment(5)
+			text:SetContentAlignment(7) //top left
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemName")
 			text:SetColor(gui_colors.TanLight)
@@ -1935,8 +1951,9 @@ if CLIENT then
 
 			local text = vgui.Create("DLabel", attopts)
 			text:SetWrap(true)
-			text:SetContentAlignment(5)
 			text:SetAutoStretchVertical(true)
+			text:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			text:SetColor(gui_colors.TanLight)
 			text:SetText("Right-click a model in the context menu to select it and attach items.")
 			text:Dock(TOP)
 			text:DockMargin(0,0,0,betweencategories)
@@ -2798,7 +2815,7 @@ if CLIENT then
 			label:SetText(v)
 			label:SetTextColor(col)
 			label:SetAutoStretchVertical(true)
-			label:SetContentAlignment(5)
+			label:SetContentAlignment(5) //center
 			local _, _h = surface.GetTextSize(v)
 			h = h + _h
 		end
@@ -4788,12 +4805,12 @@ if CLIENT then
 				end
 				local help = vgui.Create("DLabel", container)
 				help:SetWrap(true)
-				help:SetContentAlignment(5)
 				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(gui_colors.TanLight)
 				help:SetText("Non-TF2-accurate wear with higher visual intensity")
 				help:Dock(TOP)
 				help:DockMargin(22,0,32,0)
-				//help:SetTextColor(self:GetSkin().Colours.Tree.Hover) //no blue color because this doesn't work with the TF2 theme, maybe try something else?
 				local intensity_help = help
 
 				local slider = vgui.Create("DNumSlider", container)
@@ -4835,12 +4852,12 @@ if CLIENT then
 				end
 				local help = vgui.Create("DLabel", container)
 				help:SetWrap(true)
-				help:SetContentAlignment(5)
 				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(gui_colors.TanLight)
 				help:SetText("Samples scratch texture twice at different UVs for denser wear patterns")
 				help:Dock(TOP)
 				help:DockMargin(22+32,0,32,0)
-				//help:SetTextColor(self:GetSkin().Colours.Tree.Hover) //no blue color because this doesn't work with the TF2 theme, maybe try something else?
 				local scratch_help = help
 
 				function container:UpdateSize()
