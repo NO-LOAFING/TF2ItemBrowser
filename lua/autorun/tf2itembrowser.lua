@@ -1219,6 +1219,30 @@ if CLIENT then
 						end
 					end
 				end
+			elseif class == "DButton" then
+				AddTFButtonSounds(pnl)
+				//pnl:SetHeight(30) //backpack page button proportions
+				pnl:SetHeight(36) //standard button proportions
+				pnl:SetFont("TF2ItemBrowser_ItemName")
+				pnl.BGColor = gui_colors.TanDark
+				pnl.FGColor = gui_colors.TanLight
+				pnl.DepressedBGColor = gui_colors.TFOrange
+				pnl.DepressedFGColor = gui_colors.TanDarker //same as Black from TF2 clientscheme
+				pnl.ArmedBGColor = gui_colors.TFOrange
+				pnl.ArmedFGColor = gui_colors.TanLight
+				function pnl:Paint(w, h)
+					local col = self.BGColor
+					local textcol = self.FGColor
+					if self.Depressed then
+						col = self.DepressedBGColor
+						textcol = self.DepressedFGColor
+					elseif self.Hovered then
+						col = self.ArmedBGColor
+						textcol = self.ArmedFGColor
+					end
+					draw.RoundedBox(12, 0,0,w,h, col)
+					self:SetColor(textcol)
+				end
 			end
 			//TODO: "t" for gui symbol up arrow
 		end
@@ -1348,7 +1372,7 @@ if CLIENT then
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
 		width		= 954,
-		height		= 694,
+		height		= 674,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
@@ -1671,15 +1695,16 @@ if CLIENT then
 			filters.tm.Button2:SetChecked(true)
 			filters.custom = AddIncludeExcludeFilter("Custom items")
 
-			local button = vgui.Create("DButton", filters)
-			button:SetText("Add custom item...")
-			button:SetHeight(20)
-			button:Dock(TOP)
+			local button = TFStyleVGUI("DButton", filters.custom)
+			//filters.custom:SetTall(button:GetTall()) //we can get away with making this smaller because the plus in this font is so small
+			button:SetText("+")
+			//button:SizeToContentsX(20) //^
+			button:SizeToContentsX(10) 
+			button:Dock(RIGHT)
 			button:DockMargin(0,0,0,0)
 			button.DoClick = function()
 				//TODO: open custom item dialog
 			end
-			AddTFButtonSounds(button)
 
 			filters:InvalidateLayout(true)
 			filters:SizeToChildren(false,true)
@@ -2048,31 +2073,54 @@ if CLIENT then
 				window.RebuildIconList()
 			end
 
-			local text = vgui.Create("DLabel", attopts)
+			local deselect_holder = vgui.Create("Panel", attopts)
+			deselect_holder:Dock(TOP)
+
+			local button = TFStyleVGUI("DButton", deselect_holder)
+			button:SetText("Deselect Model")
+			button:Dock(BOTTOM)
+			button:DockMargin(0,-button:GetTall(),0,0)
+			button:SetVisible(false)
+			button.DoClick = function()
+				window:SetEntity(NULL)
+			end
+
+			local text = vgui.Create("DLabel", deselect_holder)
 			text:SetWrap(true)
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 			text:SetColor(gui_colors.TanLight)
 			text:SetText("Right-click a model in the context menu to select it and attach items.")
-			text:Dock(TOP)
-			text:DockMargin(0,0,0,betweencategories)
+			text:Dock(BOTTOM)
 			text:InvalidateLayout()
-			attopts.emptytext = text
 
-			local button = vgui.Create("DButton", attopts)
-			button:SetText("")
-			button:SetHeight(20)
-			button:Dock(TOP)
-			button:DockMargin(0,0,0,betweencategories)
-			attopts.deselect = button
-			button.DoClick = function()
-				window:SetEntity(NULL)
+			//This spot is occupied by either the deselect button or the text explaining how to select a model, with which one is visible
+			//changing depending on if a model is selected. It looks ugly if the height of the panel changes on select/deselect, so instead
+			//make the space that they share take up the height of whichever item is taller, regardless of visiblity.
+			function deselect_holder:PerformLayout(w, h)
+				button:InvalidateLayout()
+				text:InvalidateLayout()
+				local _h = math.max(button:GetTall(), text:GetTall())
+				if h != _h then self:SetTall(_h) return end
+
+				local valid = IsValid(window:GetEntity())
+				button:SetVisible(valid)
+				//if valid then text:SetText("Deselect " .. window:GetEntity():GetModel()) end
+				//text:SetVisible(!valid) //this makes the text autostretch stop working; just make it transparent instead
+				if !valid then
+					text:SetColor(gui_colors.TanLight)
+				else
+					text:SetColor(color_transparent)
+				end
+				attopts:InvalidateLayout(true)
+				attopts:SizeToChildren(false,true)
 			end
-			AddTFButtonSounds(button)
 
+			deselect_holder:InvalidateLayout(true)
 			attopts:InvalidateLayout(true)
 			attopts:SizeToChildren(false,true)
 			timer.Simple(0.1,function()
+				deselect_holder:InvalidateLayout(true)
 				attopts:InvalidateLayout(true)
 				attopts:SizeToChildren(false,true)
 			end)
@@ -2086,11 +2134,7 @@ if CLIENT then
 				if IsValid(ent) then
 					atticons_holder:SetVisible(true)
 					right_holder:InvalidateLayout()
-
-					attopts.emptytext:SetVisible(false)
-					attopts.deselect:SetVisible(true)
-					attopts:InvalidateLayout(true)
-					attopts:SizeToChildren(false,true)
+					deselect_holder:InvalidateLayout()
 
 					local mdl = string.GetFileFromFilename(ent:GetModel())
 					//Try to figure out what class the model is, and set the class filter to match
@@ -2102,7 +2146,6 @@ if CLIENT then
 						end
 					end
 					atticons.Label:SetText("Attached to " .. mdl .. ":")
-					attopts.deselect:SetText("Deselect " .. mdl)
 
 					attopts.team:SetValue(ent:GetSkin() % 2 != 0)
 
@@ -2128,11 +2171,7 @@ if CLIENT then
 				else
 					atticons_holder:SetVisible(false)
 					right_holder:InvalidateLayout()
-
-					attopts.emptytext:SetVisible(true)
-					attopts.deselect:SetVisible(false)
-					attopts:InvalidateLayout(true)
-					attopts:SizeToChildren(false,true)
+					deselect_holder:InvalidateLayout()
 
 					//Reset some options that were specific to the selected ent
 					filters.class:ChooseOptionID(1)
@@ -4762,14 +4801,12 @@ if CLIENT then
 				icons:Dock(FILL)
 
 				local entrypnl = vgui.Create("Panel", container)
-				entrypnl:SetHeight(20)
 				entrypnl:Dock(TOP)
 				entrypnl:DockMargin(0,16,0,0)
 				local label = vgui.Create("DLabel", entrypnl)
 				label:SetText("Seed")
 				label:Dock(LEFT)
 				local entry = vgui.Create("DTextEntry", entrypnl)
-				entry:SetHeight(20)
 				entry:Dock(FILL)
 				entry:SetNumeric(true)
 				entry:SetText(self.data.wp.seed or "0")
@@ -4789,8 +4826,11 @@ if CLIENT then
 					label:SetWide(w / 2.4)
 				end
 
-				local button = vgui.Create("DButton", entrypnl)
+				local button = TFStyleVGUI("DButton", entrypnl)
+				button:SetHeight(30) //backpack page button proportions
+				entrypnl:SetTall(button:GetTall())
 				button:SetText(GetTFLanguageString("TF_ItemPreview_PaintkitSeed"))
+				button:SizeToContentsX(20)
 				button:Dock(RIGHT)
 				button:DockMargin(8,0,0,0)
 				button.DoClick = function()
@@ -4799,7 +4839,6 @@ if CLIENT then
 					self.data.wp.seed = val
 					pnl.OnSettingChanged()
 				end
-				AddTFButtonSounds(button)
 
 				local slider = vgui.Create("DNumSlider", container)
 				local wear_slider = slider
@@ -5152,19 +5191,19 @@ if CLIENT then
 			end
 		end
 
-		local button = vgui.Create("DButton", pnl)
+		local button = TFStyleVGUI("DButton", pnl)
 		if IsValid(self.entity) then
 			button:SetText("Remove!")
-			button:SetColor(Color(255,100,100,255))
+			button.BGColor = gui_colors.TFOrange
+			button.ArmedBGColor = gui_colors.LightRed
+			button.DepressedBGColor = gui_colors.LightRed
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
 			button:SetText("Attach!")
 		else
 			button:SetText("Spawn!")
 		end
-		button:SetHeight(20)
 		button:Dock(TOP)
 		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
-		AddTFButtonSounds(button)
 		button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 		button.DoClick = function()
 			if IsValid(self.entity) then
@@ -5187,10 +5226,16 @@ if CLIENT then
 
 		local close = vgui.Create("DImageButton", pnl)
 		close:SetSize(25,25)
-		close:SetPos(popup_w-25-10, 10)
 		close:SetMaterial(close_button)
-		close:SetColor(gui_colors.RedSolid)
+		close:SetColor(gui_colors.LightRed)
 		AddTFButtonSounds(close)
+		--[[local close = TFStyleVGUI("DButton", pnl) //ehh, this doesn't look as good
+		close:SetText("X")
+		close:SetSize(30,30) //backpack page button proportions
+		close.BGColor = gui_colors.TFOrange
+		close.ArmedBGColor = gui_colors.LightRed
+		close.DepressedBGColor = gui_colors.LightRed]]
+		close:SetPos(popup_w-close:GetWide()-10, 10)
 		function close:DoClick()
 			pnl:Remove()
 		end
@@ -5504,6 +5549,7 @@ if CLIENT then
 
 		self.menu = menu
 		menu:Open()
+		//AddTFStyleToDMenu(menu)
 
 	end
 
