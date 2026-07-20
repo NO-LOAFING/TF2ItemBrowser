@@ -1095,6 +1095,42 @@ if CLIENT then
 	local icon_red = Material("vgui/store/store_redteam.vmt")
 	local icon_blu = Material("vgui/store/store_blueteam.vmt")
 
+	local function AddTFStyleToDMenu(menu)
+		function menu:Paint(w, h)
+			surface.SetDrawColor(color_black) //tf2 does this by having a TransparentBlack background and TransparentBlack buttons? whatever, this is the same
+			surface.DrawRect(0,0,w,h)
+		end
+		for _, v in ipairs (menu:GetCanvas():GetChildren()) do
+			local name = v:GetName()
+			if name == "DMenuOption" then
+				v:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				function v:Paint(w, h)
+					local col = gui_colors.TanLight
+					if self.Hovered or self.Highlight or (self.SubMenu and self.SubMenu:IsVisible()) then
+						surface.SetDrawColor(gui_colors.TanLight)
+						surface.DrawRect(0,0,w,h)
+						col = gui_colors.TanDark
+					end
+					self:SetColor(col)
+					if self:GetChecked() then
+						draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 4, h/2-10, col) //check mark
+					end
+					if self.SubMenu then
+						draw.SimpleText("8", "TF2ItemBrowser_GUISymbols", w-20, h/2-10, col) //right-pointing arrow
+					end
+				end
+				if v.SubMenu then
+					v.SubMenuArrow:Remove()
+					AddTFStyleToDMenu(v.SubMenu)
+				end
+			elseif name == "DPanel" and v:GetTall() == 1 then //spacer
+				function v:Paint(w, h)
+					surface.SetDrawColor(gui_colors.TanLight)
+					surface.DrawRect(0,0,w,h)
+				end
+			end
+		end
+	end
 	local function TFStyleVGUI(class, par)
 		local pnl = vgui.Create(class, par)
 		if IsValid(pnl) then
@@ -1163,35 +1199,7 @@ if CLIENT then
 				end
 				function pnl:PerformLayout() end
 				function pnl:OnMenuOpened(menu)
-					//TF2 styling
-					function menu:Paint(w, h)
-						surface.SetDrawColor(color_black) //tf2 does this by having a TransparentBlack background and TransparentBlack buttons? whatever, this is the same
-						surface.DrawRect(0,0,w,h)
-					end
-					for _, v in ipairs (menu:GetCanvas():GetChildren()) do
-						local name = v:GetName()
-						if name == "DMenuOption" then
-							v:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-							function v:Paint(w, h)
-								local col = gui_colors.TanLight
-								if self.Hovered or self.Highlight then
-									surface.SetDrawColor(gui_colors.TanLight)
-									surface.DrawRect(0,0,w,h)
-									col = gui_colors.TanDark
-								end
-								self:SetColor(col)
-								if self:GetChecked() then
-									//self:GetSkin().tex.Menu_Check( 5, h / 2 - 7, 15, 15 )
-									draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 4, h/2-10, col)
-								end
-							end
-						elseif name == "DPanel" and v:GetTall() == 1 then //spacer
-							function v:Paint(w, h)
-								surface.SetDrawColor(gui_colors.TanLight)
-								surface.DrawRect(0,0,w,h)
-							end
-						end
-					end
+					AddTFStyleToDMenu(menu)
 					//Not TF2 related, but every DComboBox here already had this as its OnMenuOpened func, so do this here instead:
 					//Add a checkmark to the currently selected option.
 					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
@@ -1528,6 +1536,7 @@ if CLIENT then
 				self.IsRebuilding = true
 				self:Clear()
 				self:AddChoice("(any)", "(any)", old_choice == "(any)")
+				local submenus = {}
 				//If we have a class selected, only show sets containing items for that class
 				local _, selected_class = filters.class:GetSelected()
 				selected_class = selected_class or "(any)"
@@ -1535,15 +1544,58 @@ if CLIENT then
 				for _, v in ipairs (sets) do
 					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
-						self:AddChoice(GetTFLanguageString(TF2Items.item_sets[v].name, true) or v, v, old_choice == v)
+						local k = GetTFLanguageString(TF2Items.item_sets[v].name, true) or v
+						local id = self:AddChoice(k, v, old_choice == v)
+						submenus.sets = submenus.sets or {}
+						table.insert(submenus.sets, {name = k, id = id})
 					end
 				end
 				added_spacer = false
 				for _, v in ipairs (collections) do
 					if selected_class == "(any)" or TF2Items.item_collections[v]._classes[selected_class] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
-						self:AddChoice(GetTFLanguageString(TF2Items.item_collections[v].name, true) or v, v, old_choice == v)
+						local k = GetTFLanguageString(TF2Items.item_collections[v].name, true) or v
+						local id = self:AddChoice(k, v, old_choice == v)
+						submenus.collections = submenus.collections or {}
+						table.insert(submenus.collections, {name = k, id = id})
 					end
+				end
+				//Add custom dropdown with submenus, instead of dumping all the sets and collections into one huge list
+				function self:OpenMenu()
+					self:CloseMenu()
+					self.Menu = DermaMenu(false)
+
+					self.Menu:AddOption(self.Choices[1], function() self:ChooseOption(self.Choices[1], 1) end)
+
+					local sel = self:GetSelectedID()
+					local done_spacer
+					if submenus.sets then
+						if !done_spacer then self.Menu:AddSpacer() done_spacer = true end
+						local submenu = self.Menu:AddSubMenu("Sets")
+						for _, tab in ipairs (submenus.sets) do
+							local opt = submenu:AddOption(tab.name, function() self:ChooseOption(tab.name, tab.id) end)				
+							if tab.id == sel then
+								opt:SetChecked(true)
+								submenu:ScrollToChild(opt)
+							end
+						end
+					end
+					if submenus.collections then
+						if !done_spacer then self.Menu:AddSpacer() done_spacer = true end
+						local submenu = self.Menu:AddSubMenu("Collections")
+						for _, tab in ipairs (submenus.collections) do
+							local opt = submenu:AddOption(tab.name, function() self:ChooseOption(tab.name, tab.id) end)
+							if tab.id == sel then
+								opt:SetChecked(true)
+								submenu:ScrollToChild(opt)
+							end
+						end
+					end
+
+					local x, y = self:LocalToScreen(0, self:GetTall())
+					self.Menu:SetMinimumWidth(self:GetWide())
+					self.Menu:Open(x, y, false, self)
+					self:OnMenuOpened(self.Menu)
 				end
 				//if we had a class-specific set selected, and then switched to a class that doesn't have it, revert to "(any)"
 				local _, check = self:GetSelected()
