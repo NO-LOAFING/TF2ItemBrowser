@@ -1030,6 +1030,8 @@ if CLIENT then
 		RedSolid	= Color(192,28,0,255),
 		LightRed	= Color(200,80,60,255),
 		TFOrange	= Color(145,73,59,255),
+
+		Gray		= Color(178,178,178,255),
 	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
@@ -1243,6 +1245,33 @@ if CLIENT then
 					draw.RoundedBox(12, 0,0,w,h, col)
 					self:SetColor(textcol)
 				end
+			elseif class == "DTextEntry" then
+				//if !pnl.DarkTextEntry then //this doesn't work
+					pnl:SetFont("TF2ItemBrowser_ItemDesc") //_Smaller is too hard to read with dark text on a bright background
+				//end
+				pnl:SetHeight(20) //30 would be more accurate proportionately, but it's too big to fit nicely
+				function pnl:Paint(w,h)
+					if !pnl.DarkTextEntry then
+						draw.RoundedBox(12, 0,0,w,h, gui_colors.Yellow)
+					else
+						draw.RoundedBox(12, 0,0,w,h, gui_colors.TransparentBlack)
+					end
+					local oldtext = self:GetText()
+					if oldtext == "" then oldtext = nil end
+					if !oldtext then
+						local str = self:GetPlaceholderText()
+						if (str:StartsWith("#")) then str = str:sub(2) end
+						str = language.GetPhrase(str)
+						self:SetText(str)
+					end
+					if !pnl.DarkTextEntry then
+						self:DrawTextEntryText(gui_colors.TanDark, gui_colors.Gray, gui_colors.Gray)
+					else
+						self:DrawTextEntryText(gui_colors.Gray, gui_colors.Gray, gui_colors.Gray)
+					end
+					if !oldtext then self:SetText("") end
+				end
+				//note: can't figure out how to modify the appearance of the right-click menu, it might be hard-coded in C++
 			end
 			//TODO: "t" for gui symbol up arrow
 		end
@@ -1468,24 +1497,16 @@ if CLIENT then
 			text:Dock(FILL)
 			window.ItemCountText = text
 
-			local search = vgui.Create("DTextEntry", filters)
-			search:SetHeight(20)
+			local search = TFStyleVGUI("DTextEntry", filters)
 			search:Dock(TOP)
 			search:DockMargin(0,0,0,betweencategories)
 			search:SetPlaceholderText("#spawnmenu.search")
-			search:SetTooltip("#spawnmenu.enter_search")
 			filters.search = search
-			search.OnEnter = function()
-				window.RebuildIconList()
-			end
-			local searchbutton = search:Add("DImageButton")
-			searchbutton:SetImage("icon16/magnifier.png")
-			searchbutton:Dock(RIGHT)
-			searchbutton:DockMargin(4,2,4,2)
-			searchbutton:SetSize(16,16)
-			searchbutton:SetTooltip("#spawnmenu.press_search")
-			searchbutton.DoClick = function()
-				search.OnEnter()
+			search:SetUpdateOnType(true)
+			search.OnValueChange = function()
+				timer.Create("TF2ItemBrowser_SearchDelay", 0.5, 1, function()
+					if IsValid(window) then window.RebuildIconList() end
+				end)
 			end
 
 			local function AddDropdownFilter(label, populatefunc, select_extras)
@@ -4438,34 +4459,38 @@ if CLIENT then
 						icons.SelectCategory(data)
 					end
 
-					search = vgui.Create("DTextEntry", search_holder)
+					search = TFStyleVGUI("DTextEntry", search_holder)
 					search:Dock(FILL)
 					search:SetPlaceholderText("#spawnmenu.filter")
 					search:SetUpdateOnType(true)
 					search.OnValueChange = function(_, p)
-						if #p == 0 then
-							//Search is empty, go back to using the category dropdown
-							//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
-							local selected = GetDefaultCategory()
-							for k, v in pairs (drop2.Data) do
-								if v == selected then
-									drop2:ChooseOptionID(k)
-								end
-							end
-						else
-							//Search is populated, stop using categories and show all matching options
-							p = p:lower()
-							local tab = {}
-							for k, v in SortedPairs (categories) do
-								for _, entry in ipairs (v.items) do
-									if entry.v:lower():find(p, 1, true) then
-										table.insert(tab, entry)
+						timer.Create("TF2ItemBrowser_SearchDelay_UFilter", 0.5, 1, function()
+							if IsValid(icons) then
+								if #p == 0 then
+									//Search is empty, go back to using the category dropdown
+									//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+									local selected = GetDefaultCategory()
+									for k, v in pairs (drop2.Data) do
+										if v == selected then
+											drop2:ChooseOptionID(k)
+										end
 									end
+								else
+									//Search is populated, stop using categories and show all matching options
+									p = p:lower()
+									local tab = {}
+									for k, v in SortedPairs (categories) do
+										for _, entry in ipairs (v.items) do
+											if entry.v:lower():find(p, 1, true) then
+												table.insert(tab, entry)
+											end
+										end
+									end
+									icons.RebuildIcons(tab)
+									drop2:SetText("")
 								end
 							end
-							icons.RebuildIcons(tab)
-							drop2:SetText("")
-						end
+						end)
 					end
 					function search_holder.PerformLayout(_, w, h)
 						drop2:SetWide((w/2)-4)
@@ -4753,34 +4778,38 @@ if CLIENT then
 						icons.SelectCategory(data)
 					end
 
-					search = vgui.Create("DTextEntry", search_holder)
+					search = TFStyleVGUI("DTextEntry", search_holder)
 					search:Dock(FILL)
 					search:SetPlaceholderText("#spawnmenu.filter")
 					search:SetUpdateOnType(true)
 					search.OnValueChange = function(_, p)
-						if #p == 0 then
-							//Search is empty, go back to using the category dropdown
-							//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
-							local selected = GetDefaultCategory()
-							for k, v in pairs (drop2.Data) do
-								if v == selected then
-									drop2:ChooseOptionID(k)
-								end
-							end
-						else
-							//Search is populated, stop using categories and show all matching options
-							p = p:lower()
-							local tab = {}
-							for k, v in SortedPairs (categories) do
-								for _, entry in ipairs (v.items) do
-									if entry.v:lower():find(p, 1, true) then
-										table.insert(tab, entry)
+						timer.Create("TF2ItemBrowser_SearchDelay_WPFilter", 0.5, 1, function()
+							if IsValid(icons) then
+								if #p == 0 then
+									//Search is empty, go back to using the category dropdown
+									//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+									local selected = GetDefaultCategory()
+									for k, v in pairs (drop2.Data) do
+										if v == selected then
+											drop2:ChooseOptionID(k)
+										end
 									end
+								else
+									//Search is populated, stop using categories and show all matching options
+									p = p:lower()
+									local tab = {}
+									for k, v in SortedPairs (categories) do
+										for _, entry in ipairs (v.items) do
+											if entry.v:lower():find(p, 1, true) then
+												table.insert(tab, entry)
+											end
+										end
+									end
+									icons.RebuildIcons(tab)
+									drop2:SetText("")
 								end
 							end
-							icons.RebuildIcons(tab)
-							drop2:SetText("")
-						end
+						end)
 					end
 					function search_holder.PerformLayout(_, w, h)
 						drop2:SetWide((w/2)-4)
@@ -4806,7 +4835,9 @@ if CLIENT then
 				local label = vgui.Create("DLabel", entrypnl)
 				label:SetText("Seed")
 				label:Dock(LEFT)
-				local entry = vgui.Create("DTextEntry", entrypnl)
+				local entry = TFStyleVGUI("DTextEntry", entrypnl)
+				entry.DarkTextEntry = true
+				entry:SetFont("HudSelectionText") //default verdana but slightly larger
 				entry:Dock(FILL)
 				entry:SetNumeric(true)
 				entry:SetText(self.data.wp.seed or "0")
@@ -5194,9 +5225,7 @@ if CLIENT then
 		local button = TFStyleVGUI("DButton", pnl)
 		if IsValid(self.entity) then
 			button:SetText("Remove!")
-			button.BGColor = gui_colors.TFOrange
-			button.ArmedBGColor = gui_colors.LightRed
-			button.DepressedBGColor = gui_colors.LightRed
+			button.BGColor = gui_colors.LightRed
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
 			button:SetText("Attach!")
 		else
@@ -5224,18 +5253,20 @@ if CLIENT then
 			LoadoutItemPopupBorder(0,0,w,h)
 		end
 
-		local close = vgui.Create("DImageButton", pnl)
+		local close = vgui.Create("DButton", pnl)
+		close:SetText("")
 		close:SetSize(25,25)
-		close:SetMaterial(close_button)
-		close:SetColor(gui_colors.LightRed)
-		AddTFButtonSounds(close)
-		--[[local close = TFStyleVGUI("DButton", pnl) //ehh, this doesn't look as good
-		close:SetText("X")
-		close:SetSize(30,30) //backpack page button proportions
-		close.BGColor = gui_colors.TFOrange
-		close.ArmedBGColor = gui_colors.LightRed
-		close.DepressedBGColor = gui_colors.LightRed]]
 		close:SetPos(popup_w-close:GetWide()-10, 10)
+		function close:Paint(w,h)
+			if self.Depressed or self.Hovered then
+				surface.SetDrawColor(gui_colors.TFOrange)
+			else
+				surface.SetDrawColor(gui_colors.LightRed)
+			end
+			surface.SetMaterial(close_button)
+			surface.DrawTexturedRect(0,0,w,h)
+		end
+		AddTFButtonSounds(close)
 		function close:DoClick()
 			pnl:Remove()
 		end
