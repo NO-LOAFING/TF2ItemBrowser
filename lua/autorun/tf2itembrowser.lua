@@ -1105,46 +1105,10 @@ if CLIENT then
 	local icon_red = Material("vgui/store/store_redteam.vmt")
 	local icon_blu = Material("vgui/store/store_blueteam.vmt")
 
-	local function AddTFStyleToDMenu(menu)
-		function menu:Paint(w, h)
-			surface.SetDrawColor(color_black) //tf2 does this by having a TransparentBlack background and TransparentBlack buttons? whatever, this is the same
-			surface.DrawRect(0,0,w,h)
-		end
-		for _, v in ipairs (menu:GetCanvas():GetChildren()) do
-			local name = v:GetName()
-			if name == "DMenuOption" then
-				v:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-				function v:Paint(w, h)
-					local col = gui_colors.TanLight
-					if self.Hovered or self.Highlight or (self.SubMenu and self.SubMenu:IsVisible()) then
-						surface.SetDrawColor(gui_colors.TanLight)
-						surface.DrawRect(0,0,w,h)
-						col = gui_colors.TanDark
-					end
-					self:SetColor(col)
-					if self:GetChecked() then
-						draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 4, h/2-10, col) //check mark
-					end
-					if self.SubMenu then
-						draw.SimpleText("8", "TF2ItemBrowser_GUISymbols", w-20, h/2-10, col) //right-pointing arrow
-					end
-				end
-				if v.SubMenu then
-					v.SubMenuArrow:Remove()
-					AddTFStyleToDMenu(v.SubMenu)
-				end
-			elseif name == "DPanel" and v:GetTall() == 1 then //spacer
-				function v:Paint(w, h)
-					surface.SetDrawColor(gui_colors.TanLight)
-					surface.DrawRect(0,0,w,h)
-				end
-			end
-		end
-	end
-	local function TFStyleVGUI(class, par)
-		local pnl = vgui.Create(class, par)
-		if IsValid(pnl) then
-			local function CheckBoxPaint(self,w,h)
+	local function AddTFStyleToVGUI(pnl)
+		local class = pnl:GetName()
+		if class == "DCheckBox" then
+			function pnl:Paint(w,h)
 				local x, y = w/2, h/2
 				local col = gui_colors.TransparentBlack
 				if !self:IsEnabled() then col = gui_colors.TanDark end //override used in testitembotcontrols.res
@@ -1173,115 +1137,167 @@ if CLIENT then
 					else
 						//this is how the source engine code draws the *entire* checkbox, just symbols from the Marlett font (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/vgui2/vgui_controls/CheckButton.cpp#L23-L58);
 						//we use Draw(OutlinedRect) instead for the box because those symbols don't scale well at this size
-						draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 1, 0, col)
+						draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 1, 0, col) //check mark
 					end
 				end
 			end
-			if class == "DCheckBox" then
-				pnl.Paint = CheckBoxPaint
-				pnl:SetSize(20,20)
-			elseif class == "DCheckBoxLabel" then
-				pnl.Button.Paint = CheckBoxPaint
-				pnl:SetHeight(20)
-				function pnl:PerformLayout()
-					local x = self.m_iIndent || 0
+			pnl:SetSize(20,20)
+		elseif class == "DCheckBoxLabel" then
+			AddTFStyleToVGUI(pnl.Button)
+			pnl:SetHeight(20)
+			function pnl:PerformLayout()
+				local x = self.m_iIndent || 0
 
-					self.Button:SetSize( 20, 20 ) //the only change
-					self.Button:SetPos( x, math.floor( ( self:GetTall() - self.Button:GetTall() ) / 2 ) )
+				self.Button:SetSize( 20, 20 ) //the only change
+				self.Button:SetPos( x, math.floor( ( self:GetTall() - self.Button:GetTall() ) / 2 ) )
 
-					self.Label:SizeToContents()
-					self.Label:SetPos( x + self.Button:GetWide() + 9, math.floor( ( self:GetTall() - self.Label:GetTall() ) / 2 ) )
-				end
-				pnl.Label:SetColor(gui_colors.Yellow)
-				pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			elseif class == "DComboBox" then
-				pnl:SetColor(gui_colors.TanLight)
-				pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-				pnl.DropButton:Remove()
-				function pnl:Paint(w,h)
-					local col = gui_colors.TanLight
-					surface.SetDrawColor(col)
-					surface.DrawOutlinedRect(0,0,w,h,1)
+				self.Label:SizeToContents()
+				self.Label:SetPos( x + self.Button:GetWide() + 9, math.floor( ( self:GetTall() - self.Label:GetTall() ) / 2 ) )
+			end
+			pnl.Label:SetColor(gui_colors.Yellow)
+			pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+		elseif class == "DComboBox" then
+			pnl:SetColor(gui_colors.TanLight)
+			pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			pnl.DropButton:Remove()
+			function pnl:Paint(w,h)
+				local col = gui_colors.TanLight
+				surface.SetDrawColor(col)
+				surface.DrawOutlinedRect(0,0,w,h,1)
 
-					surface.SetFont("TF2ItemBrowser_GUISymbols")
-					local _w, _h = surface.GetTextSize("u")
-					draw.SimpleText("u", "TF2ItemBrowser_GUISymbols", w-_w, 0, col)
-				end
-				function pnl:PerformLayout() end
-				function pnl:OnMenuOpened(menu)
-					AddTFStyleToDMenu(menu)
-					//Not TF2 related, but every DComboBox here already had this as its OnMenuOpened func, so do this here instead:
-					//Add a checkmark to the currently selected option.
-					//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
-					//not including spacers, so we have to loop through the whole list like this until we've gone through enough
-					//non-spacer children to find the correct one.
-					local sel = self:GetSelectedID()
-					local sel_read = 0
-					for i = 1, menu:ChildCount() do
-						local child = menu:GetChild(i)
-						if child:GetName() == "DMenuOption" then
-							sel_read = sel_read + 1
-							if sel_read == sel then
-								child:SetChecked(true)
-								menu:ScrollToChild(child)
-								break
-							end
+				surface.SetFont("TF2ItemBrowser_GUISymbols")
+				local _w, _h = surface.GetTextSize("u")
+				draw.SimpleText("u", "TF2ItemBrowser_GUISymbols", w-_w, 0, col) //down-pointing arrow
+			end
+			function pnl:PerformLayout() end
+			function pnl:OnMenuOpened(menu)
+				AddTFStyleToVGUI(menu)
+				//Not TF2 related, but every DComboBox here already had this as its OnMenuOpened func, so do this here instead:
+				//Add a checkmark to the currently selected option.
+				//GetChild uses the number of children including spacers, while SetSelectedID uses the number of children
+				//not including spacers, so we have to loop through the whole list like this until we've gone through enough
+				//non-spacer children to find the correct one.
+				local sel = self:GetSelectedID()
+				local sel_read = 0
+				for i = 1, menu:ChildCount() do
+					local child = menu:GetChild(i)
+					if child:GetName() == "DMenuOption" then
+						sel_read = sel_read + 1
+						if sel_read == sel then
+							child:SetChecked(true)
+							menu:ScrollToChild(child)
+							break
 						end
 					end
 				end
-			elseif class == "DButton" then
-				AddTFButtonSounds(pnl)
-				//pnl:SetHeight(30) //backpack page button proportions
-				pnl:SetHeight(36) //standard button proportions
-				pnl:SetFont("TF2ItemBrowser_ItemName")
-				pnl.BGColor = gui_colors.TanDark
-				pnl.FGColor = gui_colors.TanLight
-				pnl.DepressedBGColor = gui_colors.TFOrange
-				pnl.DepressedFGColor = gui_colors.TanDarker //same as Black from TF2 clientscheme
-				pnl.ArmedBGColor = gui_colors.TFOrange
-				pnl.ArmedFGColor = gui_colors.TanLight
-				function pnl:Paint(w, h)
-					local col = self.BGColor
-					local textcol = self.FGColor
-					if self.Depressed then
-						col = self.DepressedBGColor
-						textcol = self.DepressedFGColor
-					elseif self.Hovered then
-						col = self.ArmedBGColor
-						textcol = self.ArmedFGColor
-					end
-					draw.RoundedBox(12, 0,0,w,h, col)
-					self:SetColor(textcol)
-				end
-			elseif class == "DTextEntry" then
-				//if !pnl.DarkTextEntry then //this doesn't work
-					pnl:SetFont("TF2ItemBrowser_ItemDesc") //_Smaller is too hard to read with dark text on a bright background
-				//end
-				pnl:SetHeight(20) //30 would be more accurate proportionately, but it's too big to fit nicely
-				function pnl:Paint(w,h)
-					if !pnl.DarkTextEntry then
-						draw.RoundedBox(12, 0,0,w,h, gui_colors.Yellow)
-					else
-						draw.RoundedBox(12, 0,0,w,h, gui_colors.TransparentBlack)
-					end
-					local oldtext = self:GetText()
-					if oldtext == "" then oldtext = nil end
-					if !oldtext then
-						local str = self:GetPlaceholderText()
-						if (str:StartsWith("#")) then str = str:sub(2) end
-						str = language.GetPhrase(str)
-						self:SetText(str)
-					end
-					if !pnl.DarkTextEntry then
-						self:DrawTextEntryText(gui_colors.TanDark, gui_colors.Gray, gui_colors.Gray)
-					else
-						self:DrawTextEntryText(gui_colors.Gray, gui_colors.Gray, gui_colors.Gray)
-					end
-					if !oldtext then self:SetText("") end
-				end
-				//note: can't figure out how to modify the appearance of the right-click menu, it might be hard-coded in C++
 			end
-			//TODO: "t" for gui symbol up arrow
+		elseif class == "DMenu" then
+			function pnl:Paint(w, h)
+				surface.SetDrawColor(color_black) //tf2 does this by having a TransparentBlack background and TransparentBlack buttons? whatever, this is the same
+				surface.DrawRect(0,0,w,h)
+			end
+			AddTFStyleToVGUI(pnl:GetVBar())
+			for _, v in ipairs (pnl:GetCanvas():GetChildren()) do
+				local name = v:GetName()
+				if name == "DMenuOption" then
+					v:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					function v:Paint(w, h)
+						local col = gui_colors.TanLight
+						if self.Hovered or self.Highlight or (self.SubMenu and self.SubMenu:IsVisible()) then
+							surface.SetDrawColor(gui_colors.TanLight)
+							surface.DrawRect(0,0,w,h)
+							col = gui_colors.TanDark
+						end
+						self:SetColor(col)
+						if self:GetChecked() then
+							draw.SimpleText("b", "TF2ItemBrowser_GUISymbols", 4, h/2-10, col) //check mark
+						end
+						if self.SubMenu then
+							draw.SimpleText("8", "TF2ItemBrowser_GUISymbols", w-20, h/2-10, col) //right-pointing arrow
+						end
+					end
+					if v.SubMenu then
+						v.SubMenuArrow:Remove()
+						AddTFStyleToVGUI(v.SubMenu)
+					end
+				elseif name == "DPanel" and v:GetTall() == 1 then //spacer
+					function v:Paint(w, h)
+						surface.SetDrawColor(gui_colors.TanLight)
+						surface.DrawRect(0,0,w,h)
+					end
+				end
+			end
+		elseif class == "DButton" then
+			AddTFButtonSounds(pnl)
+			//pnl:SetHeight(30) //backpack page button proportions
+			pnl:SetHeight(36) //standard button proportions
+			pnl:SetFont("TF2ItemBrowser_ItemName")
+			pnl.BGColor = gui_colors.TanDark
+			pnl.FGColor = gui_colors.TanLight
+			pnl.DepressedBGColor = gui_colors.TFOrange
+			pnl.DepressedFGColor = gui_colors.TanDarker //same as Black from TF2 clientscheme
+			pnl.ArmedBGColor = gui_colors.TFOrange
+			pnl.ArmedFGColor = gui_colors.TanLight
+			function pnl:Paint(w, h)
+				local col = self.BGColor
+				local textcol = self.FGColor
+				if self.Depressed then
+					col = self.DepressedBGColor
+					textcol = self.DepressedFGColor
+				elseif self.Hovered then
+					col = self.ArmedBGColor
+					textcol = self.ArmedFGColor
+				end
+				draw.RoundedBox(12, 0,0,w,h, col)
+				self:SetColor(textcol)
+			end
+		elseif class == "DTextEntry" then
+			//if !pnl.DarkTextEntry then //this doesn't work
+				pnl:SetFont("TF2ItemBrowser_ItemDesc") //_Smaller is too hard to read with dark text on a bright background
+			//end
+			pnl:SetHeight(20) //30 would be more accurate proportionately, but it's too big to fit nicely
+			function pnl:Paint(w,h)
+				if !pnl.DarkTextEntry then
+					draw.RoundedBox(12, 0,0,w,h, gui_colors.Yellow)
+				else
+					draw.RoundedBox(12, 0,0,w,h, gui_colors.TransparentBlack)
+				end
+				local oldtext = self:GetText()
+				if oldtext == "" then oldtext = nil end
+				if !oldtext then
+					local str = self:GetPlaceholderText()
+					if (str:StartsWith("#")) then str = str:sub(2) end
+					str = language.GetPhrase(str)
+					self:SetText(str)
+				end
+				if !pnl.DarkTextEntry then
+					self:DrawTextEntryText(gui_colors.TanDark, gui_colors.Gray, gui_colors.Gray)
+				else
+					self:DrawTextEntryText(gui_colors.Gray, gui_colors.Gray, gui_colors.Gray)
+				end
+				if !oldtext then self:SetText("") end
+			end
+			//note: can't figure out how to modify the appearance of the right-click menu, it might be hard-coded in C++
+		elseif class == "DScrollPanel" then
+			AddTFStyleToVGUI(pnl:GetVBar())
+		elseif class == "DVScrollBar" then
+			function pnl:Paint(w,h) end
+			function pnl.btnUp:Paint(w,h)
+				draw.SimpleText("t", "TF2ItemBrowser_GUISymbols", w/2, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //up-pointing arrow
+			end
+			function pnl.btnDown:Paint(w,h)
+				draw.SimpleText("u", "TF2ItemBrowser_GUISymbols", w/2, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //down-pointing arrow
+			end
+			function pnl.btnGrip:Paint(w,h)
+				surface.SetDrawColor(gui_colors.Gray)
+				surface.DrawRect(0,0,w,h)
+			end
+		end
+	end
+	local function TFStyleVGUI(class, par)
+		local pnl = vgui.Create(class, par)
+		if IsValid(pnl) then
+			AddTFStyleToVGUI(pnl)
 		end
 		return pnl
 	end
@@ -1420,7 +1436,7 @@ if CLIENT then
 			local right_holder = vgui.Create("DPanel", window)
 			right_holder.Paint = function() end
 			window.Right = right_holder
-			local right_scroll = vgui.Create("DScrollPanel", right_holder)
+			local right_scroll = TFStyleVGUI("DScrollPanel", right_holder)
 			right_holder:Dock(FILL)
 			right_scroll:Dock(FILL)
 
@@ -1453,7 +1469,7 @@ if CLIENT then
 			local left_holder = vgui.Create("Panel", window)
 			left_holder:DockMargin(0,0,8,0) //space for the DHorizonalDivider's control to fit in
 			left_holder:Dock(LEFT)
-			local left_scroll = vgui.Create("DScrollPanel", left_holder)
+			local left_scroll = TFStyleVGUI("DScrollPanel", left_holder)
 			left_scroll:Dock(FILL)
 
 			local filters = vgui.Create("DPanel", left_scroll)
@@ -4540,7 +4556,7 @@ if CLIENT then
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
-				local scroll = vgui.Create("DScrollPanel",icons_holder)
+				local scroll = TFStyleVGUI("DScrollPanel",icons_holder)
 				if search_holder then
 					icons_holder:DockMargin(0,8,0,0)
 				end
@@ -4884,7 +4900,7 @@ if CLIENT then
 
 				local icons_holder = vgui.Create("DPanel", container)
 				icons_holder.Paint = function() end
-				local scroll = vgui.Create("DScrollPanel",icons_holder)
+				local scroll = TFStyleVGUI("DScrollPanel",icons_holder)
 				if search_holder then
 					icons_holder:DockMargin(0,8,0,0)
 				end
@@ -5666,7 +5682,7 @@ if CLIENT then
 
 		self.menu = menu
 		menu:Open()
-		//AddTFStyleToDMenu(menu)
+		//AddTFStyleToVGUI(menu)
 
 	end
 
