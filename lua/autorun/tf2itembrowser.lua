@@ -3097,7 +3097,7 @@ if CLIENT then
 			type = MATERIAL_LIGHT_SPOT,
 			color = Vector(1,1,1),
 			pos = Vector(0,0,200),
-			dir = Vector(0,0,-1), //in code, this is (point_at-pos):GetNormalized(), where point_at is Vector(0,0,(maxs.z-mins.z)*0.75), and mins/maxs are models[1]:GetRenderBounds(); this is always the same no matter what the bounds are
+			dir = Vector(0,0,-1), //see commented-out version of LocalModelLights below; if model[1]'s pos is 0,0,0, then this value is always the same
 			innerAngle = math.deg(0.035),
 			outerAngle = math.deg(0.873),
 		},
@@ -3119,6 +3119,7 @@ if CLIENT then
 		//Stupid hack: while these lighting parameters look correct on the vast majority of models, they're consistently too dark on this 
 		//*one specific model*, which is a problem because we use it to render almost every paintkit icon. i can't fathom why this is happening,
 		//but changing this one value gets us results that look pretty close to the TF2-generated icons when eyeballing it. it'll have to do.
+		//Update: i'm pretty sure this is just caused by the lighting parameter issues with gmod warpaints; try removing this when they're resolved
 		if models[1].ModelLightingOverride == nil then
 			models[1].ModelLightingOverride = models[1]:GetModel() == "models/items/paintkit_tool.mdl" //cache this so that the modelpanel doesn't run this check every single frame
 		end
@@ -3129,6 +3130,25 @@ if CLIENT then
 				render.SetModelLighting(i, 0.875, 0.875, 0.875)
 			end
 		end
+		//variant of LocalModelLights to use if model is offset
+		--[[local mins, maxs = models[1]:GetRenderBounds()
+		local pos = Vector(0,0,200)
+		local point_at = models[1]:GetPos() + Vector(0,0,(maxs.z-mins.z)*0.75)
+		local LocalModelLights = {
+			//based off spotlight code from here: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodelpanel.cpp#L651-L657
+			//which creates a LightDesc using initSpot: https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/public/mathlib/lightdesc.h#L71-L77
+			{
+				type = MATERIAL_LIGHT_SPOT,
+				color = Vector(1,1,1),
+				pos = pos,
+				dir = (point_at-pos):GetNormalized(),
+				innerAngle = math.deg(0.035),
+				outerAngle = math.deg(0.873),
+			},
+			{}, //blank entries are necessary to override any preexisting lightdescs in these slots
+			{},
+			{},
+		}]]
 		render.SetLocalModelLights(LocalModelLights)
 		render.ClearDepth(false)
 
@@ -3279,7 +3299,8 @@ if CLIENT then
 					for k, v in pairs (vis.item_bg) do
 						ent:SetBodygroup(ent:FindBodygroupByName(k), v)
 					end
-					ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
+					//ent:SetPos(Vector(110,5,5)) //default model pos from CBaseModelPanel, which backpack icons derive from? commented out because this seems to make lighting slightly less game-accurate than only using the below (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/game_controls/basemodel_panel.cpp#L95)
+					ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; produces the most game-accurate lighting 
 					local mins, maxs = ent:GetRenderBounds()
 					mins, maxs = ent:GetRotatedAABB(mins, maxs)
 					offset_height_base = maxs.z
@@ -3295,7 +3316,7 @@ if CLIENT then
 					//detail, and it would need both its own gui and either a bunch of new materials or a whole 
 					//custom matproxy, is this worth the trouble?
 				else
-					ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
+					ent:SetAngles(Angle(10,130,0))
 					//If we're rendering both the base item and wearables, then reposition wearables above the item
 					if offset_height_base then
 						local mins, maxs = ent:GetRenderBounds()
@@ -3303,7 +3324,9 @@ if CLIENT then
 						offset_height = offset_height_base - mins.z
 					end
 					if offset_height then
-						ent:SetPos(ent:GetAngles():Up() * offset_height)
+						ent:SetPos(ent:GetPos() + ent:GetAngles():Up() * offset_height)
+					//else
+					//	ent:SetPos(ent:SetPos(Vector(110,5,5)))
 					end
 				end
 
