@@ -1032,6 +1032,14 @@ if CLIENT then
 		TFOrange	= Color(145,73,59,255),
 
 		Gray		= Color(178,178,178,255),
+
+		//custom color values not from tf2's clientscheme.res
+		_options	= Color(0,0,0,128), //used by option boxes in left side of browser; based on the ones in resource/ui/testitemroot.res
+
+		_unu_default= Color(0,0,0,128),
+		_unu_depressed= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanLight used for unusual selector
+		_unu_hovered= Color(117*.2, 107*.2, 94*.2, 255*.2),
+
 	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
@@ -1453,7 +1461,7 @@ if CLIENT then
 			filters:DockPadding(16,16,16,16)
 			window.filters = filters
 			function filters:Paint(w,h)
-				draw.RoundedBox(12, 0,0,w,h, Color(0,0,0,128))
+				draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
 			end
 
 			local divider = vgui.Create("DHorizontalDivider", window)
@@ -1942,7 +1950,7 @@ if CLIENT then
 			attopts:DockPadding(16,16,16,16)
 			window.attopts = attopts
 			function attopts:Paint(w,h)
-				draw.RoundedBox(12, 0,0,w,h, Color(0,0,0,128))
+				draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
 			end
 
 			local text = vgui.Create("DLabel", attopts)
@@ -4342,6 +4350,16 @@ if CLIENT then
 				end
 				RegisterDermaMenuForClose(container)
 
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
 				local categories = {}
 				for k, v in ipairs ({"Series 1", "Series 2", "Halloween 2011", "Halloween 2012", "Robotic Boogaloo", "Series 3", "Halloween 2013", "Halloween 2014", "End of the Line", "Invasion"}) do
 					categories[v] = {order = k, items = {}}
@@ -4532,6 +4550,8 @@ if CLIENT then
 				local size = 128
 				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
+				icons:SetSpaceX(8)
+				icons:SetSpaceY(8)
 
 				local slider
 				if u_hat then
@@ -4583,8 +4603,7 @@ if CLIENT then
 						icon:SetSize(size, size)
 						icon.disable_autohide = true //prevent the particle effect from getting auto-removed when the spawnmenu is closed
 						icon.disable_icons = true //don't show corner icons for cpoint count or extra info, because they aren't useful here
-						//icon:SetName("") //hide display name at bottom of icon
-						icon:SetName(entry.v)
+						icon.disable_defaultcontenticon = true //don't run the default contenticon draw function (draws frame around icon, text label at bottom), we're going to draw our own
 						function icon.DoRightClick() end
 						function icon:DoClick()
 							local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
@@ -4598,32 +4617,46 @@ if CLIENT then
 							end
 						end
 						local old_Paint = icon.Paint
-						//"selected" border copied from PropSelect (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/propselect.lua)
-						local border = 0
-						local border_w = 8
-						local matHover = Material( "gui/ps_hover.png", "nocull" )
-						local boxHover = GWEN.CreateTextureBorder( border, border, 64 - border * 2, 64 - border * 2, border_w, border_w, border_w, border_w, matHover )
 						function icon.Paint(_,w,h)
-							//icon's paint func sets the tooltip, so we have to override that func to override the tooltip
-							old_Paint(icon,w,h)
-							icon:SetTooltip(entry.v)
+							//custom background
+							local col = gui_colors._unu_default
+							if icon.Depressed or self.data.pe_unusual == drop.Data[entry.k] then //highlight the currently selected option
+								col = gui_colors._unu_depressed
+							elseif icon.Hovered then
+								col = gui_colors._unu_hovered
+							end
+							draw.RoundedBox(12, 0,0,w,h, col)
 
-							local bd = icon.Border
+							old_Paint(icon,w,h)
+							icon:SetTooltip(nil) //icon's paint func sets the tooltip, so we have to override this here
+
 							//custom appearance for "none" option so it isn't just blank
 							if entry.pcf == "" then
-								surface.SetDrawColor(gui_colors.RedSolid)
+								surface.SetDrawColor(gui_colors.LightRed)
 								surface.SetMaterial(close_button_nocircle)
 								local w2 = w * 0.75
 								local h2 = h * 0.75
-								surface.DrawTexturedRect(((w-w2)/2)+bd, ((h-h2)/2)+bd, w2-(bd*2), h2-(bd*2))
-							end
-							//highlight the currently selected option
-							if self.data.pe_unusual == drop.Data[entry.k] then
-								boxHover(bd, bd, w-(bd*2), h-(bd*2), color_white)
+								surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
 							end
 						end
+						//custom text label; this is multiline so do the same textWrap approach as AddItemText
+						local tab = {}
+						for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
+							//do these in reverse order because we're docking them to the bottom
+							table.insert(tab, 1, v)
+						end
+						for k, v in ipairs (tab) do
+							local label = icon:Add("DLabel")
+							label:Dock(BOTTOM)
+							label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+							label:SetText(v)
+							label:SetTextColor(gui_colors.TanLight)
+							label:SetAutoStretchVertical(true)
+							label:SetContentAlignment(5) //center
+						end
+						AddTFButtonSounds(icon)
 					end
-					local w, h = size*4, size*(math.ceil(#tab/4))
+					local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
 					icons:SetSize(w, h)
 					icons:InvalidateLayout()
 					icons_holder:SetSize(w, h)
@@ -4634,14 +4667,14 @@ if CLIENT then
 					local control_height = 0
 					if search_holder then control_height = search_holder:GetTall() + 8 end
 					if u_hat then control_height = control_height + 16 + slider:GetTall() end
-					container:SetTall(control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
+					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
 						icons_holder:SetTall(icons_holder:GetTall() - diff)
 						container:SetTall(container:GetTall() - diff)
 						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
 					end
-					container:SetWide(w + 16 + 16)
+					container:SetWide(w + 16 + 8)
 
 					container:IsMouseInputEnabled(true)
 					container:InvalidateLayout()
@@ -4720,6 +4753,16 @@ if CLIENT then
 					if IsValid(chump) then chump:KillFocus() end
 				end
 				RegisterDermaMenuForClose(container)
+
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
 
 				//the pre-paintkit collections actually have very few paintkits per individual weapon, so collapse them 
 				//into a single category for each update. also collapse the single-paintkit collections containing dragon 
@@ -4851,11 +4894,15 @@ if CLIENT then
 				local size = 128
 				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
+				icons:SetSpaceX(8)
+				icons:SetSpaceY(8)
 
 				local entrypnl = vgui.Create("Panel", container)
 				entrypnl:Dock(TOP)
 				entrypnl:DockMargin(0,16,0,0)
 				local label = vgui.Create("DLabel", entrypnl)
+				label:SetColor(gui_colors.TanLight)
+				label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 				label:SetText("Seed")
 				label:Dock(LEFT)
 				local entry = TFStyleVGUI("DTextEntry", entrypnl)
@@ -4881,8 +4928,9 @@ if CLIENT then
 				end
 
 				local button = TFStyleVGUI("DButton", entrypnl)
-				button:SetHeight(30) //backpack page button proportions
-				entrypnl:SetTall(button:GetTall())
+				//button:SetHeight(30) //backpack page button proportions
+				//entrypnl:SetTall(button:GetTall())
+				entrypnl:SetTall(entry:GetTall())
 				button:SetText(GetTFLanguageString("TF_ItemPreview_PaintkitSeed"))
 				button:SizeToContentsX(20)
 				button:Dock(RIGHT)
@@ -5039,15 +5087,16 @@ if CLIENT then
 						//scratch_help:SetAutoStretchVertical(false)
 						scratch_help:SetTall(0)
 					end
-					local w, h = icons:GetSize()
-					container:SetTall(control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
+					local w, h = icons.CurW, icons.CurH
+					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
+						icons_holder:SetSize(w, h) //set this again to prevent the height from getting clobbered when the "increased intensity wears" check is toggled multiple times
 						icons_holder:SetTall(icons_holder:GetTall() - diff)
 						container:SetTall(container:GetTall() - diff)
 						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
 					end
-					container:SetWide(w + 16 + 16)
+					container:SetWide(w + 16 + 8)
 					
 					container:IsMouseInputEnabled(true)
 					container:InvalidateLayout()
@@ -5072,36 +5121,49 @@ if CLIENT then
 					for _, entry in ipairs (tab) do
 						local icon = vgui.Create("ContentIcon", icons)
 						icon:SetSize(size, size)
-						icon:SetName(entry.v)
 						function icon.DoRightClick() end
 						function icon:DoClick()
 							drop:ChooseOption(entry.v, entry.k)
 						end
-						local old_Paint = icon.Paint
-						//"selected" border copied from PropSelect (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/propselect.lua)
-						local border = 0
-						local border_w = 8
-						local matHover = Material( "gui/ps_hover.png", "nocull" )
-						local boxHover = GWEN.CreateTextureBorder( border, border, 64 - border * 2, 64 - border * 2, border_w, border_w, border_w, border_w, matHover )
+						icon:SetTooltip(nil)
 						function icon.Paint(_,w,h)
-							old_Paint(icon,w,h)
-							icon:SetTooltip(entry.v)
-							
-							local bd = icon.Border
+							//custom background
+							local col = gui_colors._unu_default
+							if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
+							or (!self.data.wp.enabled and !entry.data) or icon.Depressed then //highlight the currently selected option
+								col = gui_colors._unu_depressed
+							elseif icon.Hovered then
+								col = gui_colors._unu_hovered
+							end
+							draw.RoundedBox(12, 0,0,w,h, col)
+
+							icon.Image:PaintAt(0,0,w,h)
+
 							//custom appearance for "none" option so it isn't just blank
 							if !entry.data then
-								surface.SetDrawColor(gui_colors.RedSolid)
+								surface.SetDrawColor(gui_colors.LightRed)
 								surface.SetMaterial(close_button_nocircle)
 								local w2 = w * 0.75
 								local h2 = h * 0.75
-								surface.DrawTexturedRect(((w-w2)/2)+bd, ((h-h2)/2)+bd, w2-(bd*2), h2-(bd*2))
-							end
-							//highlight the currently selected option
-							if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
-							or (!self.data.wp.enabled and !entry.data) then
-								boxHover(bd, bd, w-(bd*2), h-(bd*2), color_white)
+								surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
 							end
 						end
+						//custom text label; this is multiline so do the same textWrap approach as AddItemText
+						local tab = {}
+						for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
+							//do these in reverse order because we're docking them to the bottom
+							table.insert(tab, 1, v)
+						end
+						for k, v in ipairs (tab) do
+							local label = icon:Add("DLabel")
+							label:Dock(BOTTOM)
+							label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+							label:SetText(v)
+							label:SetTextColor(gui_colors.TanLight)
+							label:SetAutoStretchVertical(true)
+							label:SetContentAlignment(5) //center
+						end
+						AddTFButtonSounds(icon)
 						//grab cached spawnicon if it exists, otherwise tell the icon render queue to create one
 						local data = drop.Data[entry.k]
 						if data and data.id then
@@ -5232,8 +5294,9 @@ if CLIENT then
 							end
 						end
 					end
-					local w, h = size*4, size*(math.ceil(#tab/4))
+					local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
 					icons:SetSize(w, h)
+					icons.CurW, icons.CurH = w, h //used by container:UpdateSize(); GetSize doesn't work there since it changes after invalidating layout; which results in the size changing as the "increased intensity wears" check is toggled
 					icons:InvalidateLayout()
 					icons_holder:SetSize(w, h)
 					icons_holder:InvalidateLayout()
