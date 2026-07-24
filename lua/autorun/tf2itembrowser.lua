@@ -1019,26 +1019,29 @@ if CLIENT then
 		symbol = true
 	})
 	local gui_colors = {
-		TanDark		= Color(117,107,94,255),
-		TanLight	= Color(235,226,202,255),
-		TanDarker	= Color(46,43,42,255),
+		TanDark			= Color(117,107,94,255),
+		TanLight		= Color(235,226,202,255),
+		TanDarker		= Color(46,43,42,255),
 
 		//colors used by CheckButton in tf2_clientscheme.res
-		Yellow		= Color(251,235,202,255),
-		TransparentBlack= Color(0,0,0,196),
+		Yellow			= Color(251,235,202,255),
+		TransparentBlack	= Color(0,0,0,196),
 
-		RedSolid	= Color(192,28,0,255),
-		LightRed	= Color(200,80,60,255),
-		TFOrange	= Color(145,73,59,255),
+		Slider_TrackColor	=Color(31,31,31,255),
+		Slider_DisabledTextColor=Color(117,117,117,255),
 
-		Gray		= Color(178,178,178,255),
+		RedSolid		= Color(192,28,0,255),
+		LightRed		= Color(200,80,60,255),
+		TFOrange		= Color(145,73,59,255),
+
+		Gray			= Color(178,178,178,255),
 
 		//custom color values not from tf2's clientscheme.res
-		_options	= Color(0,0,0,128), //used by option boxes in left side of browser; based on the ones in resource/ui/testitemroot.res
+		_options		= Color(0,0,0,128), //used by option boxes in left side of browser; based on the ones in resource/ui/testitemroot.res
 
-		_unu_default= Color(0,0,0,128),
-		_unu_depressed= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanLight used for unusual selector
-		_unu_hovered= Color(117*.2, 107*.2, 94*.2, 255*.2),
+		_unu_default		= Color(0,0,0,128),
+		_unu_depressed		= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanLight used for unusual selector
+		_unu_hovered		= Color(117*.2, 107*.2, 94*.2, 255*.2),
 
 	}
 	local quality_colors = {
@@ -1105,7 +1108,7 @@ if CLIENT then
 	local icon_red = Material("vgui/store/store_redteam.vmt")
 	local icon_blu = Material("vgui/store/store_blueteam.vmt")
 
-	local function AddTFStyleToVGUI(pnl)
+	local function AddTFStyleToVGUI(pnl, alt_style)
 		local class = pnl:GetName()
 		if class == "DCheckBox" then
 			function pnl:Paint(w,h)
@@ -1252,29 +1255,29 @@ if CLIENT then
 				self:SetColor(textcol)
 			end
 		elseif class == "DTextEntry" then
-			//if !pnl.DarkTextEntry then //this doesn't work
-				pnl:SetFont("TF2ItemBrowser_ItemDesc") //_Smaller is too hard to read with dark text on a bright background
-			//end
 			pnl:SetHeight(20) //30 would be more accurate proportionately, but it's too big to fit nicely
+			if !alt_style then
+				//light textbox, modeled after TF2 backpack search
+				pnl:SetFont("TF2ItemBrowser_ItemDesc") //_Smaller is too hard to read with dark text on a bright background
+				pnl.BGColor = gui_colors.Yellow
+				pnl.FGColor = gui_colors.TanDark
+			else
+				//dark textbox, modeled after TF2 war paint seed entry
+				pnl:SetFont("HudSelectionText") //default verdana but slightly larger
+				pnl.BGColor = gui_colors.TransparentBlack
+				pnl.FGColor = gui_colors.Gray
+			end
 			function pnl:Paint(w,h)
-				if !pnl.DarkTextEntry then
-					draw.RoundedBox(12, 0,0,w,h, gui_colors.Yellow)
-				else
-					draw.RoundedBox(12, 0,0,w,h, gui_colors.TransparentBlack)
-				end
+				draw.RoundedBox(12, 0,0,w,h, self.BGColor)
 				local oldtext = self:GetText()
 				if oldtext == "" then oldtext = nil end
-				if !oldtext then
-					local str = self:GetPlaceholderText()
+				local str = self:GetPlaceholderText()
+				if !oldtext and str then
 					if (str:StartsWith("#")) then str = str:sub(2) end
 					str = language.GetPhrase(str)
 					self:SetText(str)
 				end
-				if !pnl.DarkTextEntry then
-					self:DrawTextEntryText(gui_colors.TanDark, gui_colors.Gray, gui_colors.Gray)
-				else
-					self:DrawTextEntryText(gui_colors.Gray, gui_colors.Gray, gui_colors.Gray)
-				end
+				self:DrawTextEntryText(self.FGColor, gui_colors.Gray, gui_colors.Gray)
 				if !oldtext then self:SetText("") end
 			end
 			//note: can't figure out how to modify the appearance of the right-click menu, it might be hard-coded in C++
@@ -1292,12 +1295,48 @@ if CLIENT then
 				surface.SetDrawColor(gui_colors.Gray)
 				surface.DrawRect(0,0,w,h)
 			end
+		elseif class == "DNumSlider" then
+			pnl.Label:SetColor(gui_colors.TanLight)
+			pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			pnl:SetHeight(21) //slightly taller to make sure that the taller notches fit
+			AddTFStyleToVGUI(pnl.TextArea, true) //use alt style for textentry; TF2 sliders don't have textentries at all, so just go with what looks best
+			local function PaintNotches( x, y, w, h, num ) //copied wholesale from lua/skins/default.lua, except the notch height and positions are changed (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/skins/default.lua#L940-L958)
+				if (!num) then return end
+				local space = w / num
+				-- Ensure at least 1 px between each notch
+				if (space < 2) then
+					space = 2
+					num = w / space
+				end
+				for i = 0, math.ceil(num) do
+					surface.DrawRect(x + i * space, y + 7, 1, 5)
+				end
+			end
+			function pnl.Slider:Paint(w,h)
+				surface.SetDrawColor(gui_colors.Slider_TrackColor)
+				surface.DrawRect(4, h/2-2, w-7, 4)
+				if pnl:IsEnabled() then
+					surface.SetDrawColor(gui_colors.TanLight) //emulate the TanLight color used by unusual position slider (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L310)
+				else
+					surface.SetDrawColor(gui_colors.Slider_DisabledTextColor)
+				end
+				PaintNotches(8, h/2-1, w-16, 1, self:GetNotches())
+			end
+			pnl.Slider.Knob:SetTall(16)
+			function pnl.Slider.Knob:Paint(w,h)
+				if pnl:IsEnabled() then
+					surface.SetDrawColor(gui_colors.TanLight) //somehow the unusual position slider's knob color is the same as the tick color. i can't find the code for this, but just go with it.
+				else
+					surface.SetDrawColor(gui_colors.Slider_DisabledTextColor)
+				end
+				surface.DrawRect(4,0,w/2+1,h)
+			end
 		end
 	end
-	local function TFStyleVGUI(class, par)
+	local function TFStyleVGUI(class, par, alt_style)
 		local pnl = vgui.Create(class, par)
 		if IsValid(pnl) then
-			AddTFStyleToVGUI(pnl)
+			AddTFStyleToVGUI(pnl, alt_style)
 		end
 		return pnl
 	end
@@ -4571,11 +4610,10 @@ if CLIENT then
 
 				local slider
 				if u_hat then
-					slider = vgui.Create("DNumSlider", container)
+					slider = TFStyleVGUI("DNumSlider", container)
 					slider:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
 					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
 					slider:SetDefaultValue(0)
-					slider:SetHeight(20)
 					slider:Dock(TOP)
 					slider:DockMargin(0,16,0,0)
 					slider:SetValue(self.data.pe_unusual_offset or 0)
@@ -4921,9 +4959,7 @@ if CLIENT then
 				label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
 				label:SetText("Seed")
 				label:Dock(LEFT)
-				local entry = TFStyleVGUI("DTextEntry", entrypnl)
-				entry.DarkTextEntry = true
-				entry:SetFont("HudSelectionText") //default verdana but slightly larger
+				local entry = TFStyleVGUI("DTextEntry", entrypnl, true)
 				entry:Dock(FILL)
 				entry:SetNumeric(true)
 				entry:SetText(self.data.wp.seed or "0")
@@ -4958,12 +4994,11 @@ if CLIENT then
 					pnl.OnSettingChanged()
 				end
 
-				local slider = vgui.Create("DNumSlider", container)
+				local slider = TFStyleVGUI("DNumSlider", container)
 				local wear_slider = slider
 				slider:SetText("Wear Level")
 				slider:SetMinMax(1, 5)
 				slider:SetDecimals(0)
-				slider:SetHeight(18)
 				slider:Dock(TOP)
 				slider:DockMargin(0,8,0,0)
 				slider:SetValue(self.data.wp.wear or 1)
@@ -5035,7 +5070,7 @@ if CLIENT then
 				help:DockMargin(22,0,32,0)
 				local intensity_help = help
 
-				local slider = vgui.Create("DNumSlider", container)
+				local slider = TFStyleVGUI("DNumSlider", container)
 				local intensity_slider = slider
 				slider:SetText("Intensity Multiplier")
 				slider:SetMinMax(1, 5)
@@ -5087,7 +5122,7 @@ if CLIENT then
 					local control_height = 0
 					if search_holder then control_height = search_holder:GetTall() + 8 end
 					if intensity_check:GetChecked() then
-						intensity_slider:SetHeight(18)
+						intensity_slider:SetHeight(21)
 						intensity_slider:DockMargin(32,8,0,0)
 						scratch_check:SetHeight(20)
 						scratch_check:DockMargin(32,8,0,0)
