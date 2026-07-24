@@ -5362,7 +5362,7 @@ if CLIENT then
 		local button = TFStyleVGUI("DButton", pnl)
 		if IsValid(self.entity) then
 			button:SetText("Remove!")
-			button.BGColor = gui_colors.LightRed
+			button.BGColor = gui_colors.LightRed //using this as the neutral unselected color looks a little strange, but we can't use TFOrange as the unselected color because it could trick the player when switching from equip to unequip mode; also this matches the loadout preset buttons in TF2
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
 			button:SetText("Attach!")
 		else
@@ -5395,10 +5395,12 @@ if CLIENT then
 		close:SetSize(25,25)
 		close:SetPos(popup_w-close:GetWide()-10, 10)
 		function close:Paint(w,h)
-			if self.Depressed or self.Hovered then
-				surface.SetDrawColor(gui_colors.TFOrange)
+			if self.Depressed then
+				surface.SetDrawColor(color_white)
+			elseif self.Hovered then
+				surface.SetDrawColor(gui_colors.TanLight)
 			else
-				surface.SetDrawColor(gui_colors.LightRed)
+				surface.SetDrawColor(gui_colors.TanDark)
 			end
 			surface.SetMaterial(close_button)
 			surface.DrawTexturedRect(0,0,w,h)
