@@ -1719,10 +1719,12 @@ if CLIENT then
 		unusual_deadlyaroma_teamcolor_blue = {Vector(-12,-12,0), Vector(12,12,26)},
 		unusual_deadlyaroma_green_parent = {Vector(-12,-12,0), Vector(12,12,26)},
 		unusual_conductor_teamc_teamcolor_red = {Vector(-10,-10,0), Vector(10,10,12)},
+		unusual_conductor_teamc_teamcolor_blue = {Vector(-10,-10,0), Vector(10,10,12)},
 		unusual_sandy_parent = {Vector(-8,-8,-20), Vector(8,8,0)},
 		//smissmas 2025
 		unusual_calmsnowfall_parent = {Vector(-8,-8,0), Vector(8,8,14)},
 		unusual_team_recognition_teamcolor_red = {Vector(-12,-12,-8), Vector(12,12,18)},
+		unusual_team_recognition_teamcolor_blue = {Vector(-12,-12,-8), Vector(12,12,18)},
 		unusual_classicfortress_teamcolor_red = {Vector(-9,-9,0), Vector(9,9,28)},
 		unusual_classicfortress_teamcolor_blue = {Vector(-9,-9,0), Vector(9,9,28)},
 		unusual_classicfortress_tflogo_parent = {Vector(-9,-9,0), Vector(9,9,28)},
