@@ -1456,10 +1456,10 @@ if CLIENT then
 		[4] = "#TFUI_InvTooltip_WellWorn",
 		[5] = "#TFUI_InvTooltip_BattleScared"
 	}
-	local unusual_overrides = { //used with PEPlus_BoundsToView to set custom camera positions for unusual effect icons
+	local unusual_icon_overrides = { //used with PEPlus_BoundsToView to set custom camera positions for unusual effect icons
 		//series 1
 		superrare_confetti_green = {Vector(-25,-25,-50), Vector(25,25,15)},
-		superrare_confetti_purple = {Vector(-25,-25,-50), Vector(25,25,25)}, //yes, this is different from green
+		superrare_confetti_purple = {Vector(-25,-25,-35), Vector(25,25,40)}, //yes, this is different from green
 		superrare_flies = {Vector(-10,-10,-10), Vector(10,10,10)}, //zoom way in to at least *try* to make flies show up in the thumbnail
 		//series 2
 		unusual_storm = {Vector(-20,-20,-35), Vector(20,20,55)},
@@ -1469,6 +1469,17 @@ if CLIENT then
 		unusual_bubbles = {Vector(-15,-15,-10), Vector(15,15,30)},
 		//halloween 2011
 		unusual_bubbles_green = {Vector(-15,-15,-10), Vector(15,15,30)},
+		//halloween 2012
+		unusual_storm_spooky = {Vector(-20,-20,-35), Vector(20,20,55)},
+		//robotic boogaloo
+		unusual_robot_holo_glow_green = {Vector(-10,-10,-6), Vector(10,10,14)},
+		unusual_robot_holo_glow_orange = {Vector(-10,-10,-6), Vector(10,10,14)},
+		unusual_robot_orbit_binary = {Vector(-15,-15,0), Vector(15,15,15)},
+		unusual_robot_orbit_binary2 = {Vector(-15,-15,0), Vector(15,15,15)},
+		unusual_robot_orbiting_sparks = {Vector(-20,-20,-5), Vector(20,20,20)},
+		unusual_robot_orbiting_sparks2 = {Vector(-20,-20,-5), Vector(20,20,20)},
+		unusual_robot_radioactive = {Vector(-20,-30,-10), Vector(25,10,30)},
+		unusual_robot_radioactive2 = {Vector(-20,-30,-10), Vector(25,10,30)},
 		//series 3
 		unusual_hearts_bubbling = {Vector(-15,-15,-10), Vector(15,15,30)},
 		//halloween 2013
@@ -1480,6 +1491,7 @@ if CLIENT then
 		unusual_souls_purple_parent = {Vector(-20,-20,-20), Vector(20,20,50)},
 		unusual_souls_green_parent = {Vector(-20,-20,-20), Vector(20,20,50)},
 		//end of the line
+		unusual_eotl_frostbite = {Vector(-13,-13,-10), Vector(13,13,40)},
 		unusual_eotl_oribiting_burning_duck_parent = {Vector(-20,-20,-12), Vector(20,20,30)},
 		//invasion
 		unusual_invasion_atomic_green = {Vector(-22,-22,-18),Vector(22,22,20)},
@@ -1488,6 +1500,7 @@ if CLIENT then
 		unusual_invasion_boogaloop_3 = {Vector(-15,-15,-5), Vector(15,15,20)},
 		unusual_invasion_codex = {Vector(-12,-12,-5), Vector(12,12,20)},
 		unusual_invasion_codex_2 = {Vector(-12,-12,-5), Vector(12,12,20)},
+		unusual_invasion_nebula = {Vector(-11,-11,-10), Vector(11,11,20)},
 		//halloween 2015
 		unusual_hw_deathbydisco_parent = {Vector(-7,-7,0), Vector(7,7,30)},
 		unusual_mystery_parent = {Vector(-18,-18,0), Vector(18,18,18)},
@@ -1500,6 +1513,9 @@ if CLIENT then
 		unusual_bubble_mess_parent_green = {Vector(-20,-20,-20), Vector(20,20,20)},
 		unusual_bubble_mess_parent_orange = {Vector(-20,-20,-20), Vector(20,20,20)},
 		unusual_bubble_mess_parent_purple = {Vector(-20,-20,-20), Vector(20,20,20)},
+		unusual_constellations_blue = {Vector(-13,-13,0), Vector(13,13,42)},
+		unusual_constellations_pink = {Vector(-13,-13,0), Vector(13,13,42)},
+		unusual_constellations_purple = {Vector(-13,-13,0), Vector(13,13,42)},
 		unusual_symbols_parent_fire = {Vector(-20,-20,-20), Vector(20,20,40)},
 		unusual_symbols_parent_dead = {Vector(-20,-20,-20), Vector(20,20,40)},
 		unusual_symbols_parent_lightning = {Vector(-20,-20,-20), Vector(20,20,40)},
@@ -1527,22 +1543,42 @@ if CLIENT then
 		unusual_mayor_balloonicorn_teamcolor_red = {Vector(-20,-20,-5), Vector(20,20,25)},
 		unusual_mayor_balloonicorn_teamcolor_blue = {Vector(-20,-20,-5), Vector(20,20,25)},
 		//summer 2020
-		unusual_bees = {Vector(-15,-15,-15), Vector(15,15,15)},
+		unusual_circling_spell_green_parent = {Vector(-18,-18,-10), Vector(18,18,37)},
+		unusual_circling_spell_orange_parent = {Vector(-18,-18,-10), Vector(18,18,37)},
+		unusual_circling_spell_purple_parent = {Vector(-18,-18,-10), Vector(18,18,37)},
+		unusual_circling_spell_blue_parent = {Vector(-18,-18,-10), Vector(18,18,37)},
+		unusual_bees = {Vector(-17,-17,-17), Vector(17,17,17)},
 		unusual_playflies_green_parent = {Vector(-20,-20,-10), Vector(20,20,30)},
 		unusual_playflies_orange_parent = {Vector(-20,-20,-10), Vector(20,20,30)},
 		unusual_playflies_purple_parent = {Vector(-20,-20,-10), Vector(20,20,30)},
-		unusual_kaleido_scope_parent = {Vector(-20,-20,-20), Vector(20,20,20)}, //the effect isn't even visible in this one, why?
+		unusual_kaleido_scope_parent = {Vector(-10,-16,-10), Vector(10,0,10)},
 		//halloween 2020
-		unusual_face_parent_G = {Vector(-16,-16,-5), Vector(16,16,25)},
-		unusual_face_parent_O = {Vector(-16,-16,-5), Vector(16,16,25)},
-		unusual_face_parent_P = {Vector(-16,-16,-5), Vector(16,16,25)},
+		unusual_face_parent_G = {Vector(-16,-16,-10), Vector(16,16,25)},
+		unusual_face_parent_O = {Vector(-16,-16,-10), Vector(16,16,25)},
+		unusual_face_parent_P = {Vector(-16,-16,-10), Vector(16,16,25)},
 		unusual_undead_mayor_balloonicorn = {Vector(-20,-20,-5), Vector(20,20,25)},
+		unusual_gargoyle = {Vector(-8,-8,-5), Vector(8,8,27)},
+		unusual_gargoyle2 = {Vector(-8,-8,-5), Vector(8,8,27)},
 		unusual_candy_parent = {Vector(-10,-10,-5), Vector(10,10,30)},
 		unusual_pumpkinhead_parent = {Vector(-15,-15,-10), Vector(15,15,35)},
 		//smissmas 2020
-		unusual_mistletoe_teamcolor_red = {Vector(-20,-20,-10), Vector(20,20,20)},
-		unusual_mistletoe_teamcolor_blue = {Vector(-20,-20,-10), Vector(20,20,20)},
+		unusual_froststorm_blue_parent = {Vector(-12,-12,-12), Vector(12,12,36)},
+		unusual_froststorm_purple_parent = {Vector(-12,-12,-12), Vector(12,12,36)},
+		unusual_froststorm_yellow_parent = {Vector(-12,-12,-12), Vector(12,12,36)},
+		unusual_swirlybeams_goldpurple_parent = {Vector(-8,-8,-10), Vector(10,10,25)},
+		unusual_swirlybeams_pinkblue_parent = {Vector(-8,-8,-10), Vector(10,10,25)},
+		unusual_icetornado_blue_parent = {Vector(-16,-16,-5), Vector(16,16,40)},
+		unusual_icetornado_purple_parent = {Vector(-16,-16,-5), Vector(16,16,40)},
+		unusual_icetornado_white_parent = {Vector(-16,-16,-5), Vector(16,16,40)},
+		unusual_genplasmos_parent = {Vector(-12,-12,-6), Vector(12,12,18)},
+		unusual_genplasmos_b_parent = {Vector(-12,-12,-6), Vector(12,12,18)},
+		unusual_genplasmos_c_parent = {Vector(-12,-12,-6), Vector(12,12,18)},
+		unusual_mistletoe_teamcolor_red = {Vector(-16,-16,-7), Vector(16,16,20)},
+		unusual_mistletoe_teamcolor_blue = {Vector(-16,-16,-7), Vector(16,16,20)},
 		//summer 2021
+		unusual_breaker_green_parent = {Vector(-15,-15,-10), Vector(15,15,25)},
+		unusual_breaker_orange_parent = {Vector(-15,-15,-10), Vector(15,15,25)},
+		unusual_breaker_purple_parent = {Vector(-15,-15,-10), Vector(15,15,25)},
 		unusual_magic_stingers_orange_parent = {Vector(-15,-15,-10), Vector(15,15,25)},
 		unusual_magic_stingers_pink_parent = {Vector(-15,-15,-10), Vector(15,15,25)},
 		unusual_magic_stingers_teamcolor_red = {Vector(-15,-15,-10), Vector(15,15,25)},
@@ -1553,6 +1589,9 @@ if CLIENT then
 		unusual_phantomcrown_green_parent = {Vector(-15,-15,-10), Vector(15,15,30)},
 		unusual_phantomcrown_purple_parent = {Vector(-15,-15,-10), Vector(15,15,30)},
 		unusual_phantomcrown_yellow_parent = {Vector(-15,-15,-10), Vector(15,15,30)},
+		unusual_lurking_eyes_parent_g = {Vector(-14,-14,0), Vector(14,14,25)},
+		unusual_lurking_eyes_parent_o = {Vector(-14,-14,0), Vector(14,14,25)},
+		unusual_lurking_eyes_parent_p = {Vector(-14,-14,0), Vector(14,14,25)},
 		//smissmas 2021
 		unusual_tree3_yellow_parent = {Vector(-9,-25,-11), Vector(10,-8,11)},
 		unusual_tree3_teamcolor_red = {Vector(-9,-25,-11), Vector(10,-8,11)},
@@ -1580,27 +1619,27 @@ if CLIENT then
 		unusual_liquidmagic_green_parent = {Vector(-12,-12,-5),Vector(12,12,20)},
 		unusual_liquidmagic_ocean_parent = {Vector(-12,-12,-5),Vector(12,12,20)},
 		unusual_liquidmagic_pink_parent = {Vector(-12,-12,-5),Vector(12,12,20)},
-		unusual_firework_blue_red_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
-		unusual_firework_green_yellow_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
-		unusual_firework_orange_yellow_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
-		unusual_firework_pgb_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
-		unusual_firework_purple_yellow_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
-		unusual_firework_rainbow_parent = {Vector(-20,-20,-30), Vector(20,20,40)},
-		unusual_firework_wgb_parent = {Vector(-20,-20,-30), Vector(20,20,50)},
+		unusual_firework_blue_red_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
+		unusual_firework_green_yellow_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
+		unusual_firework_orange_yellow_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
+		unusual_firework_pgb_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
+		unusual_firework_purple_yellow_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
+		unusual_firework_rainbow_parent = {Vector(-20,-20,-25), Vector(20,20,40)},
+		unusual_firework_wgb_parent = {Vector(-20,-20,-25), Vector(20,20,50)},
 		unusual_lanterns_teamcolor_red = {Vector(-16,-16,-16),Vector(16,16,50)},
 		unusual_lanterns_teamcolor_blue = {Vector(-16,-16,-16),Vector(16,16,50)},
 		unusual_lanterns_green_parent = {Vector(-16,-16,-16),Vector(16,16,50)},
 		unusual_lanterns_yellow_parent = {Vector(-16,-16,-16),Vector(16,16,50)},
 		unusual_coldcosmos_parent = {Vector(-8,-8,0), Vector(8,8,28)},
-		unusual_helix_parent = {Vector(-20,-20,-20), Vector(20,20,20)}, //again, like kaleido, this one just doesn't show up at all, why?
+		unusual_helix_parent = {Vector(-12,-15,-8), Vector(12,9,20)},
 		unusual_stardust_teamcolor_red = {Vector(-10,-10,-20),Vector(10,10,30)},
 		unusual_stardust_teamcolor_blue = {Vector(-10,-10,-20),Vector(10,10,30)},
 		unusual_stardust_green_parent = {Vector(-10,-10,-20),Vector(10,10,30)},
 		unusual_stardust_orange_parent = {Vector(-10,-10,-20),Vector(10,10,30)},
 		unusual_stardust_white_parent = {Vector(-10,-10,-20),Vector(10,10,30)},
-		unusual_erupt_alien_parent = {Vector(-11,-11,-10),Vector(11,11,30)},
-		unusual_erupt_daydream_parent = {Vector(-11,-11,-10),Vector(11,11,30)},
-		unusual_erupt_volcan_parent = {Vector(-11,-11,-10),Vector(11,11,30)},
+		unusual_erupt_alien_parent = {Vector(-11,-11,-11),Vector(11,11,30)},
+		unusual_erupt_daydream_parent = {Vector(-11,-11,-11),Vector(11,11,30)},
+		unusual_erupt_volcan_parent = {Vector(-11,-11,-11),Vector(11,11,30)},
 		unusual_supernova_parent = {Vector(-11,-11,0), Vector(11,11,30)},
 		//halloween 2022
 		unusual_hauntedforever_teamcolor_red = {Vector(-12.4,-21.4,-12.5), Vector(12.6,8.9,19.3)},
@@ -1621,38 +1660,48 @@ if CLIENT then
 		//summer 2023
 		unusual_hardcarry_teamcolor_red = {Vector(-12,-12,-10), Vector(12,12,24)},
 		unusual_hardcarry_teamcolor_blue = {Vector(-12,-12,-10), Vector(12,12,24)},
-		unusual_jellyfish_teamcolor_red = {Vector(-20,-20,0), Vector(20,20,35)},
-		unusual_jellyfish_teamcolor_blue = {Vector(-20,-20,0), Vector(20,20,35)},
-		unusual_jellyfish_green_parent = {Vector(-20,-20,0), Vector(20,20,35)},
-		unusual_jellyfish_purple_parent = {Vector(-20,-20,0), Vector(20,20,35)},
+		unusual_jellyfish_teamcolor_red = {Vector(-23,-23,0), Vector(23,23,35)},
+		unusual_jellyfish_teamcolor_blue = {Vector(-23,-23,0), Vector(23,23,35)},
+		unusual_jellyfish_green_parent = {Vector(-23,-23,0), Vector(23,23,35)},
+		unusual_jellyfish_purple_parent = {Vector(-23,-23,0), Vector(23,23,35)},
 		unusual_shootingstar_green_parent = {Vector(-12,-12,-6), Vector(12,12,24)},
 		unusual_shootingstar_purple_parent = {Vector(-12,-12,-6), Vector(12,12,24)},
 		unusual_shootingstar_orange_parent = {Vector(-12,-12,-6), Vector(12,12,24)},
-		unusual_sakura_smokebomb = {Vector(-12,-12,-15), Vector(12,12,22)},
+		unusual_sakura_smokebomb = {Vector(-14,-14,-15), Vector(14,14,22)},
 		unusual_australian_riches = {Vector(-15,-15,-15), Vector(15,15,25)},
 		unusual_buble_parent = {Vector(-10,-10,-5), Vector(10,10,22.5)},
 		unusual_fireflies = {Vector(-14,-14,-14), Vector(14,14,22)},
 		unusual_mountainhalo_parent = {Vector(-10,-10,-10), Vector(10,10,25)},
 		//halloween 2023
-		unusual_spiderweb_parent = {Vector(-10,-10,0), Vector(10,10,20)},
+		unusual_risingstar_green_parent = {Vector(-15,-15,-5), Vector(15,15,20)},
+		unusual_risingstar_purple_parent = {Vector(-15,-15,-5), Vector(15,15,20)},
+		unusual_devilish_teamcolor_red = {Vector(-10,-14,-10), Vector(10,10,18)},
+		unusual_devilish_teamcolor_blue = {Vector(-10,-14,-10), Vector(10,10,18)},
+		unusual_devilish_green_parent = {Vector(-10,-14,-10), Vector(10,10,18)},
+		unusual_devilish_purple_parent = {Vector(-10,-14,-10), Vector(10,10,18)},
+		unusual_skullhead_parent = {Vector(-15,-15,0), Vector(15,15,25)},
+		unusual_spiderweb_parent = {Vector(-11,-11,0), Vector(11,11,20)},
+		unusual_deepsmoke_parent_g = {Vector(-14,-14,-10), Vector(14,14,35)},
+		unusual_deepsmoke_parent_o = {Vector(-14,-14,-10), Vector(14,14,35)},
+		unusual_deepsmoke_parent_p = {Vector(-14,-14,-10), Vector(14,14,35)},
 		//smissmas 2023
 		unusual_icearrow_teamcolor_red = {Vector(-10,-5,-15), Vector(17,5,20)},
 		unusual_icearrow_teamcolor_blue = {Vector(-10,-5,-15), Vector(17,5,20)},
 		unusual_goldarrow_parent = {Vector(-10,-5,-15), Vector(17,5,20)},
-		unusual_aestheticsigns_teamcolor_red = {Vector(-12,-12,0), Vector(12,12,30)},
-		unusual_aestheticsigns_teamcolor_blue = {Vector(-12,-12,0), Vector(12,12,30)},
-		unusual_aestheticsigns_mannco_parent = {Vector(-12,-12,0), Vector(12,12,30)},
+		unusual_aestheticsigns_teamcolor_red = {Vector(-10,-10,0), Vector(10,10,30)},
+		unusual_aestheticsigns_teamcolor_blue = {Vector(-10,-10,0), Vector(10,10,30)},
+		unusual_aestheticsigns_mannco_parent = {Vector(-10,-10,0), Vector(10,10,30)},
 		unusual_frosty_flavours_teamcolor_red = {Vector(-15,-15,-10), Vector(15,15,35)},
 		unusual_frosty_flavours_teamcolor_blue = {Vector(-15,-15,-10), Vector(15,15,35)},
 		unusual_frosty_mint_glow_parent = {Vector(-15,-15,-10), Vector(15,15,40)},
-		unusual_northstar_teamcolor_red = {Vector(-10,-10,-8), Vector(10,10,30)},
-		unusual_northstar_teamcolor_blue = {Vector(-10,-10,-8), Vector(10,10,30)},
-		unusual_northstar_parent_purple = {Vector(-10,-10,-8), Vector(10,10,30)},
+		unusual_northstar_teamcolor_red = {Vector(-10,-10,-2), Vector(10,10,30)},
+		unusual_northstar_teamcolor_blue = {Vector(-10,-10,-2), Vector(10,10,30)},
+		unusual_northstar_parent_purple = {Vector(-10,-10,-2), Vector(10,10,30)},
 		unusual_orbitingstar_parent = {Vector(-13,-13,0), Vector(13,13,20)},
-		unusual_firefly_teamcolor_red = {Vector(-15,-15,0), Vector(15,15,35)},
-		unusual_firefly_teamcolor_blue = {Vector(-15,-15,0), Vector(15,15,35)},
-		unusual_firefly_purple_parent = {Vector(-15,-15,0), Vector(15,15,35)},
-		unusual_firefly_green_parent = {Vector(-15,-15,0), Vector(15,15,35)},
+		unusual_firefly_teamcolor_red = {Vector(-15,-15,0), Vector(15,15,44)},
+		unusual_firefly_teamcolor_blue = {Vector(-15,-15,0), Vector(15,15,44)},
+		unusual_firefly_purple_parent = {Vector(-15,-15,0), Vector(15,15,44)},
+		unusual_firefly_green_parent = {Vector(-15,-15,0), Vector(15,15,44)},
 		//summer 2024
 		unusual_corrodedknight_teamcolor_red = {Vector(-6,-13,-9), Vector(8,2,2)},
 		unusual_corrodedknight_teamcolor_blue = {Vector(-6,-13,-9), Vector(8,2,2)},
@@ -1677,6 +1726,8 @@ if CLIENT then
 		unusual_hippieaura_parent = {Vector(-10,-10,-4), Vector(10,10,16)},
 		unusual_butterfly_parent = {Vector(-14,-14,-10), Vector(14,14,20)},
 		//halloween 2024
+		unusual_spectral_fire_parent = {Vector(-9,-9,-0), Vector(9,9,18)},
+		unusual_galactic_fire_parent = {Vector(-9,-9,-0), Vector(9,9,18)},
 		unusual_frank_green_parent = {Vector(-10,-10,-10), Vector(10,0,10)},
 		unusual_frank_purple_parent = {Vector(-10,-10,-10), Vector(10,0,10)},
 		unusual_frank_yellow_parent = {Vector(-10,-10,-10), Vector(10,0,10)},
@@ -1687,8 +1738,8 @@ if CLIENT then
 		unusual_pigeons_white_parent = {Vector(-10,-10,0), Vector(10,10,20)},
 		unusual_stove_teamcolor_red = {Vector(-10,-15,0), Vector(10,10,10)},
 		unusual_stove_teamcolor_blue = {Vector(-10,-15,0), Vector(10,10,10)},
-		unusual_electricfire_teamcolor_red = {Vector(-12,-12,-5), Vector(12,12,20)},
-		unusual_electricfire_teamcolor_blue = {Vector(-12,-12,-5), Vector(12,12,20)},
+		unusual_electricfire_teamcolor_red = {Vector(-11,-11,-5), Vector(11,11,20)},
+		unusual_electricfire_teamcolor_blue = {Vector(-11,-11,-5), Vector(11,11,20)},
 		//smissmas 2024
 		unusual_sizzling_parent = {Vector(-11,-11,-12), Vector(11,11,30)},
 		unusual_icrown_teamcolor_red = {Vector(-15,-15,-22.5), Vector(15,15,30)},
@@ -1700,19 +1751,19 @@ if CLIENT then
 		unusual_playful_purple_parent = {Vector(-12,-12,-8), Vector(12,12,32)},
 		unusual_playful_yellow_parent = {Vector(-12,-12,-8), Vector(12,12,32)},
 		//summer 2025
-		unusual_drunk_parent = {Vector(-11,-11,-11), Vector(11,11,22)},
-		unusual_excalibur_teamcolor_red = {Vector(-12,-12,-12), Vector(12,12,12)},
-		unusual_excalibur_teamcolor_blue = {Vector(-12,-12,-12), Vector(12,12,12)},
-		unusual_excalibur_parent_purple = {Vector(-12,-12,-12), Vector(12,12,12)},
+		unusual_drunk_parent = {Vector(-12,-12,-11), Vector(12,12,22)},
+		unusual_excalibur_teamcolor_red = {Vector(-12,-12,-12), Vector(12,12,15)},
+		unusual_excalibur_teamcolor_blue = {Vector(-12,-12,-12), Vector(12,12,15)},
+		unusual_excalibur_parent_purple = {Vector(-12,-12,-12), Vector(12,12,15)},
 		unusual_uber_teamcolor_red = {Vector(-12,-12,-2), Vector(12,12,12)},
 		unusual_uber_teamcolor_blue = {Vector(-12,-12,-2), Vector(12,12,12)},
 		unusual_uber_gold_parent = {Vector(-12,-12,-2), Vector(12,12,12)},
 		unusual_orbitingbullet_parent = {Vector(-15.5,-15.5,0), Vector(15.5,15.5,0)},
 		unusual_typhoon_parent = {Vector(-8,-8,-4), Vector(8,8,26)},
 		//halloween 2025
-		unusual_ocean_swirl_teamcolor_red = {Vector(-10,-10,2.5), Vector(10,10,22.5)},
-		unusual_ocean_swirl_teamcolor_blue = {Vector(-10,-10,2.5), Vector(10,10,22.5)},
-		unusual_ocean_swirl_green_parent = {Vector(-10,-10,2.5), Vector(10,10,22.5)},
+		unusual_ocean_swirl_teamcolor_red = {Vector(-10.5,-10.5,2.5), Vector(10.5,10.5,22.5)},
+		unusual_ocean_swirl_teamcolor_blue = {Vector(-10.5,-10.5,2.5), Vector(10.5,10.5,22.5)},
+		unusual_ocean_swirl_green_parent = {Vector(-10.5,-10.5,2.5), Vector(10.5,10.5,22.5)},
 		unusual_candle_teamcolor_red = {Vector(-10,-10,0), Vector(10,10,25)},
 		unusual_candle_teamcolor_blue = {Vector(-10,-10,0), Vector(10,10,25)},
 		unusual_deadlyaroma_teamcolor_red = {Vector(-12,-12,0), Vector(12,12,26)},
@@ -1720,50 +1771,32 @@ if CLIENT then
 		unusual_deadlyaroma_green_parent = {Vector(-12,-12,0), Vector(12,12,26)},
 		unusual_conductor_teamc_teamcolor_red = {Vector(-10,-10,0), Vector(10,10,12)},
 		unusual_conductor_teamc_teamcolor_blue = {Vector(-10,-10,0), Vector(10,10,12)},
-		unusual_sandy_parent = {Vector(-8,-8,-20), Vector(8,8,0)},
+		unusual_sandy_parent = {Vector(-4,-4,-30), Vector(4,4,0)},
 		//smissmas 2025
-		unusual_calmsnowfall_parent = {Vector(-8,-8,0), Vector(8,8,14)},
-		unusual_team_recognition_teamcolor_red = {Vector(-12,-12,-8), Vector(12,12,18)},
-		unusual_team_recognition_teamcolor_blue = {Vector(-12,-12,-8), Vector(12,12,18)},
-		unusual_classicfortress_teamcolor_red = {Vector(-9,-9,0), Vector(9,9,28)},
-		unusual_classicfortress_teamcolor_blue = {Vector(-9,-9,0), Vector(9,9,28)},
-		unusual_classicfortress_tflogo_parent = {Vector(-9,-9,0), Vector(9,9,28)},
-		unusual_growing_flake_parent_white = {Vector(-8,-8,0), Vector(8,8,25)},
-		unusual_growing_flake_parent_purple = {Vector(-8,-8,0), Vector(8,8,25)},
-		unusual_growing_flake_parent_twilight = {Vector(-8,-8,0), Vector(8,8,25)},
-		unusual_cryogenic_parent = {Vector(-10,-10,-6), Vector(10,10,14)},
+		unusual_ombre_parent_purple = {Vector(-11,-11,-10), Vector(11,11,30)},
+		unusual_ombre_parent_teal = {Vector(-11,-11,-10), Vector(11,11,30)},
+		unusual_ombre_parent_spectrum = {Vector(-11,-11,-10), Vector(11,11,30)},
+		unusual_calmsnowfall_parent = {Vector(-9,-9,0), Vector(9,9,13)},
+		unusual_team_recognition_teamcolor_red = {Vector(-14,-14,-8), Vector(14,14,18)},
+		unusual_team_recognition_teamcolor_blue = {Vector(-14,-14,-8), Vector(14,14,18)},
+		unusual_classicfortress_teamcolor_red = {Vector(-10,-10,0), Vector(10,10,29)},
+		unusual_classicfortress_teamcolor_blue = {Vector(-10,-10,0), Vector(10,10,29)},
+		unusual_classicfortress_tflogo_parent = {Vector(-10,-10,0), Vector(10,10,29)},
+		unusual_growing_flake_parent_white = {Vector(-13,-13,0), Vector(13,13,26)},
+		unusual_growing_flake_parent_purple = {Vector(-13,-13,0), Vector(13,13,26)},
+		unusual_growing_flake_parent_twilight = {Vector(-13,-13,0), Vector(13,13,26)},
+		unusual_cryogenic_parent = {Vector(-12,-12,-6), Vector(12,12,14)},
 		//summer 2026
-		unusual_aurora_purple_parent = {Vector(-10,-10,4), Vector(10,10,30)},
-		unusual_aurora_teal_parent = {Vector(-10,-10,4), Vector(10,10,30)},
-		unusual_aurora_green_parent = {Vector(-10,-10,4), Vector(10,10,30)},
-		unusual_vinethorn_teamcolor_red = function(icon)
-			//this one has an issue in spawnicons only where the effect just constantly falls downward forever, 
-			//stretching the bounds. this *might* be caused by the effect not being attached to a model, which 
-			//would explain why this doesn't happen when spawned?
-			//try to account for this by attaching the camera to the lower bounds. since this is the most stable.
-			//it still moves up and down as the falling leaf particle despawn, but using the upper bounds in any
-			//way is much worse, so this is the best we can do here.
-			function icon:Think()
-				local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
-				local name = self.name
-				if !PEPlus_IconFx or !PEPlus_IconFx[pcf] then return end
-				local itab = PEPlus_IconFx[pcf][name]
-
-				if itab and IsValid(itab.particle) then
-					local mn, mx = itab.particle:GetRenderBounds()
-					mn = Vector(-10, -10, mn.z)
-					mx = Vector(10, 10, mn.z + 40)
-					icon.view = PEPlus_BoundsToView(mn, mx)
-				end
-			end
-		end,
-		unusual_spaceorbit_parent = {Vector(-10,-16,-10), Vector(10,0,16)},
-		unusual_butterfly_teamcolor_red = {Vector(-15,-15,-12), Vector(15,15,30)},
-		unusual_butterfly_teamcolor_blue = {Vector(-15,-15,-12), Vector(15,15,30)},
-		unusual_butterfly_parent_purple = {Vector(-15,-15,-12), Vector(15,15,30)},
-		//TODO: one-size-fits-all solution for wep unusuals
+		unusual_aurora_purple_parent = {Vector(-8,-8,4), Vector(8,8,30)},
+		unusual_aurora_teal_parent = {Vector(-8,-8,4), Vector(8,8,30)},
+		unusual_aurora_green_parent = {Vector(-8,-8,4), Vector(8,8,30)},
+		unusual_vinethorn_teamcolor_red = {Vector(-7,-7,0), Vector(7,7,8)},
+		unusual_vinethorn_teamcolor_blue = {Vector(-7,-7,0), Vector(7,7,8)},
+		unusual_spaceorbit_parent = {Vector(-10,-16,-10), Vector(10,0,17)},
+		unusual_butterfly_teamcolor_red = {Vector(-20,-20,-12), Vector(20,20,30)},
+		unusual_butterfly_teamcolor_blue = {Vector(-20,-20,-12), Vector(20,20,30)},
+		unusual_butterfly_parent_purple = {Vector(-20,-20,-12), Vector(20,20,30)},
 	}
-	unusual_overrides.unusual_vinethorn_teamcolor_blue = unusual_overrides.unusual_vinethorn_teamcolor_red
 
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
@@ -4978,13 +5011,9 @@ if CLIENT then
 								drop:ChooseOption(entry.v, entry.k)
 							end
 						end
-						local override = unusual_overrides[entry.name]
+						local override = unusual_icon_overrides[entry.name]
 						if override then
-							if istable(override) then
-								icon.view = PEPlus_BoundsToView(override[1], override[2])
-							elseif isfunction(override) then
-								override(icon)
-							end
+							icon.view = PEPlus_BoundsToView(override[1], override[2])
 						end
 						local old_Paint = icon.Paint
 						function icon.Paint(_,w,h)
