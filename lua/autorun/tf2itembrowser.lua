@@ -4640,34 +4640,44 @@ if CLIENT then
 					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
 					local chump = vgui.GetKeyboardFocus()
 					if IsValid(chump) then chump:KillFocus() end
+					//get rid of orphaned color tooltips
+					if IsValid(self.MouseOverPanel) then self.MouseOverPanel:Remove() end
 				end
 				RegisterDermaMenuForClose(container)
 
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
 				//diconlayout and color picker copied from paint dropdown, bah
+				local size = 48
 				local icons = vgui.Create("DIconLayout", container)
 				icons:Dock(TOP)
-				local size = 256/10
+				icons:SetSpaceX(4)
+				icons:SetSpaceY(4)
+
 				for k, v in pairs (drop.Choices) do
 					local data = drop.Data[k]
-					local button = vgui.Create("DColorButton", icons)
+					local button = vgui.Create("DButton", icons)
 					button:SetSize(size, size)
-					local name, cols
-					local function GetOverbrightenedColor(col) return col --[[Vector(65,65,65) + (col * 3)]] end //copied from hat painter critglow particle color; otherwise the icons are too dark (https://github.com/NO-LOAFING/HatPainter/blob/main/lua/entities/proxyent_tf2critglow.lua#L120)
+					local name, col, col_2
 					if data then
-						if data[1] then
-							local col = GetOverbrightenedColor(data[1])
-							button:SetColor(Color(col.x, col.y, col.z, 255), true)
-						end
 						name = GetTFLanguageString(data.name)
 						if name == "" then name = nil end
-						if data[1] and data[2] then
-							cols = {[1] = GetOverbrightenedColor(data[1]), [2] = GetOverbrightenedColor(data[2])}
+						if data[1] then
+							col = Color(data[1].x, data[1].y, data[1].z, 255) //unlike paint selector, this can just be a Color value because we don't have to worry about animated color-changing paints
 						end
-					else
-						button:SetColor(Color(255,255,255,0))
+						if data[2] then
+							col_2 = Color(data[2].x, data[2].y, data[2].z, 255) //^
+						end
 					end
-					button:SetTooltip(name or v)
-					button:SetTooltipDelay(0)
+					button:SetText("")
 					function button.DoClick()
 						drop:ChooseOption(v, k)
 						container.col.BeingUpdated = true
@@ -4677,18 +4687,114 @@ if CLIENT then
 						container.check_c:SetChecked(self.data.crit.sparks_c)
 						container.check_rb:SetChecked(self.data.crit.sparks_rb)
 					end
-					if cols then
-						function button.Paint(_, w, h)
+					//button paint code also copied almost entirely from paint selector! lame!
+					local tex_corner16 = surface.GetTextureID("gui/corner16")
+					local tex_corner8 = surface.GetTextureID("gui/corner8")
+					function button:Paint(w, h)
+						//there aren't many border colors that are visible against *all* the paint options;
+						//just pick two that work, regardless of tf2-authenticity, and make the more intense
+						//one the "selected" color.
+						local _col
+						if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
+							_col = gui_colors.LightRed
+						elseif button.Hovered then
+							_col = gui_colors.TanLight
+						end
+						if _col then
+							draw.RoundedBox(12, 0,0,w,h, _col)
+						end
+
+						//if we successfully set a border color, then shrink down the color preview
+						//so that the RoundedBox we just drew appears as a border around it.
+						local bd = 0
+						local c = 12-4
+						local c_whole = 12
+						local tex = tex_corner16
+						local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
+						if _col then
+							bd = 4
+							c = 8-1
+							c_whole = 8
+							tex = tex_corner8
+							cornerw = (1/8)*c
+						end
+
+						if col_2 then
+							//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
+
+							surface.SetDrawColor(col)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
+							surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
+							surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
 							draw.NoTexture()
-							self:DrawPaintIcon(0, 0, w, h, cols)
-							//from default paint func (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcolorbutton.lua#L61C1-L63C32)
-							surface.SetDrawColor( 0, 0, 0, 200 )
-							surface.DrawRect( 0, 0, w, 1 )
-							surface.DrawRect( 0, 0, 1, h )
+							surface.DrawPoly({ //left triangle
+								{x = bd+c, y = bd}, //upper left corner
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+
+							surface.SetDrawColor(col_2)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
+							surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
+							surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //right triangle
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = w-bd-c, y = h-bd}, //lower right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+						elseif col then
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, col)
+						else
+							//custom appearance for "none" option
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, gui_colors.TanDarker)
+							surface.SetDrawColor(gui_colors.LightRed)
+							surface.SetMaterial(close_button_nocircle)
+							local w2 = w * 0.9
+							local h2 = h * 0.9
+							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+						end
+
+						//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+						if self:IsHovered() then
+							if !IsValid(container.MouseOverPanel) or container.MouseOverPanel.Owner != self then
+								local time = CurTime()
+								self.HoverTime = self.HoverTime or time
+								if time - self.HoverTime > 0.1 then
+									local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
+									pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+									pnl:SetText(name or v)
+									pnl:SetTextColor(gui_colors.TanLight)
+									pnl:SetAutoStretchVertical(true)
+									pnl:SetContentAlignment(5) //center
+									pnl:SetZPos(32767)
+									//pnl:DockPadding(4,4,4,4)
+									pnl:SizeToContents()
+									pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
+
+									function pnl:Paint(w,h)
+										surface.SetDrawColor(color_black)
+										surface.DrawRect(0,0,w,h)
+									end
+									
+									local x, y = self:LocalToScreen((w/2)-(pnl:GetWide()/2),-pnl:GetTall()+8)
+									pnl:SetPos(x,y)
+									container.MouseOverPanel = pnl
+									pnl.Owner = self
+								end
+							end
+						else
+							self.HoverTime = nil
+							if IsValid(container.MouseOverPanel) and container.MouseOverPanel.Owner == self then
+								container.MouseOverPanel:Remove()
+							end
 						end
 					end
+					AddTFButtonSounds(button)
 				end
-				icons:SetSize((size*10)+16, 16+(size*(math.ceil(#drop.Choices/10))))
+				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
 				icons:InvalidateLayout()
 
 				local check = TFStyleVGUI("DCheckBoxLabel", container)
@@ -4715,7 +4821,7 @@ if CLIENT then
 					pnl.OnSettingChanged()
 				end
 
-				local col = vgui.Create("DColorMixer", container)
+				local col = TFStyleVGUI("DColorMixer", container)
 				col:SetLabel("Custom Color")
 				col.label:SetDark(false)
 				container.col = col
@@ -4727,6 +4833,7 @@ if CLIENT then
 					_col = Vector(_col.r, _col.g, _col.b)
 					self.data.crit.enabled = true
 					self.data.crit.col = {[false] = _col}
+					drop.selected = nil //un-highlight the currently selected option
 					drop:SetText("(custom)")
 					pnl.OnSettingChanged()
 				end
@@ -4735,7 +4842,8 @@ if CLIENT then
 				col:Dock(TOP)
 
 				container:SizeToChildren(true, true)
-				container:SetHeight(icons:GetTall() + 16 + col:GetTall() + 16 + container.check_rb:GetTall() + 8 + container.check_c:GetTall() + 16) //why doesn't SizeToChildren do this right?
+				container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 + container.check_rb:GetTall() + 8 + container.check_c:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
+				container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
 				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
 
