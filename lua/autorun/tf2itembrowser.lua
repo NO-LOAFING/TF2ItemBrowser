@@ -1254,7 +1254,7 @@ if CLIENT then
 				draw.RoundedBox(12, 0,0,w,h, col)
 				self:SetColor(textcol)
 			end
-		elseif class == "DTextEntry" then
+		elseif class == "DTextEntry" or class == "DNumberWang" then
 			pnl:SetHeight(20) //30 would be more accurate proportionately, but it's too big to fit nicely
 			if !alt_style then
 				//light textbox, modeled after TF2 backpack search
@@ -1331,6 +1331,21 @@ if CLIENT then
 				end
 				surface.DrawRect(4,0,w/2+1,h)
 			end
+		elseif class == "DColorMixer" then
+			pnl.label:SetColor(gui_colors.TanLight)
+			pnl.label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			function pnl.PerformLayout(self, x, y)
+				//Modified version of CtrlColor:PerformLayout (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/gamemodes/sandbox/gamemode/spawnmenu/controls/ctrlcolor.lua#L13)
+				//Only does palette button sizes, doesn't clamp their sizes and resizes them more smoothly
+				local ColorRows = #self.Palette:GetChildren() / 3
+				self.Palette:SetButtonSize(self:GetWide() / ColorRows)
+			end
+			AddTFStyleToVGUI(pnl.txtR, true)
+			AddTFStyleToVGUI(pnl.txtG, true)
+			AddTFStyleToVGUI(pnl.txtB, true)
+			pnl.txtR.FGColor = desc_colors.negative
+			pnl.txtG.FGColor = quality_colors.selfmade
+			pnl.txtB.FGColor = desc_colors.positive
 		end
 	end
 	local function TFStyleVGUI(class, par, alt_style)
@@ -4381,31 +4396,43 @@ if CLIENT then
 					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
 					local chump = vgui.GetKeyboardFocus()
 					if IsValid(chump) then chump:KillFocus() end
+					//get rid of orphaned color tooltips
+					if IsValid(self.MouseOverPanel) then self.MouseOverPanel:Remove() end
 				end
 				RegisterDermaMenuForClose(container)
 
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
+				local size = 48
 				local icons = vgui.Create("DIconLayout", container)
 				icons:Dock(TOP)
-				local size = 256/10
+				icons:SetSpaceX(4)
+				icons:SetSpaceY(4)
+				
 				for k, v in pairs (drop.Choices) do
 					local data = drop.Data[k]
-					local button = vgui.Create("DColorButton", icons)
+					local button = vgui.Create("DButton", icons)
 					button:SetSize(size, size)
-					local name, cols
+					local name, col, col_2
 					if data then
-						if data[1] then
-							button:SetColor(Color(data[1].x, data[1].y, data[1].z, 255), true)
-						end
 						name = GetTFLanguageString(data.name)
 						if name == "" then name = nil end
-						if data[1] and data[2] then
-							cols = {[1] = data[1], [2] = data[2]}
+						if data[1] then
+							col = data[1]
 						end
-					else
-						button:SetColor(Color(255,255,255,0))
+						if data[2] then
+							col_2 = data[2]
+						end
 					end
-					button:SetTooltip(name or v)
-					button:SetTooltipDelay(0)
+					button:SetText("")
 					function button.DoClick()
 						drop:ChooseOption(v, k)
 						container.col.BeingUpdated = true
@@ -4413,32 +4440,127 @@ if CLIENT then
 						container.col:SetColor(Color(_col.x, _col.y, _col.z))
 						container.col.BeingUpdated = nil
 					end
-					if cols or (data and data.override) then
-						function button.Paint(_, w, h)
-							if data.override then
-								if data.override_2 then
-									draw.NoTexture()
-									self:DrawPaintIcon(0, 0, w, h, {ProxyentPaintColor_GetOverrideColor(data.override), ProxyentPaintColor_GetOverrideColor(data.override_2)})
-								else
-									local col = ProxyentPaintColor_GetOverrideColor(data.override)
-									surface.SetDrawColor(col.x, col.y, col.z, 255)
-									button:DrawFilledRect()
-								end
-							else
-								draw.NoTexture()
-								self:DrawPaintIcon(0, 0, w, h, cols)
+					local tex_corner16 = surface.GetTextureID("gui/corner16")
+					local tex_corner8 = surface.GetTextureID("gui/corner8")
+					function button:Paint(w, h)
+						//there aren't many border colors that are visible against *all* the paint options;
+						//just pick two that work, regardless of tf2-authenticity, and make the more intense
+						//one the "selected" color.
+						local _col
+						if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
+							_col = gui_colors.LightRed
+						elseif button.Hovered then
+							_col = gui_colors.TanLight
+						end
+						if _col then
+							draw.RoundedBox(12, 0,0,w,h, _col)
+						end
+
+						//if we successfully set a border color, then shrink down the color preview
+						//so that the RoundedBox we just drew appears as a border around it.
+						local bd = 0
+						local c = 12-4
+						local c_whole = 12
+						local tex = tex_corner16
+						local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
+						if _col then
+							bd = 4
+							c = 8-1
+							c_whole = 8
+							tex = tex_corner8
+							cornerw = (1/8)*c
+						end
+
+						local col = col
+						local col_2 = col_2
+						if (data and data.override) then
+							col = ProxyentPaintColor_GetOverrideColor(data.override)
+							if data.override_2 then
+								col_2 = ProxyentPaintColor_GetOverrideColor(data.override_2)
 							end
-							//from default paint func (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcolorbutton.lua#L61C1-L63C32)
-							surface.SetDrawColor( 0, 0, 0, 200 )
-							surface.DrawRect( 0, 0, w, 1 )
-							surface.DrawRect( 0, 0, 1, h )
+						end
+
+						if col_2 then
+							//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
+
+							surface.SetDrawColor(col.x, col.y, col.z, 255)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
+							surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
+							surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //left triangle
+								{x = bd+c, y = bd}, //upper left corner
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+
+							surface.SetDrawColor(col_2.x, col_2.y, col_2.z, 255)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
+							surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
+							surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //right triangle
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = w-bd-c, y = h-bd}, //lower right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+						elseif col then
+							//recreating this color table every frame sucks, but
+							//it's the only way to handle the color-changing ones
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, {r = col.x, g = col.y, b = col.z, a = 255})
+						else
+							//custom appearance for "none" option
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, gui_colors.TanDarker)
+							surface.SetDrawColor(gui_colors.LightRed)
+							surface.SetMaterial(close_button_nocircle)
+							local w2 = w * 0.9
+							local h2 = h * 0.9
+							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+						end
+
+						//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+						if self:IsHovered() then
+							if !IsValid(container.MouseOverPanel) or container.MouseOverPanel.Owner != self then
+								local time = CurTime()
+								self.HoverTime = self.HoverTime or time
+								if time - self.HoverTime > 0.1 then
+									local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
+									pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+									pnl:SetText(name or v)
+									pnl:SetTextColor(gui_colors.TanLight)
+									pnl:SetAutoStretchVertical(true)
+									pnl:SetContentAlignment(5) //center
+									pnl:SetZPos(32767)
+									//pnl:DockPadding(4,4,4,4)
+									pnl:SizeToContents()
+									pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
+
+									function pnl:Paint(w,h)
+										surface.SetDrawColor(color_black)
+										surface.DrawRect(0,0,w,h)
+									end
+									
+									local x, y = self:LocalToScreen((w/2)-(pnl:GetWide()/2),-pnl:GetTall()+8)
+									pnl:SetPos(x,y)
+									container.MouseOverPanel = pnl
+									pnl.Owner = self
+								end
+							end
+						else
+							self.HoverTime = nil
+							if IsValid(container.MouseOverPanel) and container.MouseOverPanel.Owner == self then
+								container.MouseOverPanel:Remove()
+							end
 						end
 					end
+					AddTFButtonSounds(button)
 				end
-				icons:SetSize((size*10)+16, 16+(size*(math.ceil(#drop.Choices/10))))
+				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
 				icons:InvalidateLayout()
 
-				local col = vgui.Create("DColorMixer", container)
+				local col = TFStyleVGUI("DColorMixer", container)
 				col:SetLabel("Custom Color")
 				col.label:SetDark(false)
 				container.col = col
@@ -4456,6 +4578,7 @@ if CLIENT then
 					self.data.paint.enabled = true
 					self.data.paint.override = {[false] = 0}
 					self.data.paint.col = {[false] = _col}
+					drop.selected = nil //un-highlight the currently selected option
 					drop:SetText("(custom)")
 					pnl.OnSettingChanged()
 				end
@@ -4464,7 +4587,8 @@ if CLIENT then
 				col:Dock(TOP)
 
 				container:SizeToChildren(true, true)
-				container:SetHeight(icons:GetTall() + 16 + col:GetTall() + 16) //why doesn't SizeToChildren do this right?
+				container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
+				container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
 				container:IsMouseInputEnabled(true)
 				container:InvalidateLayout()
 
@@ -4944,7 +5068,7 @@ if CLIENT then
 				scroll:Dock(FILL)
 
 				local size = 128
-				icons = vgui.Create("DIconLayout", scroll)
+				local icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 				icons:SetSpaceX(8)
 				icons:SetSpaceY(8)
@@ -5003,9 +5127,9 @@ if CLIENT then
 						function icon:DoClick()
 							local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
 
-							//If the icon's effect is currently being overridden by another pcf's effect of the same name, reload the pcf on click instead
+							//If the icon's effect is currently being overridden by another pcf's effect of the same name, reload the pcf on click instead (copied from PE+ code)
 							if self:IsCurrentlyOverridden(pcf, self.name) then
-								surface.PlaySound("common/wpn_select.wav") //TODO: is this a good sound? needs to be different enough from the spawn sound so players can tell that clicking didn't spawn an effect yet.
+								surface.PlaySound("common/wpn_select.wav")
 								PEPlus_AddParticles(pcf, self.name) //crash prevention
 							else
 								drop:ChooseOption(entry.v, entry.k)
@@ -5291,7 +5415,7 @@ if CLIENT then
 				scroll:Dock(FILL)
 
 				local size = 128
-				icons = vgui.Create("DIconLayout", scroll)
+				local icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 				icons:SetSpaceX(8)
 				icons:SetSpaceY(8)
