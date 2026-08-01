@@ -1355,6 +1355,50 @@ if CLIENT then
 		end
 		return pnl
 	end
+	local function AddTFStyleTooltip(self, text, font, fgcol, bgcol)
+		font = font or "TF2ItemBrowser_ItemDesc_Smaller"
+		fgcol = fgcol or gui_colors.TanLight
+		bgcol = bgcol or color_black
+		local old_Paint = self.Paint
+		function self:Paint(w,h,...)
+			if self:IsHovered() then
+				if !IsValid(TF2ItemBrowser_Tooltip) or TF2ItemBrowser_Tooltip.Owner != self then
+					local time = CurTime()
+					self.HoverTime = self.HoverTime or time
+					if time - self.HoverTime > 0.1 then
+						local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
+						pnl:SetFont(font)
+						pnl:SetText(text)
+						pnl:SetTextColor(fgcol)
+						pnl:SetAutoStretchVertical(true)
+						pnl:SetContentAlignment(5) //center
+						pnl:SetZPos(32767)
+						//pnl:DockPadding(4,4,4,4)
+						pnl:SizeToContents()
+						pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
+
+						function pnl:Paint(w,h)
+							surface.SetDrawColor(bgcol)
+							surface.DrawRect(0,0,w,h)
+							//get rid of orphaned tooltips
+							if !IsValid(pnl.Owner) then pnl:Remove() end
+						end
+						
+						local x, y = self:LocalToScreen((w/2)-(pnl:GetWide()/2),-pnl:GetTall()+8)
+						pnl:SetPos(x,y)
+						TF2ItemBrowser_Tooltip = pnl
+						pnl.Owner = self
+					end
+				end
+			else
+				self.HoverTime = nil
+				if IsValid(TF2ItemBrowser_Tooltip) and TF2ItemBrowser_Tooltip.Owner == self then
+					TF2ItemBrowser_Tooltip:Remove()
+				end
+			end
+			old_Paint(self,w,h,...)
+		end
+	end
 
 
 	//dubiously appropriated from https://gist.github.com/Be1zebub/26b5d8e8ee5ead9a92f691aa2cdf58b5
@@ -4396,8 +4440,6 @@ if CLIENT then
 					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
 					local chump = vgui.GetKeyboardFocus()
 					if IsValid(chump) then chump:KillFocus() end
-					//get rid of orphaned color tooltips
-					if IsValid(self.MouseOverPanel) then self.MouseOverPanel:Remove() end
 				end
 				RegisterDermaMenuForClose(container)
 
@@ -4515,47 +4557,14 @@ if CLIENT then
 							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, gui_colors.TanDarker)
 							surface.SetDrawColor(gui_colors.LightRed)
 							surface.SetMaterial(close_button_nocircle)
-							local w2 = w * 0.9
-							local h2 = h * 0.9
+							local w2 = w * 0.75
+							local h2 = h * 0.75
 							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-						end
-
-						//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
-						if self:IsHovered() then
-							if !IsValid(container.MouseOverPanel) or container.MouseOverPanel.Owner != self then
-								local time = CurTime()
-								self.HoverTime = self.HoverTime or time
-								if time - self.HoverTime > 0.1 then
-									local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
-									pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-									pnl:SetText(name or v)
-									pnl:SetTextColor(gui_colors.TanLight)
-									pnl:SetAutoStretchVertical(true)
-									pnl:SetContentAlignment(5) //center
-									pnl:SetZPos(32767)
-									//pnl:DockPadding(4,4,4,4)
-									pnl:SizeToContents()
-									pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
-
-									function pnl:Paint(w,h)
-										surface.SetDrawColor(color_black)
-										surface.DrawRect(0,0,w,h)
-									end
-									
-									local x, y = self:LocalToScreen((w/2)-(pnl:GetWide()/2),-pnl:GetTall()+8)
-									pnl:SetPos(x,y)
-									container.MouseOverPanel = pnl
-									pnl.Owner = self
-								end
-							end
-						else
-							self.HoverTime = nil
-							if IsValid(container.MouseOverPanel) and container.MouseOverPanel.Owner == self then
-								container.MouseOverPanel:Remove()
-							end
 						end
 					end
 					AddTFButtonSounds(button)
+					//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+					AddTFStyleTooltip(button, name or v)
 				end
 				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
 				icons:InvalidateLayout()
@@ -4640,8 +4649,6 @@ if CLIENT then
 					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
 					local chump = vgui.GetKeyboardFocus()
 					if IsValid(chump) then chump:KillFocus() end
-					//get rid of orphaned color tooltips
-					if IsValid(self.MouseOverPanel) then self.MouseOverPanel:Remove() end
 				end
 				RegisterDermaMenuForClose(container)
 
@@ -4752,47 +4759,14 @@ if CLIENT then
 							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, gui_colors.TanDarker)
 							surface.SetDrawColor(gui_colors.LightRed)
 							surface.SetMaterial(close_button_nocircle)
-							local w2 = w * 0.9
-							local h2 = h * 0.9
+							local w2 = w * 0.75
+							local h2 = h * 0.75
 							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-						end
-
-						//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
-						if self:IsHovered() then
-							if !IsValid(container.MouseOverPanel) or container.MouseOverPanel.Owner != self then
-								local time = CurTime()
-								self.HoverTime = self.HoverTime or time
-								if time - self.HoverTime > 0.1 then
-									local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
-									pnl:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-									pnl:SetText(name or v)
-									pnl:SetTextColor(gui_colors.TanLight)
-									pnl:SetAutoStretchVertical(true)
-									pnl:SetContentAlignment(5) //center
-									pnl:SetZPos(32767)
-									//pnl:DockPadding(4,4,4,4)
-									pnl:SizeToContents()
-									pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
-
-									function pnl:Paint(w,h)
-										surface.SetDrawColor(color_black)
-										surface.DrawRect(0,0,w,h)
-									end
-									
-									local x, y = self:LocalToScreen((w/2)-(pnl:GetWide()/2),-pnl:GetTall()+8)
-									pnl:SetPos(x,y)
-									container.MouseOverPanel = pnl
-									pnl.Owner = self
-								end
-							end
-						else
-							self.HoverTime = nil
-							if IsValid(container.MouseOverPanel) and container.MouseOverPanel.Owner == self then
-								container.MouseOverPanel:Remove()
-							end
 						end
 					end
 					AddTFButtonSounds(button)
+					//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+					AddTFStyleTooltip(button, name or v)
 				end
 				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
 				icons:InvalidateLayout()
@@ -5107,7 +5081,7 @@ if CLIENT then
 					return default_category or fallback_default_category
 				end
 
-				local search_holder
+				local search_holder, icons
 				if table.Count(categories) > 1 then
 					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
 					search_holder.Paint = function() end
@@ -5176,7 +5150,7 @@ if CLIENT then
 				scroll:Dock(FILL)
 
 				local size = 128
-				local icons = vgui.Create("DIconLayout", scroll)
+				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 				icons:SetSpaceX(8)
 				icons:SetSpaceY(8)
@@ -5454,7 +5428,7 @@ if CLIENT then
 					return default_category or fallback_default_category
 				end
 
-				local search_holder
+				local search_holder, icons
 				if table.Count(categories) > 1 then
 					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
 					search_holder.Paint = function() end
@@ -5523,7 +5497,7 @@ if CLIENT then
 				scroll:Dock(FILL)
 
 				local size = 128
-				local icons = vgui.Create("DIconLayout", scroll)
+				icons = vgui.Create("DIconLayout", scroll)
 				icons:Dock(FILL)
 				icons:SetSpaceX(8)
 				icons:SetSpaceY(8)
@@ -5757,13 +5731,21 @@ if CLIENT then
 						function icon.Paint(_,w,h)
 							//custom background
 							local col = gui_colors._unu_default
+							local textcol = gui_colors.TanLight
 							if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
 							or (!self.data.wp.enabled and !entry.data) or icon.Depressed then //highlight the currently selected option
 								col = gui_colors._unu_depressed
 							elseif icon.Hovered then
 								col = gui_colors._unu_hovered
+							elseif entry.data then
+								//Show quality color on text label, but revert to the default color when hovered/selected,
+								//because some colors are too hard to read as small text on some of these backgrounds
+								textcol = rarity_colors[paintkit_rarities[entry.data.id]] or textcol
 							end
 							draw.RoundedBox(12, 0,0,w,h, col)
+							for k, v in ipairs (icon.labels) do
+								v:SetTextColor(textcol)
+							end
 
 							icon.Image:PaintAt(0,0,w,h)
 
@@ -5778,6 +5760,7 @@ if CLIENT then
 						end
 						//custom text label; this is multiline so do the same textWrap approach as AddItemText
 						local tab = {}
+						icon.labels = {}
 						for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
 							//do these in reverse order because we're docking them to the bottom
 							table.insert(tab, 1, v)
@@ -5790,6 +5773,7 @@ if CLIENT then
 							label:SetTextColor(gui_colors.TanLight)
 							label:SetAutoStretchVertical(true)
 							label:SetContentAlignment(5) //center
+							table.insert(icon.labels, label)
 						end
 						AddTFButtonSounds(icon)
 						//grab cached spawnicon if it exists, otherwise tell the icon render queue to create one
