@@ -1284,6 +1284,7 @@ if CLIENT then
 		elseif class == "DScrollPanel" then
 			AddTFStyleToVGUI(pnl:GetVBar())
 		elseif class == "DVScrollBar" then
+			//ugly default tf2 clientscheme styled scrollbar, this is close enough to what's used by all the scrollbars in tf2 with buttons
 			function pnl:Paint(w,h) end
 			function pnl.btnUp:Paint(w,h)
 				draw.SimpleText("t", "TF2ItemBrowser_GUISymbols", w/2, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //up-pointing arrow
@@ -1346,6 +1347,18 @@ if CLIENT then
 			pnl.txtR.FGColor = desc_colors.negative
 			pnl.txtG.FGColor = quality_colors.selfmade
 			pnl.txtB.FGColor = desc_colors.positive
+		elseif class == "DHorizontalScroller" then
+			//just do something close enough to the visual theme of the clientscheme-styled vertical scrollbar
+			function pnl.btnLeft:Paint(w,h)
+				surface.SetDrawColor(color_black) //not great but necessary to make the buttons visible against the background
+				surface.DrawRect(0,0,w,h)
+				draw.SimpleText("w", "TF2ItemBrowser_GUISymbols", (w/2)-1, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //left-pointing arrow
+			end
+			function pnl.btnRight:Paint(w,h)
+				surface.SetDrawColor(color_black)
+				surface.DrawRect(0,0,w,h)
+				draw.SimpleText("8", "TF2ItemBrowser_GUISymbols", w/2, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //right-pointing arrow
+			end
 		end
 	end
 	local function TFStyleVGUI(class, par, alt_style)
@@ -2363,7 +2376,7 @@ if CLIENT then
 			end
 
 			//This also has a scrollbar just in case some goofball wants to attach more than 10 items to one model
-			local atticons = vgui.Create("DHorizontalScroller", atticons_holder)
+			local atticons = TFStyleVGUI("DHorizontalScroller", atticons_holder)
 			atticons:Dock(BOTTOM)
 			window.atticons = atticons
 			atticons.icons = {}
