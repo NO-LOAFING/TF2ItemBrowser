@@ -49,10 +49,12 @@ if CLIENT then
 	cvars.AddChangeCallback("gmod_language", function(_,_,new) UpdateTFLanguageStrings(new) end, "TF2ItemBrowser")
 	UpdateTFLanguageStrings(GetConVar("gmod_language"):GetString())
 
-	GetTFLanguageString = function(str, return_str_on_fail)
-		local result = ""
-		if return_str_on_fail then result = str end
-		if !isstring(str) then return result end
+	GetTFLanguageString = function(str)
+		local result
+		if !isstring(str) then return end
+		//if str doesn't start with a #, then it might not be a localized string, and in those cases 
+		//we should just return the string we were given if we can't find one to localize it to
+		if !string.StartsWith(str, "#") then result = str end
 
 		result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
 		return result
@@ -195,8 +197,8 @@ end
 
 //this stock item is called "PDA" and uses the destruction pda icon, but its model is engi's toolbox
 SafeAmendItem(28, "TF_WEAPON_BUILDER", function(i) 
-	i.item_name =--[["#LoadoutSlot_Building"]] "Toolbox" //not localized! bad!!
-	i.item_type_name = "#LoadoutSlot_Building"
+	i.item_name = "Toolbox" //not localized, bad!! how does the word "toolbox" not appear *once* in tf_english?
+	i.item_type_name = "Toolbox" //^
 	i.image_inventory = "backpack/weapons/w_models/w_toolbox"
 end)
 
@@ -215,19 +217,19 @@ for _, tab in ipairs ({
 	{836, "Promo Champ Stamp"},
 	{837, "Promo Marxman"},
 	{838, "Promo Human Cannonball"},
-	{1184, "Gloves of Running Urgently MvM"}, //visually the same as 239 "Gloves of Running Urgently" but has different attributes
+	{1184, "Gloves of Running Urgently MvM"}, //copy of 239 "Gloves of Running Urgently" but has different attributes
 	{850, "Deflector"}, //visually the same as minigun, exists as a contrivance for mvm because tracer fx can only be defined in an itemdef
 	{30739, "Promo Fear Monger"}, //copy of 30724 "Fear Monger"
 	{30740, "Promo Arkham Cowl"}, //copy of 30720 "Arkham Cowl"
 	{30741, "Promo The Firefly"}, //copy of 30721 "The Firefly"
 	{8936, "Halloween Spellbook Page (Achievement)"}, //copy of 8935 "Halloween Spellbook Page" except it applies different spellbook page in TF2
-	{1201, "Poker Visor 2026"}, //copies of 292, 294-298 (original poker night items) but with different names
+	{1201, "Poker Visor 2026"}, //copies of 292, 294-298 (original poker night items) but with different names prepended with "Reissued"
 	{1202, "TTG Max Pistol - Poker Night 2026"},
 	{1203, "TTG Glasses 2026"},
 	{1204, "TTG Badge 2026"},
 	{1205, "TTG Watch 2026"},
 	{1206, "Iron Curtain 2026"},
-	{294, "TTG Max Pistol - Poker Night"}, //visually the same as 160 TTG Max Pistol, only differences are armory/store stuff
+	{294, "TTG Max Pistol - Poker Night"}, //functionally a copy of 160 TTG Max Pistol, only differences are armory/store stuff
 }) do
 	SafeAmendItem(tab[1], tab[2], function(i) return "remove" end)
 end
@@ -388,7 +390,7 @@ for k, v in pairs (s.items) do
 			local tab = {
 				bodygroup = {name = "level", submodel_index = i}
 			}
-			if CLIENT then tab.name = GetTFLanguageString("TF_ScoreBoard_KillsLabel", true) .. " " .. i end
+			if CLIENT then tab.name = (GetTFLanguageString("#TF_ScoreBoard_KillsLabel") or "Kills:") .. " " .. i end
 			table.Merge(tab, base_style)
 			v.visuals.styles[i] = tab
 		end
@@ -597,10 +599,10 @@ for k, v in pairs (s.items) do
 				else
 					if string.EndsWith(v2.image_inventory, "_gold") then
 						aus_prefix = true
-						name = string.Trim(GetTFLanguageString("ItemNameAustralium", true))
+						name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
 					end
 				end
-				if strange_prefix then name = string.Trim(GetTFLanguageString(strange_prefix, true)) end
+				if strange_prefix then name = string.Trim(GetTFLanguageString(strange_prefix) or strange_prefix) end
 				v.visuals.styles[k2].name = name
 				v.visuals.styles[k2].strange_prefix = strange_prefix
 				v.visuals.styles[k2].aus_prefix = aus_prefix
@@ -928,8 +930,7 @@ local function GetItemDefaultParticleEffects(data)
 		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
 			if CLIENT then
 				tab = table.Copy(tab)
-				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value)
-				if str != "" then tab._displayname = str end
+				tab._displayname = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect static"].value) //can be nil; uses the effect name if so
 			end
 			table.insert(pe_def, tab)
 		end
@@ -939,8 +940,7 @@ local function GetItemDefaultParticleEffects(data)
 		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
 			if CLIENT then
 				tab = table.Copy(tab)
-				local str = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value)
-				if str != "" then tab._displayname = str end
+				tab._displayname = GetTFLanguageString("#Attrib_Particle" .. i.attributes["attach particle effect"].value) //can be nil; uses the effect name if so
 			end
 			table.insert(pe_def, tab)
 		end
@@ -1470,47 +1470,43 @@ if CLIENT then
 	end
 
 	local paints = {
-		{
-			{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
-			{name = "#TF_Tool_PaintCan_2",	[1] = Vector(66, 79, 59)},	//Zepheniah's Greed
-			{name = "#TF_Tool_PaintCan_3",	[1] = Vector(81, 56, 74)},	//Noble Hatter's Violet
-			{name = "#TF_Tool_PaintCan_4",	[1] = Vector(216, 190, 216)},	//Color No. 216-190-216
-			{name = "#TF_Tool_PaintCan_5",	[1] = Vector(125, 64, 113)},	//A Deep Commitment to Purple
-			{name = "#TF_Tool_PaintCan_6",	[1] = Vector(207, 115, 54)},	//Mann Co. Orange
-			{name = "#TF_Tool_PaintCan_7",	[1] = Vector(165, 117, 69)},	//Muskelmannbraun
-			{name = "#TF_Tool_PaintCan_8",	[1] = Vector(197, 175, 145)},	//Peculiarly Drab Tincture
-			{name = "#TF_Tool_PaintCan_9",	[1] = Vector(105, 77, 58)},	//Radigan Conagher Brown
-			{name = "#TF_Tool_PaintCan_10",	[1] = Vector(124, 108, 87)},	//Ye Olde Rustic Colour
-			{name = "#TF_Tool_PaintCan_11",	[1] = Vector(231, 181, 59)},	//Australium Gold
-			{name = "#TF_Tool_PaintCan_12",	[1] = Vector(126, 126, 126)},	//Aged Moustache Grey
-			{name = "#TF_Tool_PaintCan_13",	[1] = Vector(230, 230, 230)},	//An Extraordinary Abundance of Tinge
-			{name = "#TF_Tool_PaintCan_14",	[1] = Vector(20, 20, 20)},	//A Distinctive Lack of Hue
-			{name = "#TF_Tool_PaintCan_15",	[1] = Vector(255, 105, 180)},	//Pink as Hell
-			{name = "#TF_Tool_PaintCan_16",	[1] = Vector(47, 79, 79)},	//A Color Similar to Slate
-			{name = "#TF_Tool_PaintCan_17",	[1] = Vector(128, 128, 0)},	//Drably Olive
-			{name = "#TF_Tool_PaintCan_18",	[1] = Vector(50, 205, 50)},	//The Bitter Taste of Defeat and Lime
-			{name = "#TF_Tool_PaintCan_19",	[1] = Vector(240, 230, 140)},	//The Color of a Gentlemann's Business Pants
-			{name = "#TF_Tool_PaintCan_20",	[1] = Vector(233, 150, 122)},	//Dark Salmon Injustice
-			{name = "#TF_Tool_PaintCan_21",	[1] = Vector(188, 221, 179)},	//A Mann's Mint
-			{name = "#TF_Tool_PaintCan_22",	[1] = Vector(45, 45, 36)},	//After Eight
-		},
-		{
-			{name = "#TF_Tool_PaintCan_TeamColor",	[1] = Vector(184, 56, 59),	[2] = Vector(88, 133, 162)},	//Team Spirit
-			{name = "#TF_Tool_PaintCan_TeamColor2",	[1] = Vector(72, 56, 56),	[2] = Vector(56, 66, 72)},	//Operator's Overalls
-			{name = "#TF_Tool_PaintCan_TeamColor3",	[1] = Vector(168, 154, 140),	[2] = Vector(131, 159, 163)},	//Waterlogged Lab Coat
-			{name = "#TF_Tool_PaintCan_TeamColor4",	[1] = Vector(59, 31, 35),	[2] = Vector(24, 35, 61)},	//Balaclavas Are Forever
-			{name = "#TF_Tool_PaintCan_TeamColor5",	[1] = Vector(101, 71, 64),	[2] = Vector(40, 57, 77)},	//An Air of Debonair
-			{name = "#TF_Tool_PaintCan_TeamColor6",	[1] = Vector(128, 48, 32),	[2] = Vector(37, 109, 141)},	//The Value of Teamwork
-			{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
-		},
-		{
-			{name = "#TF_HalloweenSpell_Paint_1", override = 3},			//Putrescent Pigmentation
-			{name = "#TF_HalloweenSpell_Paint_2", override = 1},			//Die Job
-			{name = "#TF_HalloweenSpell_Paint_3", override = 2},			//Chromatic Corruption
-			{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
-			{name = "#TF_HalloweenSpell_Paint_5", override = 5},			//Sinister Staining
-			{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7},	//not localized, bad!!
-		},
+		{name = "#TF_Tool_PaintCan_1",	[1] = Vector(114, 158, 66)},	//Indubitably Green
+		{name = "#TF_Tool_PaintCan_2",	[1] = Vector(66, 79, 59)},	//Zepheniah's Greed
+		{name = "#TF_Tool_PaintCan_3",	[1] = Vector(81, 56, 74)},	//Noble Hatter's Violet
+		{name = "#TF_Tool_PaintCan_4",	[1] = Vector(216, 190, 216)},	//Color No. 216-190-216
+		{name = "#TF_Tool_PaintCan_5",	[1] = Vector(125, 64, 113)},	//A Deep Commitment to Purple
+		{name = "#TF_Tool_PaintCan_6",	[1] = Vector(207, 115, 54)},	//Mann Co. Orange
+		{name = "#TF_Tool_PaintCan_7",	[1] = Vector(165, 117, 69)},	//Muskelmannbraun
+		{name = "#TF_Tool_PaintCan_8",	[1] = Vector(197, 175, 145)},	//Peculiarly Drab Tincture
+		{name = "#TF_Tool_PaintCan_9",	[1] = Vector(105, 77, 58)},	//Radigan Conagher Brown
+		{name = "#TF_Tool_PaintCan_10",	[1] = Vector(124, 108, 87)},	//Ye Olde Rustic Colour
+		{name = "#TF_Tool_PaintCan_11",	[1] = Vector(231, 181, 59)},	//Australium Gold
+		{name = "#TF_Tool_PaintCan_12",	[1] = Vector(126, 126, 126)},	//Aged Moustache Grey
+		{name = "#TF_Tool_PaintCan_13",	[1] = Vector(230, 230, 230)},	//An Extraordinary Abundance of Tinge
+		{name = "#TF_Tool_PaintCan_14",	[1] = Vector(20, 20, 20)},	//A Distinctive Lack of Hue
+		{name = "#TF_Tool_PaintCan_15",	[1] = Vector(255, 105, 180)},	//Pink as Hell
+		{name = "#TF_Tool_PaintCan_16",	[1] = Vector(47, 79, 79)},	//A Color Similar to Slate
+		{name = "#TF_Tool_PaintCan_17",	[1] = Vector(128, 128, 0)},	//Drably Olive
+		{name = "#TF_Tool_PaintCan_18",	[1] = Vector(50, 205, 50)},	//The Bitter Taste of Defeat and Lime
+		{name = "#TF_Tool_PaintCan_19",	[1] = Vector(240, 230, 140)},	//The Color of a Gentlemann's Business Pants
+		{name = "#TF_Tool_PaintCan_20",	[1] = Vector(233, 150, 122)},	//Dark Salmon Injustice
+		{name = "#TF_Tool_PaintCan_21",	[1] = Vector(188, 221, 179)},	//A Mann's Mint
+		{name = "#TF_Tool_PaintCan_22",	[1] = Vector(45, 45, 36)},	//After Eight
+
+		{name = "#TF_Tool_PaintCan_TeamColor",	[1] = Vector(184, 56, 59),	[2] = Vector(88, 133, 162)},	//Team Spirit
+		{name = "#TF_Tool_PaintCan_TeamColor2",	[1] = Vector(72, 56, 56),	[2] = Vector(56, 66, 72)},	//Operator's Overalls
+		{name = "#TF_Tool_PaintCan_TeamColor3",	[1] = Vector(168, 154, 140),	[2] = Vector(131, 159, 163)},	//Waterlogged Lab Coat
+		{name = "#TF_Tool_PaintCan_TeamColor4",	[1] = Vector(59, 31, 35),	[2] = Vector(24, 35, 61)},	//Balaclavas Are Forever
+		{name = "#TF_Tool_PaintCan_TeamColor5",	[1] = Vector(101, 71, 64),	[2] = Vector(40, 57, 77)},	//An Air of Debonair
+		{name = "#TF_Tool_PaintCan_TeamColor6",	[1] = Vector(128, 48, 32),	[2] = Vector(37, 109, 141)},	//The Value of Teamwork
+		{name = "#TF_Tool_PaintCan_TeamColor7",	[1] = Vector(195, 108, 45),	[2] = Vector(184, 128, 53)},	//Cream Spirit
+
+		{name = "#TF_HalloweenSpell_Paint_1", override = 3},			//Putrescent Pigmentation
+		{name = "#TF_HalloweenSpell_Paint_2", override = 1},			//Die Job
+		{name = "#TF_HalloweenSpell_Paint_3", override = 2},			//Chromatic Corruption
+		{name = "#TF_HalloweenSpell_Paint_4", override = 4, override_2 = 6},	//Spectral Spectrum
+		{name = "#TF_HalloweenSpell_Paint_5", override = 5},			//Sinister Staining
+		{name = "Halloween Spell: Afraid of Shadows (unused)", override = 7},	//not localized, bad!!
 	}
 	local critglows = {
 		{name = "Critboost",	[1] = Vector(80, 8, 5),		[2] = Vector(5, 20, 80),	sparks_rb = true},
@@ -2065,7 +2061,7 @@ if CLIENT then
 				for _, v in ipairs (sets) do
 					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
-						local k = GetTFLanguageString(TF2Items.item_sets[v].name, true) or v
+						local k = GetTFLanguageString(TF2Items.item_sets[v].name) or v
 						local id = self:AddChoice(k, v, old_choice == v)
 						submenus.sets = submenus.sets or {}
 						table.insert(submenus.sets, {name = k, id = id})
@@ -2075,7 +2071,7 @@ if CLIENT then
 				for _, v in ipairs (collections) do
 					if selected_class == "(any)" or TF2Items.item_collections[v]._classes[selected_class] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
-						local k = GetTFLanguageString(TF2Items.item_collections[v].name, true) or v
+						local k = GetTFLanguageString(TF2Items.item_collections[v].name) or v
 						local id = self:AddChoice(k, v, old_choice == v)
 						submenus.collections = submenus.collections or {}
 						table.insert(submenus.collections, {name = k, id = id})
@@ -2244,7 +2240,7 @@ if CLIENT then
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
 					//keep the search filter simple, only search by base name
-					if f and !(GetTFLanguageString(v.item_name, true):lower():find(f, 1, true)) then continue end
+					if f and !((GetTFLanguageString(v.item_name) or v.item_name):lower():find(f, 1, true)) then continue end
 
 					local _, f = filters.class:GetSelected()
 					if f != "(any)" and !v.used_by_classes[f] then continue end
@@ -3039,7 +3035,7 @@ if CLIENT then
 		end
 		
 		// Start with the base name.
-		local itemName = GetTFLanguageString(i.item_name, true) or "Unknown Item"
+		local itemName = GetTFLanguageString(i.item_name) or i.item_name or "Unknown Item" //i don't *think* item_name is nil on any item defs? this is the tf2 code's failsafe for bad item defs
 
 		//tf2 code here sets killstreak values, but this addon won't be doing those unless rubat implements $sheenmap someday
 
@@ -3048,15 +3044,15 @@ if CLIENT then
 		local quality = ""
 		if !ignoreQuality then 
 			if self.strange_prefix then
-				quality = GetTFLanguageString(self.strange_prefix) .. GetTFLanguageString("Strange_Spacer") //yeah, no check for valid string on this one
+				quality = (GetTFLanguageString(self.strange_prefix) or "") .. (GetTFLanguageString("#Strange_Spacer") or "")
 			elseif self.quality != "normal" and self.quality != "paintkitweapon" then //tf2 code here checks nQuality > 0, which only filters out normal quality (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_constants.h#L516)
 				if self.quality == "unique" then
 					if useProperName and i.propername == 1 then 
-						quality = GetTFLanguageString("TF_Unique_Prepend_Proper")
+						quality = GetTFLanguageString("#TF_Unique_Prepend_Proper") or quality
 					end
 				else // Any quality besides unique ignores "proper name" articles.
-					quality = GetTFLanguageString(self.quality)
-					if quality != "" then quality = quality .. GetTFLanguageString("#Rarity_Spacer") end
+					quality = GetTFLanguageString("#" .. self.quality) or quality
+					if quality != "" then quality = quality .. (GetTFLanguageString("#Rarity_Spacer") or "") end
 				end
 			end
 
@@ -3064,23 +3060,23 @@ if CLIENT then
 			//but also prepends strange rank onto strange unusual items, which in our use cases, only applies 
 			//to weapons with both an unusual effect and a stat clock/australium enabled.
 			if self.secondary_strange_quality then
-				quality = GetTFLanguageString("strange") .. " " .. quality
+				quality = (GetTFLanguageString("#strange") or "") .. " " .. quality
 			end
 		end
 
 		local australium_skin = ""
 		if self.aus_prefix then
-			australium_skin = GetTFLanguageString("ItemNameAustralium")
+			australium_skin = GetTFLanguageString("#ItemNameAustralium") or australium_skin
 		end
 
 		local festivized = ""
-		if self.data.models.attached_festive then festivized = GetTFLanguageString("ItemNameFestive") end
+		if self.data.models.attached_festive then festivized = GetTFLanguageString("#ItemNameFestive") or festivized end
 
-		local qualityFormat
+		local qualityformat = ""
 		if (self.quality == "normal" or self.quality == "unique" or self.quality == "paintkitweapon" or ignoreQuality) and self.quality != "selfmade" then
-			qualityformat = GetTFLanguageString("ItemNameNormalOrUniqueQualityFormat")
+			qualityformat = GetTFLanguageString("#ItemNameNormalOrUniqueQualityFormat") or qualityformat
 		else
-			qualityformat = GetTFLanguageString("ItemNameQualityFormat")
+			qualityformat = GetTFLanguageString("#ItemNameQualityFormat") or qualityformat
 		end
 
 		//loc_scpy_safe( szQuality, CConstructLocalizedString( pLocalizationProvider->Find( pszQualityFormat ), szQuality, szIsFestivized, szKillStreak, szAustraliumSkin, szDuckBadge ) );
@@ -3101,8 +3097,7 @@ if CLIENT then
 			end
 			if paintKitStr then
 				//Based off Econ_ConcatPaintKitName (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L543)
-				local format = GetTFLanguageString("#ToolPaintKit_ItemDescFormat")
-				if format == "" then format = "%s1 %s2" end
+				local format = GetTFLanguageString("#ToolPaintKit_ItemDescFormat") or "%s1 %s2"
 				format = string.Replace(format, "%s1", paintKitStr)
 				format = string.Replace(format, "%s2", itemName)
 				itemName = format
@@ -3111,8 +3106,8 @@ if CLIENT then
 
 		//note: in the tf2 code, at the very top of this method, "ItemNameFormat" is set as the default value, and a comment mentions 
 		//using a different format for names with an article, but it never actually does this or changes this value anywhere
-		local format = GetTFLanguageString("ItemNameFormat")
-		if format != "" then
+		local format = GetTFLanguageString("#ItemNameFormat")
+		if format then
 			format = string.Replace(format, "%s1", quality)
 			format = string.Replace(format, "%s2", itemName)
 			format = string.Replace(format, "%s3", "") //craft index
@@ -3121,7 +3116,7 @@ if CLIENT then
 			format = string.Replace(format, "%s6", "") //dynamic recipe output name
 			return format
 		else
-			return "Unknown Item"
+			return "Unknown Item" //yeah, again, this is how tf2 code does it, if it can't find the localization pattern then it just defaults to "Unknown Item" even if it found a real name earlier (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1013-L1030)
 		end
 
 	end
@@ -3140,9 +3135,9 @@ if CLIENT then
 			local tooltip = "#TFUI_InvTooltip_Rarity"
 			if !self.data.wp.enabled then tooltip = "#TFUI_InvTooltip_RarityNoWear" end
 			tooltip = GetTFLanguageString(tooltip)
-			if tooltip != "" then
-				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString(TF2Items.rarities[self.rarity].loc_key))
-				tooltip = string.Replace(tooltip, "%s2", GetTFLanguageString(i.item_type_name))
+			if tooltip then
+				tooltip = string.Replace(tooltip, "%s1", GetTFLanguageString("#" .. TF2Items.rarities[self.rarity].loc_key) or "")
+				tooltip = string.Replace(tooltip, "%s2", GetTFLanguageString("#" .. i.item_type_name) or "")
 				if !self.data.wp.enabled then
 					tooltip = string.Replace(tooltip, "%s3", GetTFLanguageString(wear_strings[0]))
 				else
@@ -3156,7 +3151,7 @@ if CLIENT then
 			//all we need from that method is the stat clock attrib, which we'll do below.
 			
 			local typeName = GetTFLanguageString(i.item_type_name)
-			if typeName != "" then
+			if typeName then
 				local level = math.random(i.min_ilevel or 1, i.max_ilevel or 1)
 
 				//tf2 code has a case here where if an item has no typeName, the attribute "force_level_display" can 
@@ -3167,16 +3162,16 @@ if CLIENT then
 				//them use the "ItemTypeDescCustomLevelString_MvMTour" format (Tour No. X typeName) but nothing uses this
 
 				if i.static_attrs and i.static_attrs["limited quantity item"] == 1 then
-					local format = GetTFLanguageString("ItemTypeDescLimited")
-					if format != "" then
+					local format = GetTFLanguageString("#ItemTypeDescLimited")
+					if format then
 						format = string.Replace(format, "%s1", level)
 						format = string.Replace(format, "%s2", typeName)
-						format = string.Replace(format, "%s3", GetTFLanguageString("LimitedQualityDesc"))
+						format = string.Replace(format, "%s3", GetTFLanguageString("#LimitedQualityDesc") or "")
 						table.insert(desc, {str = format, col = desc_colors.ItemLimitedQuantity})
 					end
 				else
-					local format = GetTFLanguageString("ItemTypeDesc")
-					if format != "" then
+					local format = GetTFLanguageString("#ItemTypeDesc")
+					if format then
 						format = string.Replace(format, "%s1", level)
 						format = string.Replace(format, "%s2", typeName)
 						table.insert(desc, {str = format, col = desc_colors.level})
@@ -3189,9 +3184,9 @@ if CLIENT then
 		//even if it has a rarity instead; in our case, we can have statclocks even on non-paintkit items, so don't replace the 
 		//standard Level X Thing text with this, even if that's what the tf2 code would do if that were possible
 		if self.data.models.stat_clock then
-			local rank = GetTFLanguageString("Attrib_stattrakmodule")
-			if rank != "" then
-				rank = string.Replace(rank, "%s1", GetTFLanguageString("KillEaterRank0"))
+			local rank = GetTFLanguageString("#Attrib_stattrakmodule")
+			if rank then
+				rank = string.Replace(rank, "%s1", GetTFLanguageString("#KillEaterRank0") or "")
 			end
 			table.insert(desc, {str = rank, col = quality_colors.strange})
 		end
@@ -3202,33 +3197,30 @@ if CLIENT then
 		//Only do this if this icon corresponds to a specific item, otherwise do the store-type list of all the styles below
 		if self.entity and i.visuals and i.visuals.styles and !i._call_styles_animations then
 			local style = GetTFLanguageString(i.visuals.styles[self.data.style].name)
-			if style != "" then
-				table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Style_Desc"), "%s1", style), col = desc_colors.level})
+			if style then
+				table.insert(desc, {str = string.Replace(GetTFLanguageString("#Econ_Style_Desc") or "", "%s1", style), col = desc_colors.level})
 			end
 		end
 
 		//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
 		if self.data.paint.enabled and self.data.paint.override[false] == 0 then
 			local paint
-			for k, v in ipairs (paints) do
-				for k2, v2 in ipairs (v) do
-					if v2[1] == self.data.paint.col[false] and v2[2] == self.data.paint.col[true] then
-						paint = GetTFLanguageString(v2.name)
-						break
-					end
-				end
-				if paint then break end
-			end
-			if !paint and !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
+			if !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
 				paint = "(custom)" //not localized, bad!!
 			end
-			if paint then table.insert(desc, {str = string.Replace(GetTFLanguageString("Econ_Paint_Name"), "%s1", paint), col = desc_colors.level}) end
+			for k, v in ipairs (paints) do
+				if v[1] == self.data.paint.col[false] and v[2] == self.data.paint.col[true] then
+					paint = GetTFLanguageString(v.name)
+					break
+				end
+			end
+			if paint then table.insert(desc, {str = string.Replace(GetTFLanguageString("#Econ_Paint_Name") or "", "%s1", paint or ""), col = desc_colors.level}) end
 		end
 
 		//Holiday restriction, based on CEconItemDescription::Generate_HolidayRestriction https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1447
 		//In practice, the only one used by items this addon can spawn is halloween_and_full_moon
 		if i.holiday_restriction then
-			table.insert(desc, {str = GetTFLanguageString("Econ_holiday_restriction_" .. i.holiday_restriction), col = desc_colors.negative})
+			table.insert(desc, {str = GetTFLanguageString("Econ_holiday_restriction_" .. i.holiday_restriction), col = desc_colors.negative}) //this uses LocalizedAddDescLine in tf2 code, which falls back to the raw string on fail if there's no #, which there isn't for this string (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1462-L1465)
 		end
 
 		//TF2 code here does Generate_SaxxyAwardDesc (specific category an award is for), we don't care about this
@@ -3248,7 +3240,7 @@ if CLIENT then
 			local _attrib = TF2Items.attributes[id]
 			if !_attrib or !_attrib.description_string or _attrib.hidden == 1 then return end
 			local str = GetTFLanguageString(_attrib.description_string)
-			if str == "" then return end
+			if !str then return end
 
 			//based on formatting code from CEconAttributeDescription::InternalConstruct (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3478)
 			local f = _attrib.description_format 
@@ -3268,20 +3260,24 @@ if CLIENT then
 			//	return
 			elseif f == "value_is_particle_index" then
 				val = GetTFLanguageString("#Attrib_Particle" .. val)
-				if val == "" then return end
+				if !val then return end
 			//value_is_killstreakeffect_index and value_is_killstreak_idleeffect_index work the same as above, but we're not implementing these unless rubat adds $sheenmap someday
 			//elseif f == "value_is_or" then
 			//	//no changes needed
 			elseif f == "value_is_from_lookup_table" then
 				if !TF2Items.string_lookups[attrib] then return end
 				val = GetTFLanguageString(TF2Items.string_lookups[attrib][val])
+				if !val then return end
 			end
 			if isnumber(val) then val = math.Round(val, 2) end
 
 			str = string.Replace(str, "%s1", val)
 			//additional wrapper for halloween spells (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L3643-L3653)
 			if _attrib.is_user_generated then
-				str = string.Replace(GetTFLanguageString("#Econ_Attrib_UserGeneratedWrapper_" .. tostring(_attrib.is_user_generated)), "%s1", str)
+				local ugt = GetTFLanguageString("#Econ_Attrib_UserGeneratedWrapper_" .. tostring(_attrib.is_user_generated))
+				if ugt then
+					str = string.Replace(ugt, "%s1", str)
+				end
 			end
 
 			local k = _attrib.effect_type or "neutral"
@@ -3316,7 +3312,7 @@ if CLIENT then
 		//Item description; based on CEconItemDescription::Generate_ItemDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1575
 		if i.item_description then
 			local item_desc = GetTFLanguageString(i.item_description)
-			if item_desc != "" then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
+			if item_desc then table.insert(desc, {str = item_desc, col = desc_colors.neutral}) end
 		end
 
 		//TF2 code here does Generate_Bundle, Generate_GiftedBy, Generate_DuelingMedal, Generate_MapContributor, Generate_MapStampBundleTooltip,
@@ -3328,8 +3324,9 @@ if CLIENT then
 		//TF2 code here lists all the items in the set/collection and set bonus attributes, but we don't care about the latter,
 		//and for the former, set items are listed elsewhere in dropdowns where players can actually spawn them
 		if i._item_set then
+			local item_set = GetTFLanguageString(TF2Items.item_sets[i._item_set].name) or i._item_set
 			if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
-			table.insert(desc, {str = GetTFLanguageString(TF2Items.item_sets[i._item_set].name, true), col = desc_colors.ItemSetName})
+			table.insert(desc, {str = item_set, col = desc_colors.ItemSetName})
 		end
 
 		//TF2 code here does Generate_UnusualifierEffectList; we don't care about this
@@ -3341,8 +3338,9 @@ if CLIENT then
 			col = paintkit_ids_to_collections[self.data.wp.id]
 		end
 		if col then
+			col = GetTFLanguageString(TF2Items.item_collections[col].name) or col
 			if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
-			table.insert(desc, {str = GetTFLanguageString(TF2Items.item_collections[col].name, true), col = desc_colors.neutral})
+			table.insert(desc, {str = col, col = desc_colors.neutral})
 		end
 
 		//TF2 code here does Generate_BonusContentDesc, Generate_ExpirationDesc, Generate_DropPeriodDesc, 
@@ -3356,10 +3354,10 @@ if CLIENT then
 				//valve's method takes up too much space, make this a single line instead
 				local str
 				for k, v in SortedPairs (i.visuals.styles) do
-					local name = GetTFLanguageString(v.name, true)
-					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
+					local name = GetTFLanguageString(v.name) or v.name
+					if !name and k == 0 then name = GetTFLanguageString("#Normal") or "#Normal" end //assume this is the non-australium style for weapons with australium
 					if !str then
-						str = GetTFLanguageString("#Store_AvailableStyles_Header") .. " "
+						str = (GetTFLanguageString("#Store_AvailableStyles_Header") or "Available Styles:") .. " "
 					else
 						str = str .. ", "
 					end
@@ -3372,12 +3370,12 @@ if CLIENT then
 			if i.used_by_classes and !i.used_by_classes.none then
 				local str
 				if table.Count(i.used_by_classes) == 9 then
-					str = GetTFLanguageString("#Store_ItemDesc_UsedBy") .. " " .. GetTFLanguageString("#Store_ItemDesc_AllClasses")
+					str = (GetTFLanguageString("#Store_ItemDesc_UsedBy") or "Used by:") .. " " .. (GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes")
 				else
 					for k, v in ipairs (classes) do //add class options in class order; this kind of sucks for listing a lot of classes but oh well
 						if i.used_by_classes[v.longname] then
 							if !str then
-								str = GetTFLanguageString("#Store_ItemDesc_UsedBy") .. " "
+								str = (GetTFLanguageString("#Store_ItemDesc_UsedBy") or "Used by:") .. " "
 							else
 								str = str .. ", " //manually appending unlocalized commas here is good enough for valve, so it's good enough for us (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/store/v2/tf_store_preview_item2.cpp#L922)
 							end
@@ -3393,7 +3391,7 @@ if CLIENT then
 				local str
 				for k, v in pairs (i.equip_regions) do
 					if !str then
-						str = GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") .. ": " //there's no localized version of "equip region" followed by a colon, so we make do 
+						str = (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ": " //there's no localized version of "equip region" followed by a colon, so we make do 
 					else
 						str = str .. ", "
 					end
@@ -4394,8 +4392,8 @@ if CLIENT then
 			if i._call_styles_animations then name = "Animation" end
 			AddDropdown(name, function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
-					local name = GetTFLanguageString(v.name, true)
-					if !name and k == 0 then name = GetTFLanguageString("#Normal") end //assume this is the non-australium style for weapons with australium
+					local name = GetTFLanguageString(v.name, true) or v.name
+					if !name and k == 0 then name = GetTFLanguageString("#Normal") or "#Normal" end //assume this is the non-australium style for weapons with australium
 					drop:AddChoice(name or "BAD UNHANDLED STYLE " .. k, k, self.data.style == k)
 				end
 			end, function(data)
@@ -4406,12 +4404,10 @@ if CLIENT then
 		if i.capabilities and i.capabilities.paintable == 1 then
 			local drop = AddDropdown("Paint Color", function(drop)
 				drop:AddChoice("(none)", nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
+				drop:AddSpacer()
 				for k, v in ipairs (paints) do
-					drop:AddSpacer()
-					for k2, v2 in ipairs (v) do
-						local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v2.override or (self.data.paint.col[false] == v2[1] and self.data.paint.col[true] == v2[2]))
-						drop:AddChoice(GetTFLanguageString(v2.name, true), v2, is_selected)
-					end
+					local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v.override or (self.data.paint.col[false] == v[1] and self.data.paint.col[true] == v[2]))
+					drop:AddChoice(GetTFLanguageString(v.name) or v.name, v, is_selected)
 				end
 				if drop:GetText() == "" then drop:SetText("(custom)") end
 			end, function(data)
@@ -4478,8 +4474,7 @@ if CLIENT then
 					button:SetSize(size, size)
 					local name, col, col_2
 					if data then
-						name = GetTFLanguageString(data.name)
-						if name == "" then name = nil end
+						name = GetTFLanguageString(data.name) or data.name
 						if data[1] then
 							col = data[1]
 						end
@@ -4629,7 +4624,7 @@ if CLIENT then
 				drop:AddSpacer()
 				for k, v in ipairs (critglows) do
 					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1] and self.data.crit.col[true] == v[2]
-					drop:AddChoice(GetTFLanguageString(v.name, true), v, is_selected)
+					drop:AddChoice(GetTFLanguageString(v.name) or v.name, v, is_selected)
 				end
 				if drop:GetText() == "" then drop:SetText("(custom)") end
 			end, function(data)
@@ -4688,7 +4683,7 @@ if CLIENT then
 					button:SetSize(size, size)
 					local name, col, col_2
 					if data then
-						name = GetTFLanguageString(data.name)
+						name = GetTFLanguageString(data.name) or data.name
 						if name == "" then name = nil end
 						if data[1] then
 							col = Color(data[1].x, data[1].y, data[1].z, 255) //unlike paint selector, this can just be a Color value because we don't have to worry about animated color-changing paints
@@ -4933,13 +4928,13 @@ if CLIENT then
 					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
 						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
 						if v.system:EndsWith("_teamcolor_blue") then continue end
-						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
 					end
 				end
 				if u_wep then
 					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
 						if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
-						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k), k, self.data.pe_unusual == k)
+						drop:AddChoice(GetTFLanguageString("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
 					end
 				end
 			end, function(data)
@@ -5171,7 +5166,7 @@ if CLIENT then
 				local slider
 				if u_hat then
 					slider = TFStyleVGUI("DNumSlider", container)
-					slider:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead"))
+					slider:SetText(GetTFLanguageString("#GameUI_ParticleHatUseHead") or "Adjust Unusual")
 					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
 					slider:SetDefaultValue(0)
 					slider:Dock(TOP)
@@ -5418,7 +5413,7 @@ if CLIENT then
 					if #v.items > 0 then 
 						local name = k
 						if TF2Items.item_collections[k] then
-							name = GetTFLanguageString(TF2Items.item_collections[k].name, true)
+							name = GetTFLanguageString(TF2Items.item_collections[k].name) or k
 						end
 						cat2[v.order] = {name = name, items = v.items}
 					end
@@ -5547,7 +5542,7 @@ if CLIENT then
 				//button:SetHeight(30) //backpack page button proportions
 				//entrypnl:SetTall(button:GetTall())
 				entrypnl:SetTall(entry:GetTall())
-				button:SetText(GetTFLanguageString("TF_ItemPreview_PaintkitSeed"))
+				button:SetText(GetTFLanguageString("#TF_ItemPreview_PaintkitSeed") or "Randomize")
 				button:SizeToContentsX(20)
 				button:Dock(RIGHT)
 				button:DockMargin(8,0,0,0)
