@@ -197,7 +197,7 @@ end
 
 //this stock item is called "PDA" and uses the destruction pda icon, but its model is engi's toolbox
 SafeAmendItem(28, "TF_WEAPON_BUILDER", function(i) 
-	i.item_name = "Toolbox" //not localized, bad!! how does the word "toolbox" not appear *once* in tf_english?
+	i.item_name = "Toolbox" //not localized, bad!! how does the word "toolbox" not appear *once* in tf_english??
 	i.item_type_name = "Toolbox" //^
 	i.image_inventory = "backpack/weapons/w_models/w_toolbox"
 end)
@@ -317,13 +317,29 @@ end
 s.items = tab
 
 
+//these have to be done after InheritPrefabValues because some (not all) of these bad values come from prefabs
+
 //these weapon reskins unintentionally inherit australium styles that don't work from their base weapons, get rid of them
-//(this has to be done after InheritPrefabValues because some (not all) of these come from prefabs)
 SafeAmendItem(266, "The Horseless Headless Horseman's Headtaker", function(i) i.visuals.styles = nil end)
 SafeAmendItem(482, "Nessie's Nine Iron", function(i) i.visuals.styles = nil end)
 SafeAmendItem(1082, "Festive Eyelander", function(i) i.visuals.styles = nil end)
 SafeAmendItem(1085, "Festive Black Box", function(i) i.visuals.styles = nil end)
 SafeAmendItem(1149, "Festive SMG 2014", function(i) i.visuals.styles = nil end)
+
+//these weapons (mostly but not entirely reskins) have particle_suffix values even though they lack the attachments for unusual fx
+SafeAmendItem(160, "TTG Max Pistol", function(i) i.particle_suffix = nil end)
+SafeAmendItem(161, "TTG Sam Revolver", function(i) i.particle_suffix = nil end)
+SafeAmendItem(298, "Iron Curtain", function(i) i.particle_suffix = nil end)
+SafeAmendItem(638, "The Sharp Dresser", function(i) i.particle_suffix = nil end)
+SafeAmendItem(727, "The Black Rose", function(i) i.particle_suffix = nil end)
+SafeAmendItem(741, "The Rainblower", function(i) i.particle_suffix = nil end)
+SafeAmendItem(772, "Baby Face's Blaster", function(i) i.particle_suffix = nil end)
+SafeAmendItem(851, "The AWPer Hand", function(i) i.particle_suffix = nil end)
+SafeAmendItem(1007, "Festive Grenade Launcher", function(i) i.particle_suffix = nil end)
+SafeAmendItem(1085, "Festive Black Box", function(i) i.particle_suffix = nil end)
+SafeAmendItem(1103, "The Back Scatter", function(i) i.particle_suffix = nil end)
+SafeAmendItem(30474, "The Nostromo Napalmer", function(i) i.particle_suffix = nil end)
+SafeAmendItem(30666, "The C.A.P.P.E.R", function(i) i.particle_suffix = nil end)
 
 
 //test: get all possible keys in item tables
@@ -2898,9 +2914,7 @@ if CLIENT then
 		self.quality = quality_override or i.item_quality or "unique"
 		//Check if an item isn't strange quality, but would still have stat counting enabled (unusual weapons with stat clocks enabled, or 
 		//unusual australium weapons) - this is used to add "Strange Unusual" to the item name, and to add the strange corner icon
-		if self.quality != "strange" and (self.data.models.stat_clock or (i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].aus_prefix)) then
-			self.secondary_strange_quality = true
-		end
+		self.secondary_strange_quality = self.quality != "strange" and (self.data.models.stat_clock or (i.visuals and i.visuals.styles and i.visuals.styles[self.data.style].aus_prefix))
 		local rarity_override
 		if data.wp.enabled then
 			rarity_override = paintkit_rarities[data.wp.id]
@@ -3203,11 +3217,8 @@ if CLIENT then
 		end
 
 		//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
-		if self.data.paint.enabled and self.data.paint.override[false] == 0 then
-			local paint
-			if !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
-				paint = "(custom)" //not localized, bad!!
-			end
+		if self.data.paint.enabled and self.data.paint.override[false] == 0 and !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
+			local paint = "(custom)" //not localized, bad!!
 			for k, v in ipairs (paints) do
 				if v[1] == self.data.paint.col[false] and v[2] == self.data.paint.col[true] then
 					paint = GetTFLanguageString(v.name)
