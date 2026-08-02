@@ -449,7 +449,7 @@ for k, v in pairs (s.items) do
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
 			[0] = {
-				name = "#Normal"
+				name = "#TF_style0_normal"
 			},
 			[1] = {
 				name = "#TR_Eng_MoveTitle", //Building Placement
@@ -526,7 +526,7 @@ for k, v in pairs (s.items) do
 		v.visuals = v.visuals or {}
 		v.visuals.styles = {
 			[0] = {
-				name = "#Normal",
+				name = "#TF_style0_normal",
 				bodygroup = {
 					name = "broken",
 					submodel_index = 0
@@ -545,7 +545,7 @@ for k, v in pairs (s.items) do
 	if v.visuals and v.visuals.playback_activity then
 		v.visuals.styles = {
 			[0] = {
-				name = "#Normal",
+				name = "#TF_style0_normal",
 				_anim = {item = v.visuals.playback_activity.on_spawn}
 			}
 		}
@@ -615,10 +615,9 @@ for k, v in pairs (s.items) do
 				else
 					if string.EndsWith(v2.image_inventory, "_gold") then
 						aus_prefix = true
-						name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
 					end
 				end
-				if strange_prefix then name = string.Trim(GetTFLanguageString(strange_prefix) or strange_prefix) end
+				if strange_prefix then name = strange_prefix end
 				v.visuals.styles[k2].name = name
 				v.visuals.styles[k2].strange_prefix = strange_prefix
 				v.visuals.styles[k2].aus_prefix = aus_prefix
@@ -3366,13 +3365,19 @@ if CLIENT then
 				local str
 				for k, v in SortedPairs (i.visuals.styles) do
 					local name = GetTFLanguageString(v.name) or v.name
-					if !name and k == 0 then name = GetTFLanguageString("#Normal") or "#Normal" end //assume this is the non-australium style for weapons with australium
+					if !name then
+						if v.aus_prefix then
+							name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
+						elseif k == 0 then //assume this is the non-australium style for weapons with australium
+							name = GetTFLanguageString("#TF_style0_normal") or "#TF_style0_normal"
+						end
+					end
 					if !str then
 						str = (GetTFLanguageString("#Store_AvailableStyles_Header") or "Available Styles:") .. " "
 					else
 						str = str .. ", "
 					end
-					str = str .. name or "BAD UNHANDLED STYLE " .. k
+					str = str .. (name or "BAD UNHANDLED STYLE " .. k)
 				end
 				if !done_spacer then table.insert(desc, {str = "", col = desc_colors.level}) done_spacer = true end
 				table.insert(desc, {str = str, col = desc_colors.level})
@@ -4404,7 +4409,13 @@ if CLIENT then
 			AddDropdown(name, function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true) or v.name
-					if !name and k == 0 then name = GetTFLanguageString("#Normal") or "#Normal" end //assume this is the non-australium style for weapons with australium
+					if !name then
+						if v.aus_prefix then
+							name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
+						elseif k == 0 then //assume this is the non-australium style for weapons with australium
+							name = GetTFLanguageString("#TF_style0_normal") or "#TF_style0_normal"
+						end
+					end
 					drop:AddChoice(name or "BAD UNHANDLED STYLE " .. k, k, self.data.style == k)
 				end
 			end, function(data)
@@ -5123,7 +5134,7 @@ if CLIENT then
 
 					search = TFStyleVGUI("DTextEntry", search_holder)
 					search:Dock(FILL)
-					search:SetPlaceholderText("#spawnmenu.filter")
+					search:SetPlaceholderText("#spawnmenu.search")
 					search:SetUpdateOnType(true)
 					search.OnValueChange = function(_, p)
 						timer.Create("TF2ItemBrowser_SearchDelay_UFilter", 0.5, 1, function()
@@ -5470,7 +5481,7 @@ if CLIENT then
 
 					search = TFStyleVGUI("DTextEntry", search_holder)
 					search:Dock(FILL)
-					search:SetPlaceholderText("#spawnmenu.filter")
+					search:SetPlaceholderText("#spawnmenu.search")
 					search:SetUpdateOnType(true)
 					search.OnValueChange = function(_, p)
 						timer.Create("TF2ItemBrowser_SearchDelay_WPFilter", 0.5, 1, function()
