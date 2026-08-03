@@ -70,14 +70,19 @@ end
 
 
 
-local classes = {"(any)", "scout", "soldier", "pyro", "demoman", "heavy", "engineer", "medic", "sniper", "spy", "none"}
-//our favorite black scottish cyclops is called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), 
-//"demo" in all model paths, and either one interchangably in equip region names. dumb!!!
-for k, v in ipairs (classes) do
-	local shortname = v
-	if v == "demoman" then shortname = "demo" end
-	classes[k] = {shortname = shortname, longname = v}
-end
+local classes = {
+	{longname = "(any)",	shortname = "(any)",	langstr = "(any)"}, //TODO: localize this globally so everything can use it
+	{longname = "scout",	shortname = "scout",	langstr = "#TF_Class_Name_Scout"},
+	{longname = "soldier",	shortname = "soldier",	langstr = "#TF_Class_Name_Soldier"},
+	{longname = "pyro",	shortname = "pyro",	langstr = "#TF_Class_Name_Pyro"},
+	{longname = "demoman",	shortname = "demo",	langstr = "#TF_Class_Name_Demoman"}, //called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), "demo" in all model paths, and either one interchangably in equip region names. dumb!!!
+	{longname = "heavy",	shortname = "heavy",	langstr = "#TF_Class_Name_HWGuy"},
+	{longname = "engineer",	shortname = "engineer",	langstr = "#TF_Class_Name_Engineer"},
+	{longname = "medic",	shortname = "medic",	langstr = "#TF_Class_Name_Medic"},
+	{longname = "sniper",	shortname = "sniper",	langstr = "#TF_Class_Name_Sniper"},
+	{longname = "spy",	shortname = "spy",	langstr = "#TF_Class_Name_Spy"},
+	{longname = "none",	shortname = "none",	langstr = "#TF_SelectPlayer_DuelClass_None"},
+}
 
 //globals for these too
 local EFFECT_NONE = 0
@@ -2022,7 +2027,7 @@ if CLIENT then
 
 			filters.class = AddDropdownFilter(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(self)
 				for k, v in ipairs (classes) do //add all classes in order
-					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
+					self:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), v.longname, k == 1)
 					if k == 1 or k == 10 then self:AddSpacer() end
 				end
 			end, function() 
@@ -2036,7 +2041,7 @@ if CLIENT then
 					{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",		v = "weapon"}, 
 					{k = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",			v = "cosmetic"}, 
 					--[[{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Taunt") or "Taunt",		v = "taunt"},]] 
-					{k = GetTFLanguageString("#AbuseReport_TypeOther") or "Other",			v = "other"}, //using this localization string for "Other" is a stretch but it's the best we've got
+					{k = GetTFLanguageString("#AbuseReport_TypeOther") or "Other",			v = "other"}, //using this localization string for "Other" items is a stretch but it's the best we've got
 				}) do
 					self:AddChoice(v.k, v.v, k == 1)
 					if k == 1 then self:AddSpacer() end
@@ -2054,8 +2059,12 @@ if CLIENT then
 					local _, selected_class = filters.class:GetSelected()
 					selected_class = selected_class or "(any)"
 					if selected_class == "(any)" or class.longname == "(any)" or selected_class == class.longname then
-						self:AddSpacer()
+						local added_spacer = false
 						for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
+							if !added_spacer then 
+								self:AddSpacer()
+								added_spacer = true
+							end
 							self:AddChoice(string.NiceName(v), v, old_choice == v)
 						end
 					end
@@ -3402,7 +3411,7 @@ if CLIENT then
 							else
 								str = str .. ", " //manually appending unlocalized commas here is good enough for valve, so it's good enough for us (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/store/v2/tf_store_preview_item2.cpp#L922)
 							end
-							str = str .. string.NiceName(v.longname)
+							str = str .. (GetTFLanguageString(v.langstr) or string.NiceName(v.longname))
 						end
 					end
 				end
@@ -4403,7 +4412,7 @@ if CLIENT then
 		pnl.class = AddDropdown(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(drop)
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
-					drop:AddChoice(string.NiceName(v.longname), v.longname, self.data.class == v.longname)
+					drop:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), v.longname, self.data.class == v.longname)
 				end
 			end
 		end, function(data)
