@@ -2020,7 +2020,7 @@ if CLIENT then
 				return drop.Combo
 			end
 
-			filters.class = AddDropdownFilter("Class", function(self)
+			filters.class = AddDropdownFilter(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(self)
 				for k, v in ipairs (classes) do //add all classes in order
 					self:AddChoice(string.NiceName(v.longname), v.longname, v.longname == "(any)")
 					if k == 1 or k == 10 then self:AddSpacer() end
@@ -2030,9 +2030,15 @@ if CLIENT then
 				filters.item_set:RebuildControls()
 			end)
 
-			filters.item_type = AddDropdownFilter("Item Type", function(self) 
-				for k, v in ipairs ({"(any)", "weapon", "cosmetic", --[["taunt",]] "other"}) do
-					self:AddChoice(string.NiceName(v), v, v == "(any)")
+			filters.item_type = AddDropdownFilter(GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", function(self) 
+				for k, v in ipairs ({
+					{k = "(" .. string.lower(GetTFLanguageString("#TF_Any") or "Any") .. ")",	v = "(any)"}, 
+					{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",		v = "weapon"}, 
+					{k = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",			v = "cosmetic"}, 
+					--[[{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Taunt") or "Taunt",		v = "taunt"},]] 
+					{k = GetTFLanguageString("#AbuseReport_TypeOther") or "Other",			v = "other"}, //using this localization string for "Other" is a stretch but it's the best we've got
+				}) do
+					self:AddChoice(v.k, v.v, k == 1)
 					if k == 1 then self:AddSpacer() end
 				end
 			end)
@@ -2059,7 +2065,7 @@ if CLIENT then
 				if check == nil then self:ChooseOptionID(1) end
 				self.IsRebuilding = nil
 			end
-			filters.equip_region = AddDropdownFilter("Equip Region", equip_regions_populate)
+			filters.equip_region = AddDropdownFilter(GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region", equip_regions_populate)
 			filters.equip_region.RebuildControls = equip_regions_populate //make this func externally accessible so we can rebuild it when picking a new class
 
 			local item_sets_populate = function(self)
@@ -2134,7 +2140,7 @@ if CLIENT then
 				if check == nil then self:ChooseOptionID(1) end
 				self.IsRebuilding = nil
 			end
-			filters.item_set = AddDropdownFilter("Set/Collection", item_sets_populate)
+			filters.item_set = AddDropdownFilter("Set/Collection", item_sets_populate) //this and the categories in the dropdown aren't easily localized, because there's a localized string for "Collection", but nothing for "Set" or "Item Set" or the like
 			filters.item_set:GetParent():DockMargin(0,0,0,betweencategories)
 			filters.item_set.RebuildControls = item_sets_populate //make this func externally accessible so we can rebuild it when picking a new class
 
@@ -2190,6 +2196,7 @@ if CLIENT then
 				return self
 			end
 
+			//none of these are localizable unfortunately
 			filters.conflicting = AddIncludeExcludeFilter("Conflicts with equipped") //should this be grayed out or something when there's no parent selected to equip items to?
 			filters.multi_class = AddIncludeExcludeFilter("Multi-class")
 			filters.holiday = AddIncludeExcludeFilter("Holiday restricted")
@@ -2511,7 +2518,7 @@ if CLIENT then
 			buttons.Value = false
 			attopts.team = buttons
 
-			local drop = AddDropdownFilter("Effects", function(self)
+			local drop = AddDropdownFilter(GetTFLanguageString("#TF_ImportPreview_EffectLabel") or "Effect", function(self)
 				self:AddChoice("(none)", EFFECT_NONE, true)
 				self:AddChoice("Uber", EFFECT_UBER)
 				self:AddChoice("Jarate", EFFECT_JARATE)
@@ -4393,7 +4400,7 @@ if CLIENT then
 			return drop.Combo
 		end
 
-		pnl.class = AddDropdown("Class", function(drop)
+		pnl.class = AddDropdown(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(drop)
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
 					drop:AddChoice(string.NiceName(v.longname), v.longname, self.data.class == v.longname)
