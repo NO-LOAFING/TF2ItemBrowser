@@ -83,6 +83,10 @@ local classes = {
 	{longname = "spy",	shortname = "spy",	langstr = "#TF_Class_Name_Spy"},
 	{longname = "none",	shortname = "none",	langstr = "#TF_SelectPlayer_DuelClass_None"},
 }
+local class_longname_to_id = {}
+for k, v in ipairs (classes) do
+	class_longname_to_id[v.longname] = k
+end
 
 //globals for these too
 local EFFECT_NONE = 0
@@ -827,14 +831,10 @@ local function GetClassModelWithBasename(tab, class)
 	//so it doesn't use basename to auto-generate one with ".../all_winter_scarf_engineer.mdl" like the other classes)
 	if !tab then
 		return
-	elseif tab[class] then
-		return tab[class]
+	elseif tab[classes[class].longname] then
+		return tab[classes[class].longname]
 	elseif tab.basename then
-		for _, _class in ipairs (classes) do
-			if class == _class.longname then
-				return string.Replace(tab.basename, "%s", _class.shortname)
-			end
-		end
+		return string.Replace(tab.basename, "%s", classes[class].shortname)
 	end
 end
 
@@ -856,7 +856,7 @@ local function GetItemModelVisuals(data)
 	local classbg = GetVisualsValue(i, data.team, "use_per_class_bodygroups")
 	if classbg and classbg == 1 then
 		classbg = {scout = 0, sniper = 1, soldier = 2, demoman = 3, medic = 4, heavy = 5, pyro = 6, spy = 7, engineer = 8}
-		vis.item_bg["class"] = classbg[data.class]
+		vis.item_bg["class"] = classbg[classes[data.class].longname]
 	end
 	for k, v in pairs (GetVisualsValue(i, data.team, "player_bodygroups") or {}) do
 		vis.ply_bg[k] = v //v can be 0, such as in prefab item_bak_fear_monger
@@ -923,7 +923,9 @@ local function GetItemModelVisuals(data)
 	end
 	vis.models.wearable = i.extra_wearable
 	vis.models.wearable_2 = i.extra_wearable_2
-	if i.taunt and i.taunt.custom_taunt_prop_per_class then vis.models.taunt_prop = i.taunt.custom_taunt_prop_per_class[data.class] end
+	if i.taunt and i.taunt.custom_taunt_prop_per_class then
+		vis.models.taunt_prop = i.taunt.custom_taunt_prop_per_class[classes[data.class].longname]
+	end
 	if i.static_attrs then
 		vis.models.stat_clock = i.static_attrs.weapon_uses_stattrak_module
 		vis.stat_clock_scale = i.static_attrs.weapon_stattrak_module_scale
@@ -2027,7 +2029,7 @@ if CLIENT then
 
 			filters.class = AddDropdownFilter(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(self)
 				for k, v in ipairs (classes) do //add all classes in order
-					self:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), v.longname, k == 1)
+					self:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), k, k == 1)
 					if k == 1 or k == 10 then self:AddSpacer() end
 				end
 			end, function() 
@@ -2054,10 +2056,10 @@ if CLIENT then
 				self.IsRebuilding = true
 				self:Clear()
 				self:AddChoice("(any)", "(any)", old_choice == "(any)")
-				for _, class in ipairs (classes) do //add class-based equip regions in class order
+				for k, class in ipairs (classes) do //add class-based equip regions in class order
 					//If we have a class selected, filter out equip regions for other classes
 					local _, selected_class = filters.class:GetSelected()
-					selected_class = selected_class or "(any)"
+					selected_class = classes[selected_class].longname or "(any)"
 					if selected_class == "(any)" or class.longname == "(any)" or selected_class == class.longname then
 						local added_spacer = false
 						for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
@@ -2086,7 +2088,7 @@ if CLIENT then
 				local submenus = {}
 				//If we have a class selected, only show sets containing items for that class
 				local _, selected_class = filters.class:GetSelected()
-				selected_class = selected_class or "(any)"
+				selected_class = classes[selected_class].longname or "(any)"
 				local added_spacer = false
 				for _, v in ipairs (sets) do
 					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
@@ -2274,6 +2276,7 @@ if CLIENT then
 					if f and !((GetTFLanguageString(v.item_name) or v.item_name):lower():find(f, 1, true)) then continue end
 
 					local _, f = filters.class:GetSelected()
+					f = classes[f].longname
 					if f != "(any)" and !v.used_by_classes[f] then continue end
 
 					local _, f = filters.item_type:GetSelected()
@@ -2982,11 +2985,11 @@ if CLIENT then
 		local i = TF2Items.items[id]
 
 		local _, class = TF2ItemBrowser.filters.class:GetSelected()
-		if class == "(any)" then
+		if class == 1 then
 			//go through classes in order, default to the first one that can use this item
 			for k, v in ipairs (classes) do 
 				if i.used_by_classes[v.longname] then
-					class = v.longname
+					class = k
 					break
 				end
 			end
@@ -3776,12 +3779,7 @@ if CLIENT then
 				if IsValid(TF2ItemBrowser:GetEntity()) then
 					model = TF2ItemBrowser:GetEntity():GetModel()
 				else
-					for k, v in ipairs (classes) do //convert long class name to short class name
-						if self.data.class == v.longname then
-							model = "models/player/" .. v.shortname .. ".mdl"
-							break
-						end
-					end
+					model = "models/player/" .. classes[self.data.class].shortname .. ".mdl"
 				end
 				if self.data.team then skin = 1 end
 				ent = ClientsideModel(model, RENDERGROUP_OTHER)
@@ -4295,8 +4293,8 @@ if CLIENT then
 			//Also compare the bodygroups because of use_per_class_bodygroups.
 			local should_show_class = false
 			for k, v in pairs (i.used_by_classes) do
-				if k != self.data.class then
-					local vis2 = GetItemModelVisuals({id = self.data.id, class = k, team = self.data.team, style = self.data.style})
+				if k != classes[self.data.class].longname then
+					local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[k], team = self.data.team, style = self.data.style})
 					if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
 						for k, v in pairs (vis2.item_bg) do
 							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
@@ -4412,7 +4410,7 @@ if CLIENT then
 		pnl.class = AddDropdown(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(drop)
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
-					drop:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), v.longname, self.data.class == v.longname)
+					drop:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
 				end
 			end
 		end, function(data)
@@ -6380,13 +6378,7 @@ BrowserInputs = table.Flip(BrowserInputs)
 
 WriteItemDataTable = function(data)
 	net.WriteUInt(data.id, 15)
-	//translate class name back to id number
-	for k, class in ipairs (classes) do
-		if class.longname == data.class then
-			net.WriteUInt(k, 4)
-			break
-		end
-	end
+	net.WriteUInt(data.class, 4)
 	net.WriteBool(data.team)
 	net.WriteUInt(data.style, 4)
 
@@ -6441,7 +6433,7 @@ end
 ReadItemDataTable = function()
 	local tab = {
 		id = net.ReadUInt(15),
-		class = classes[net.ReadUInt(4)].longname,
+		class = net.ReadUInt(4),
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),
 
