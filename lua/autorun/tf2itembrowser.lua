@@ -990,7 +990,7 @@ if CLIENT then
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
 	local OutlinedGreyBox = GWEN.CreateTextureBorder(0, 0, 128, 64, 24, 24, 24, 0, Material("vgui/loadout_round_rect_selected.vmt"))
 	local item_icon_sizes = {
-		{
+		--[[{ //attempt at a size that makes the icons 64px like spawnicons; these look good, but it's awkward to switch between this and backpack-sized, because the window never fits both sizes well
 			//name = "Small",
 			w = 64,
 			h = math.Round(94*(64/121)),
@@ -999,8 +999,9 @@ if CLIENT then
 			gap_w = math.Round(9*(64/121)),
 			cornericon = math.Round(36*(64/121)),
 			rticon_minusw = math.Round(15*(64/121)),
-		},
-		{
+		},]]
+		[1] = {},
+		[2] = {
 			//name = "Medium", //tf2 backpack icon size; these are already huge when placed in the relatively small browser, no need for larger sizes
 			w = 121,
 			h = 94,
@@ -1011,7 +1012,10 @@ if CLIENT then
 			rticon_minusw = 15,
 		},
 	}
-	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser", 1, #item_icon_sizes):GetInt()
+	for k, v in pairs (item_icon_sizes[2]) do //just make a small size that's exactly half the normal size, this works better
+		item_icon_sizes[1][k] = v/2//math.Round(v/2)
+	end
+	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser (1 = small, 2 = large)", 2, #item_icon_sizes):GetInt()
 	local popup_w = 480 //keep the width consistent between popup panels, so that when we switch from mouseoverpanel to spawnpanel, it maintains the same horizontal position
 	local popup_pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 	local betweenitems = 8
@@ -1062,7 +1066,7 @@ if CLIENT then
 		_options		= Color(0,0,0,128), //used by option boxes in left side of browser; based on the ones in resource/ui/testitemroot.res
 
 		_unu_default		= Color(0,0,0,128),
-		_unu_depressed		= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanLight used for unusual selector
+		_unu_depressed		= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanDark used for unusual selector
 		_unu_hovered		= Color(117*.2, 107*.2, 94*.2, 255*.2),
 
 	}
@@ -1894,7 +1898,7 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 954,
+		width		= 918,
 		height		= 674,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
@@ -2376,10 +2380,16 @@ if CLIENT then
 					for k, v in ipairs (self.ImageQueue) do
 						table.remove(self.ImageQueue, k)
 						if IsValid(v.pnl) then
+							local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
+							if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
+								//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
+								v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
+								continue
+							end
 							v.pnl.mat = Material(v.img .. ".vmt")
 							if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
 								TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
-								break
+								break //only load one material per frame to prevent bad perf
 							end
 						end
 					end
@@ -2586,13 +2596,13 @@ if CLIENT then
 			end
 
 			local check = TFStyleVGUI("DCheckBoxLabel", attopts)
-			check:SetText("Large icons")
+			check:SetText("Small icons")
 			check:Dock(TOP)
 			check:DockMargin(0,0,0,betweencategories)
-			check:SetChecked(icon_size == 2)
+			check:SetChecked(icon_size == 1)
 			check.OnChange = function(_, val)
-				local data = 1
-				if val then data = 2 end
+				local data = 2
+				if val then data = 1 end
 				LocalPlayer():ConCommand("cl_tf2itembrowser_iconsize " .. data)
 				icon_size = data
 				atticons:UpdateSize()
@@ -3540,7 +3550,8 @@ if CLIENT then
 		//Keeps a popup panel contained within the right side of TF2ItemBrowser (never cover up the options list 
 		//on the left side) but also centered on this item icon to the extent it can without going out-of-bounds.
 		local w, h = pnl:GetSize()
-		local x, y = TF2ItemBrowser.Right:ScreenToLocal(self:LocalToScreen(self:GetWide()/2, self:GetTall()))
+		local i_w, i_h = self:GetSize()
+		local x, y = TF2ItemBrowser.Right:ScreenToLocal(self:LocalToScreen(i_w/2, i_h))
 		local b_w, b_h = TF2ItemBrowser.Right:GetSize()
 
 		//by default, the panel is positioned below the icon, but won't go past the left side of the browser
@@ -3549,7 +3560,7 @@ if CLIENT then
 		if x+w > b_w then x = x - (x+w-b_w) end
 		
 		//if the icon is scrolled below the bottom of the list, then move the panel to the bottom of the browser
-		if y > b_h then
+		if y-i_h > b_h then
 			y = b_h-h
 		//if the icon is scrolled above the top of the list, then move the panel to the top of the browser
 		elseif y < 0 then
@@ -3557,12 +3568,11 @@ if CLIENT then
 		//if the icon is visible, but the bottom of the panel goes beyond the bottom of the browser...
 		elseif y+h > b_h then
 			//...and it's too tall to fit above or below the icon, then center it the browser over the icon 
-			//(edge case for clicking on icons in middle of the browser)
-			if (y-self:GetTall()-h) < 0 then 
+			if (y-i_h-h) < 0 then 
 				y = (b_h/2)-(h/2)
 			//...and it can fit above the icon, then reposition it above the icon
 			else
-				y = y-self:GetTall()-h
+				y = y-i_h-h
 			end
 		end
 
@@ -6003,7 +6013,7 @@ if CLIENT then
 			if self.Depressed then
 				surface.SetDrawColor(color_white)
 			elseif self.Hovered then
-				surface.SetDrawColor(gui_colors.TanLight)
+				surface.SetDrawColor(gui_colors.LightRed)
 			else
 				surface.SetDrawColor(gui_colors.TanDark)
 			end
@@ -6170,13 +6180,13 @@ if CLIENT then
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
 			else
-				table.insert(TF2ItemBrowser.ImageQueue, 1, {pnl = self, img = self.ImageToQueue})
+				table.insert(TF2ItemBrowser.ImageQueue, {pnl = self, img = self.ImageToQueue})
 			end
 			self.ImageToQueue = nil
 		elseif self.IconRenderToQueue then
 			self.IconRenderToQueue = nil
 			local oldteam = self.data.team
-			self.data.team = false //spawnicons should always use red team; in tf2 this is a little inconsistent, and uses team colors for warpaints but always red for festivizer/statclock models; we can't really do this without adding special handling to recreate this bug, so instead try to match all prerendered spawnicons
+			self.data.team = false //spawnicons should always use red team; in tf2 this is a little inconsistent, and uses team colors for warpaints but always red for model skins; we can't really do this without adding special handling to recreate this bug, so instead try to match all prerendered spawnicons
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				self.IconRenderToQueue = true //bail function
 			end)
