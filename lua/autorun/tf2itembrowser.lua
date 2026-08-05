@@ -1,8 +1,30 @@
-local tf_lang, UpdateTFLanguageStrings, GetTFLanguageString
+local tf_lang, UpdateTFLanguageStrings, GetTFLanguageString, str_any, str_none, str_custom, classes
 if CLIENT then
+	GetTFLanguageString = function(str)
+		local result
+		if !isstring(str) then return end
+		//if str doesn't start with a #, then it might not be a localized string, and in those cases 
+		//we should just return the string we were given if we can't find one to localize it to
+		if !string.StartsWith(str, "#") then result = str end
+
+		result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
+		return result
+	end
+
 	UpdateTFLanguageStrings = function(lang)
-		tf_lang = file.Read("resource/tf_english.txt", "tf")
-		tf_lang = util.KeyValuesToTable(tf_lang, true, false).tokens
+		local tab = file.Read("resource/chat_english.txt", "GAME") //also get chat_english for the "#chat_filterbutton" ("Filters") string we need
+		if tab then
+			tab = util.KeyValuesToTable(tab, true, false)
+			tab = tab.tokens
+		end
+		tf_lang = tab or {}
+		local tab = file.Read("resource/tf_english.txt", "tf")
+		if tab then
+			tab = util.KeyValuesToTable(tab, true, false).tokens
+			if tab then
+				table.Merge(tf_lang, tab)
+			end
+		end
 		local langs = { //list of gmod-supported languages from https://wiki.facepunch.com/gmod/Addon_Localization#supportedlanguages
 			bg = "bulgarian",
 			cs = "czech",
@@ -38,27 +60,31 @@ if CLIENT then
 			["zh-TW"] = "tchinese"
 		}
 		if langs[lang] then
-			lang = file.Read("resource/tf_" .. langs[lang] ..".txt", "tf")
-			lang = util.KeyValuesToTable(lang, true, false).tokens
-			table.Merge(tf_lang, lang)
+			local tab = file.Read("resource/chat_" .. langs[lang] .. ".txt", "GAME")
+			if tab then
+				tab = util.KeyValuesToTable(tab, true, false).tokens
+				if tab then
+					table.Merge(tf_lang, tab)
+				end
+			end
+			local tab = file.Read("resource/tf_" .. langs[lang] .. ".txt", "tf")
+			if tab then
+				tab = util.KeyValuesToTable(tab, true, false).tokens
+				if tab then
+					table.Merge(tf_lang, tab)
+				end
+			end
 		end
 		//MsgN("language is now ", lang)
 		//note: conveniently, the context menu and all of its contents are reset upon changing languages, so we don't have to worry 
 		//about resetting the browser to prevent odd behavior caused by controls still using values from the previous language
+		str_any = "(" .. string.lower(GetTFLanguageString("#TF_Any") or "Any") .. ")"
+		str_none = "(" .. string.lower(GetTFLanguageString("#TF_ImportPreview_Effect0") or "None") .. ")"
+		str_custom = "(" .. string.lower(GetTFLanguageString("#TF_ImportFile_CustomSkin") or "Custom") .. ")"
+		if classes then classes[1].langstr = str_any end
 	end
 	cvars.AddChangeCallback("gmod_language", function(_,_,new) UpdateTFLanguageStrings(new) end, "TF2ItemBrowser")
 	UpdateTFLanguageStrings(GetConVar("gmod_language"):GetString())
-
-	GetTFLanguageString = function(str)
-		local result
-		if !isstring(str) then return end
-		//if str doesn't start with a #, then it might not be a localized string, and in those cases 
-		//we should just return the string we were given if we can't find one to localize it to
-		if !string.StartsWith(str, "#") then result = str end
-
-		result = tf_lang[string.TrimLeft(string.lower(str), "#")] or result
-		return result
-	end
 end
 
 
@@ -70,8 +96,8 @@ end
 
 
 
-local classes = {
-	{longname = "(any)",	shortname = "(any)",	langstr = "(any)"}, //TODO: localize this globally so everything can use it
+classes = {
+	{longname = "(any)",	shortname = "(any)",	langstr = str_any},
 	{longname = "scout",	shortname = "scout",	langstr = "#TF_Class_Name_Scout"},
 	{longname = "soldier",	shortname = "soldier",	langstr = "#TF_Class_Name_Soldier"},
 	{longname = "pyro",	shortname = "pyro",	langstr = "#TF_Class_Name_Pyro"},
@@ -1983,7 +2009,7 @@ if CLIENT then
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemName")
 			text:SetColor(gui_colors.TanLight)
-			text:SetText("Filters:")
+			text:SetText((GetTFLanguageString("#chat_filterbutton") or "Filters") .. ":")
 			text:Dock(FILL)
 			text_holder:SetTall(text:GetTall())
 			local text = vgui.Create("DLabel", text_holder)
@@ -2043,11 +2069,11 @@ if CLIENT then
 
 			filters.item_type = AddDropdownFilter(GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", function(self) 
 				for k, v in ipairs ({
-					{k = "(" .. string.lower(GetTFLanguageString("#TF_Any") or "Any") .. ")",	v = "(any)"}, 
-					{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",		v = "weapon"}, 
-					{k = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",			v = "cosmetic"}, 
-					--[[{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Taunt") or "Taunt",		v = "taunt"},]] 
-					{k = GetTFLanguageString("#AbuseReport_TypeOther") or "Other",			v = "other"}, //using this localization string for "Other" items is a stretch but it's the best we've got
+					{k = str_any,								v = "(any)"}, 
+					{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",	v = "weapon"}, 
+					{k = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",		v = "cosmetic"}, 
+					--[[{k = GetTFLanguageString("#TF_SteamWorkshop_Tag_Taunt") or "Taunt",	v = "taunt"},]] 
+					{k = GetTFLanguageString("#AbuseReport_TypeOther") or "Other",		v = "other"}, //using this localization string for "Other" items is a stretch but it's the best we've got
 				}) do
 					self:AddChoice(v.k, v.v, k == 1)
 					if k == 1 then self:AddSpacer() end
@@ -2059,7 +2085,7 @@ if CLIENT then
 				old_choice = old_choice or "(any)"
 				self.IsRebuilding = true
 				self:Clear()
-				self:AddChoice("(any)", "(any)", old_choice == "(any)")
+				self:AddChoice(str_any, "(any)", old_choice == "(any)")
 				for k, class in ipairs (classes) do //add class-based equip regions in class order
 					//If we have a class selected, filter out equip regions for other classes
 					local _, selected_class = filters.class:GetSelected()
@@ -2088,7 +2114,7 @@ if CLIENT then
 				old_choice = old_choice or "(any)"
 				self.IsRebuilding = true
 				self:Clear()
-				self:AddChoice("(any)", "(any)", old_choice == "(any)")
+				self:AddChoice(str_any, "(any)", old_choice == "(any)")
 				local submenus = {}
 				//If we have a class selected, only show sets containing items for that class
 				local _, selected_class = filters.class:GetSelected()
@@ -2135,7 +2161,7 @@ if CLIENT then
 					end
 					if submenus.collections then
 						if !done_spacer then self.Menu:AddSpacer() done_spacer = true end
-						local submenu = self.Menu:AddSubMenu("Collections")
+						local submenu = self.Menu:AddSubMenu(string.NiceName(string.lower(GetTFLanguageString("#Collections") or "COLLECTIONS")))
 						for _, tab in ipairs (submenus.collections) do
 							local opt = submenu:AddOption(tab.name, function() self:ChooseOption(tab.name, tab.id) end)
 							if tab.id == sel then
@@ -2155,7 +2181,7 @@ if CLIENT then
 				if check == nil then self:ChooseOptionID(1) end
 				self.IsRebuilding = nil
 			end
-			filters.item_set = AddDropdownFilter("Set/Collection", item_sets_populate) //this and the categories in the dropdown aren't easily localized, because there's a localized string for "Collection", but nothing for "Set" or "Item Set" or the like
+			filters.item_set = AddDropdownFilter("Set/" .. (GetTFLanguageString("#TF_Tag_Category_Collection") or "Collection"), item_sets_populate) //no tf localization string for "Set" or "Item Set" or the like
 			filters.item_set:GetParent():DockMargin(0,0,0,betweencategories)
 			filters.item_set.RebuildControls = item_sets_populate //make this func externally accessible so we can rebuild it when picking a new class
 
@@ -2211,7 +2237,7 @@ if CLIENT then
 				return self
 			end
 
-			//none of these are localizable unfortunately
+			//there's no good localization strings for any of these, unfortunately
 			filters.conflicting = AddIncludeExcludeFilter("Conflicts with equipped") //should this be grayed out or something when there's no parent selected to equip items to?
 			filters.multi_class = AddIncludeExcludeFilter("Multi-class")
 			filters.holiday = AddIncludeExcludeFilter("Holiday restricted")
@@ -2322,11 +2348,12 @@ if CLIENT then
 				right_scroll:InvalidateLayout()
 				right_scroll.VBar:SetScroll(0)
 				right_scroll:SetMouseInputEnabled(false)
-				if #window.icons_to_add != 1 then
-					window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " items)")
-				else
-					window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " item)")
-				end
+				//if #window.icons_to_add != 1 then
+					//window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " items)")
+					window.ItemCountText:SetText("(" .. string.Replace(GetTFLanguageString("#Store_CartItems") or "%s1 Items", "%s1", tostring(#window.icons_to_add)) .. ")")
+				//else
+				//	window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " item)")
+				//end
 			end
 			function iconlist:PerformLayout(w, h)
 				//Rebuild the iconlist if resizing it changed the number of columns
@@ -2466,7 +2493,7 @@ if CLIENT then
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemName")
 			text:SetColor(gui_colors.TanLight)
-			text:SetText("Settings:")
+			text:SetText(language.GetPhrase("spawnmenu.utilities.settings") .. ":")
 			text:Dock(TOP)
 			text:DockMargin(-8,-8,0,betweenitems)
 
@@ -2541,11 +2568,11 @@ if CLIENT then
 			attopts.team = buttons
 
 			local drop = AddDropdownFilter(GetTFLanguageString("#TF_ImportPreview_EffectLabel") or "Effect", function(self)
-				self:AddChoice("(none)", EFFECT_NONE, true)
-				self:AddChoice("Uber", EFFECT_UBER)
-				self:AddChoice("Jarate", EFFECT_JARATE)
-				self:AddChoice("Gold", EFFECT_GOLD)
-				self:AddChoice("Ice", EFFECT_ICE)
+				self:AddChoice(str_none, EFFECT_NONE, true)
+				self:AddChoice(GetTFLanguageString("#TF_ImportPreview_Effect1") or "Uber", EFFECT_UBER)
+				self:AddChoice(GetTFLanguageString("#TF_ImportPreview_Effect2") or "Jarate", EFFECT_JARATE)
+				self:AddChoice("Gold", EFFECT_GOLD) //no localization strings for these two, sad
+				self:AddChoice("Ice", EFFECT_ICE)   //^
 			end)
 			drop:GetParent():SetParent(attopts)
 			drop:GetParent():Dock(TOP)
@@ -2673,7 +2700,7 @@ if CLIENT then
 					right_holder:InvalidateLayout()
 					deselect_holder:InvalidateLayout()
 
-					local mdl = string.GetFileFromFilename(ent:GetModel())
+					local mdl = string.StripExtension(string.GetFileFromFilename(ent:GetModel()))
 					//Try to figure out what class the model is, and set the class filter to match
 					for k, v in ipairs (classes) do
 						if k == 1 or k == 11 then continue end
@@ -2682,7 +2709,9 @@ if CLIENT then
 							break
 						end
 					end
-					atticons.Label:SetText("Attached to " .. mdl .. ":")
+					local text = string.lower(GetTFLanguageString("#CurrentlyEquipped") or "CURRENTLY EQUIPPED:")
+					text = string.upper(text[1]) .. string.sub(text, 2)
+					atticons.Label:SetText(text .. " (" .. string.NiceName(mdl) .. ")")
 
 					attopts.team:SetValue(ent:GetSkin() % 2 != 0)
 
@@ -3246,7 +3275,7 @@ if CLIENT then
 
 		//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
 		if self.data.paint.enabled and self.data.paint.override[false] == 0 and !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
-			local paint = "(custom)" //not localized, bad!!
+			local paint = str_custom
 			for k, v in ipairs (paints) do
 				if v[1] == self.data.paint.col[false] and v[2] == self.data.paint.col[true] then
 					paint = GetTFLanguageString(v.name)
@@ -4361,7 +4390,12 @@ if CLIENT then
 			local check = TFStyleVGUI("DCheckBoxLabel", checks)
 			check.model = k
 			local text = string.NiceName(k)
-			if k == "attached_festive" then text = "Festivizer" end
+			if k == "item" then
+				text = GetTFLanguageString("#Item") or "Item"
+			elseif k == "attached_festive" then
+				text = GetTFLanguageString("#TF_FestivizerTool") or "Festivizer"
+			end
+			//no tf localization strings for "wearable" or "stat clock", unfortunately
 			check:SetText(text)
 			check:Dock(LEFT)
 			check:SetChecked(v)
@@ -4417,7 +4451,7 @@ if CLIENT then
 			return drop.Combo
 		end
 
-		pnl.class = AddDropdown(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(drop)
+		pnl.class = AddDropdown(GetTFLanguageString("#TF_ImportFile_Models") or "Class:", function(drop)
 			for k, v in ipairs (classes) do //add class options in class order
 				if i.used_by_classes[v.longname] then
 					drop:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
@@ -4428,8 +4462,8 @@ if CLIENT then
 		end)
 
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-			local name = "Style"
-			if i._call_styles_animations then name = "Animation" end
+			local name = (GetTFLanguageString("#Context_Style") or "Style") .. ":"
+			if i._call_styles_animations then name = (GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation") .. ":" end
 			AddDropdown(name, function(drop)
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true) or v.name
@@ -4448,14 +4482,14 @@ if CLIENT then
 		end
 
 		if i.capabilities and i.capabilities.paintable == 1 then
-			local drop = AddDropdown("Paint Color", function(drop)
-				drop:AddChoice("(none)", nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
+			local drop = AddDropdown(string.Trim(string.Replace(GetTFLanguageString("#Econ_Paint_Name") or "Paint Color:", "%s1", "")), function(drop)
+				drop:AddChoice(str_none, nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
 				drop:AddSpacer()
 				for k, v in ipairs (paints) do
 					local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v.override or (self.data.paint.col[false] == v[1] and self.data.paint.col[true] == v[2]))
 					drop:AddChoice(GetTFLanguageString(v.name) or v.name, v, is_selected)
 				end
-				if drop:GetText() == "" then drop:SetText("(custom)") end
+				if drop:GetText() == "" then drop:SetText(str_custom) end
 			end, function(data)
 				if !data then
 					if self.default_paint then
@@ -4479,11 +4513,20 @@ if CLIENT then
 				end
 			end)
 			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+					LoadoutItemPopupBorder(0,0,w,h)
 				end
+				drop.container = container
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
@@ -4503,7 +4546,7 @@ if CLIENT then
 				text:SetAutoStretchVertical(true)
 				text:SetFont("TF2ItemBrowser_ItemName")
 				text:SetColor(gui_colors.TanLight)
-				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:SetText(drop:GetParent().Label:GetText())
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
@@ -4624,7 +4667,7 @@ if CLIENT then
 				icons:InvalidateLayout()
 
 				local col = TFStyleVGUI("DColorMixer", container)
-				col:SetLabel("Custom Color")
+				col:SetLabel("#tool.colour.color")
 				col.label:SetDark(false)
 				container.col = col
 				col:SetAlphaBar(false)
@@ -4642,7 +4685,7 @@ if CLIENT then
 					self.data.paint.override = {[false] = 0}
 					self.data.paint.col = {[false] = _col}
 					drop.selected = nil //un-highlight the currently selected option
-					drop:SetText("(custom)")
+					drop:SetText(str_custom)
 					pnl.OnSettingChanged()
 				end
 				col:DockMargin(0,16,0,0)
@@ -4665,14 +4708,14 @@ if CLIENT then
 		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
 		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true}
 		if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
-			local drop = AddDropdown("Crit Glow Color", function(drop)
-				drop:AddChoice("(none)", nil, !self.data.crit.enabled)
+			local drop = AddDropdown("Crit Glow Color:", function(drop) //no tf localization string for this
+				drop:AddChoice(str_none, nil, !self.data.crit.enabled)
 				drop:AddSpacer()
 				for k, v in ipairs (critglows) do
 					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1] and self.data.crit.col[true] == v[2]
 					drop:AddChoice(GetTFLanguageString(v.name) or v.name, v, is_selected)
 				end
-				if drop:GetText() == "" then drop:SetText("(custom)") end
+				if drop:GetText() == "" then drop:SetText(str_custom) end
 			end, function(data)
 				if !data then
 					self.data.crit.enabled = false
@@ -4687,11 +4730,20 @@ if CLIENT then
 				end
 			end)
 			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+					LoadoutItemPopupBorder(0,0,w,h)
 				end
+				drop.container = container
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
@@ -4711,7 +4763,7 @@ if CLIENT then
 				text:SetAutoStretchVertical(true)
 				text:SetFont("TF2ItemBrowser_ItemName")
 				text:SetColor(gui_colors.TanLight)
-				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:SetText(drop:GetParent().Label:GetText())
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
@@ -4850,7 +4902,7 @@ if CLIENT then
 				end
 
 				local col = TFStyleVGUI("DColorMixer", container)
-				col:SetLabel("Custom Color")
+				col:SetLabel("#tool.colour.color")
 				col.label:SetDark(false)
 				container.col = col
 				col:SetAlphaBar(false)
@@ -4862,7 +4914,7 @@ if CLIENT then
 					self.data.crit.enabled = true
 					self.data.crit.col = {[false] = _col}
 					drop.selected = nil //un-highlight the currently selected option
-					drop:SetText("(custom)")
+					drop:SetText(str_custom)
 					pnl.OnSettingChanged()
 				end
 				col:DockMargin(0,16,0,0)
@@ -4967,8 +5019,8 @@ if CLIENT then
 		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
 		local u_wep = i.particle_suffix
 		if u_hat or u_wep then
-			local drop = AddDropdown("Unusual Effect", function(drop)
-				drop:AddChoice("(none)", 0, !self.data.crit.enabled)
+			local drop = AddDropdown(string.Trim(GetTFLanguageString("#IT_UnusualTitle") or "Unusual effect:"), function(drop)
+				drop:AddChoice(str_none, 0, self.data.pe_unusual == 0)
 				drop:AddSpacer()
 				if u_hat then
 					for k, v in pairs (TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
@@ -4987,11 +5039,20 @@ if CLIENT then
 				self.data.pe_unusual = data
 			end)
 			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+					LoadoutItemPopupBorder(0,0,w,h)
 				end
+				drop.container = container
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
@@ -5011,7 +5072,7 @@ if CLIENT then
 				text:SetAutoStretchVertical(true)
 				text:SetFont("TF2ItemBrowser_ItemName")
 				text:SetColor(gui_colors.TanLight)
-				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:SetText(drop:GetParent().Label:GetText())
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
@@ -5149,7 +5210,20 @@ if CLIENT then
 					drop2:SetSortItems(false)
 					local selected = GetDefaultCategory()
 					for k, v in SortedPairs (categories) do
-						drop2:AddChoice(v.name, k, k == selected)
+						local name = v.name
+						if string.StartsWith(name, "Summer") then
+							name = string.Replace(name, "Summer", GetTFLanguageString("#TF_SteamWorkshop_Tag_Summer") or "Summer")
+						elseif string.StartsWith(name, "Halloween") then
+							name = string.Replace(name, "Halloween", GetTFLanguageString("#TF_SteamWorkshop_Tag_Halloween") or "Halloween")
+						elseif string.StartsWith(name, "Smissmas") then
+							name = string.Replace(name, "Smissmas", GetTFLanguageString("#TF_SteamWorkshop_Tag_Smissmas") or "Smissmas")
+						elseif name == "Other" then
+							name = GetTFLanguageString("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
+						end
+						//No good localization strings for the other ones; there's a "Series" string used for crate series, but 
+						//it's not translated the same as unusual series in every language, and the community updates only have
+						//one for Invasion, which seems to be a generic community update string (#GameType_Community_Update)
+						drop2:AddChoice(name, k, k == selected)
 					end
 					function drop2.OnSelect(_, index, value, data)
 						search:SetText("")
@@ -5375,8 +5449,8 @@ if CLIENT then
 		end
 
 		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
-			local drop = AddDropdown("War Paint", function(drop)
-				drop:AddChoice("(none)", nil, self.data.wp.enabled == false)
+			local drop = AddDropdown((GetTFLanguageString("#TF_ItemPreview_ItemPaintkit") or "War Paint") .. ":", function(drop)
+				drop:AddChoice(str_none, nil, self.data.wp.enabled == false)
 				drop:AddSpacer()
 				local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
 				for k, v in ipairs (tab) do
@@ -5394,11 +5468,20 @@ if CLIENT then
 				pnl.OnSettingChanged()
 			end)
 			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
 				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
 				container:DockPadding(16,16,16,16)
 				function container:Paint(w,h)
-					LoadoutItemPopupBorder(0,0,w,h) //TODO: change this later when finalizing visuals
+					LoadoutItemPopupBorder(0,0,w,h)
 				end
+				drop.container = container
 
 				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
 				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
@@ -5418,7 +5501,7 @@ if CLIENT then
 				text:SetAutoStretchVertical(true)
 				text:SetFont("TF2ItemBrowser_ItemName")
 				text:SetColor(gui_colors.TanLight)
-				text:SetText(drop:GetParent().Label:GetText() .. ":")
+				text:SetText(drop:GetParent().Label:GetText())
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
@@ -5460,6 +5543,8 @@ if CLIENT then
 						local name = k
 						if TF2Items.item_collections[k] then
 							name = GetTFLanguageString(TF2Items.item_collections[k].name) or k
+						elseif name == "Other" then
+							name = GetTFLanguageString("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
 						end
 						cat2[v.order] = {name = name, items = v.items}
 					end
@@ -5976,12 +6061,12 @@ if CLIENT then
 
 		local button = TFStyleVGUI("DButton", pnl)
 		if IsValid(self.entity) then
-			button:SetText("Remove!")
+			button:SetText(string.upper(GetTFLanguageString("#Store_Remove" or "Remove")))
 			button.BGColor = gui_colors.LightRed //using this as the neutral unselected color looks a little strange, but we can't use TFOrange as the unselected color because it could trick the player when switching from equip to unequip mode; also this matches the loadout preset buttons in TF2
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
-			button:SetText("Attach!")
+			button:SetText(GetTFLanguageString("#Equip") or "EQUIP")
 		else
-			button:SetText("Spawn!")
+			button:SetText(GetTFLanguageString("#MMenu_Create") or "CREATE")
 		end
 		button:Dock(TOP)
 		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
