@@ -752,11 +752,24 @@ for k, v in ipairs (s2) do
 	elseif v.Key == "item_sets" then
 		for k2, v2 in ipairs (v.Value) do
 			local add_set = false //exclude sets that don't contain any spawnable items
+			//Unlike collections, item sets are almost always only equippable by a single class, with the exception of a 
+			//few sets containing a single multi-class hat. Categorize sets by which class is able to equip *all* the items.
+			local _cat = {}
+			for i = 2, 10 do
+				_cat[i] = true
+			end
 			for k3, _ in pairs (s.item_sets[v2.Key].items) do
 				if s.items[items_by_name[k3]] then
 					add_set = true
 					s.items[items_by_name[k3]]._item_set = v2.Key
-					//Also keep track of which classes we should show this set for
+					//Keep track of which class we should categorize this set by
+					for classid, _ in pairs (_cat) do
+						if !s.items[items_by_name[k3]].used_by_classes[classes[classid].longname] then
+							_cat[classid] = nil
+						end
+					end
+					//Also keep track of which classes we should show this set for - in case of multi-class items, we still want
+					//to list the set when we're filtering for one of the other classes, but categorize it separately.
 					s.item_sets[v2.Key]._classes = s.item_sets[v2.Key]._classes or {}
 					for k, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
 						s.item_sets[v2.Key]._classes[k] = true
@@ -764,6 +777,11 @@ for k, v in ipairs (s2) do
 				end
 			end
 			if add_set then table.insert(sets, v2.Key) end
+			if table.Count(_cat) == 0 then _cat[1] = true end //fallback for item sets that aren't entirely equippable by any one class? this shouldn't happen.
+			for classid, _ in SortedPairs(_cat) do
+				s.item_sets[v2.Key]._cat = classid //categorize by the first listed class; there shouldn't be any case where there's more than 1 by this point
+				break
+			end
 		end
 	elseif v.Key == "item_collections" then
 		for k2, v2 in ipairs (v.Value) do
@@ -2124,9 +2142,11 @@ if CLIENT then
 					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
 						local k = GetTFLanguageString(TF2Items.item_sets[v].name) or v
+						local cat = TF2Items.item_sets[v]._cat //item sets are further categorized by class because there's so many of them
 						local id = self:AddChoice(k, v, old_choice == v)
 						submenus.sets = submenus.sets or {}
-						table.insert(submenus.sets, {name = k, id = id})
+						submenus.sets[cat] = submenus.sets[cat] or {}
+						table.insert(submenus.sets[cat], {name = k, id = id})
 					end
 				end
 				added_spacer = false
@@ -2151,11 +2171,17 @@ if CLIENT then
 					if submenus.sets then
 						if !done_spacer then self.Menu:AddSpacer() done_spacer = true end
 						local submenu = self.Menu:AddSubMenu("Sets")
-						for _, tab in ipairs (submenus.sets) do
-							local opt = submenu:AddOption(tab.name, function() self:ChooseOption(tab.name, tab.id) end)				
-							if tab.id == sel then
-								opt:SetChecked(true)
-								submenu:ScrollToChild(opt)
+						local is_first = true
+						for _, cat in SortedPairs (submenus.sets) do
+							local done_cat_spacer = is_first
+							for _, tab in ipairs (cat) do
+								is_first = false
+								if !done_cat_spacer then submenu:AddSpacer() done_cat_spacer = true end
+								local opt = submenu:AddOption(tab.name, function() self:ChooseOption(tab.name, tab.id) end)				
+								if tab.id == sel then
+									opt:SetChecked(true)
+									submenu:ScrollToChild(opt)
+								end
 							end
 						end
 					end
