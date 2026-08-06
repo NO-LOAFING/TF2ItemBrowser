@@ -318,8 +318,10 @@ local tab = {}
 local function InheritPrefabValues(k, v, ptab, ptabname)
 	//Go through prefabs of prefabs recursively
 	if ptab.prefab then
-		for k2, v2 in ipairs (string.Explode(" ", ptab.prefab)) do
-			if !s.prefabs[v2] then MsgN("TF2ItemSchema: ", k, " ", v.name, ptabname, " tried to get invalid prefab \"", v2, "\"") continue end
+		//Note: Prefabs are read in reverse order (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_schema.cpp#L2940-L2968);
+		//see the many, many hats with prefab "no_craft hat", which override hat's craft_class "hat" with no_craft's craft_class ""
+		for k2, v2 in ipairs (table.Reverse(string.Explode(" ", ptab.prefab))) do
+			if !s.prefabs[v2] then MsgN("TF2ItemSchema: ", k, " ", v.name, " ", ptabname, " tried to get invalid prefab \"", v2, "\"") continue end
 			InheritPrefabValues(k, v, s.prefabs[v2], ptabname .. " " .. v2)
 		end
 	end
@@ -343,7 +345,6 @@ local function InheritPrefabValues(k, v, ptab, ptabname)
 			tab[k][k2] = v2
 		end
 	end
-	//TODO: try tab2 test again, just using table.Merge(tab2[k], ptab)
 end
 for k, v in pairs (s.items) do
 	tab[k] = {}
