@@ -108,7 +108,7 @@ classes = {
 	{longname = "demoman",	shortname = "demo",	langstr = "#TF_Class_Name_Demoman"}, //called "demoman" in all item definition keys (used_by_classes, model_player_per_class, etc.), "demo" in all model paths, and either one interchangably in equip region names. dumb!!!
 	{longname = "heavy",	shortname = "heavy",	langstr = "#TF_Class_Name_HWGuy"},
 	{longname = "engineer",	shortname = "engineer",	langstr = "#TF_Class_Name_Engineer"},
-	{longname = "medic",	shortname = "medic",	langstr = "#TF_Class_Name_Medic"},
+	{longname = "medic",	shortname = "medic",	langstr = "#TF_Class_Name_Medic", extra_equip_region_prefix = "medigun"},
 	{longname = "sniper",	shortname = "sniper",	langstr = "#TF_Class_Name_Sniper"},
 	{longname = "spy",	shortname = "spy",	langstr = "#TF_Class_Name_Spy"},
 	{longname = "none",	shortname = "none",	langstr = "#TF_SelectPlayer_DuelClass_None"},
@@ -738,8 +738,8 @@ end
 //s.equip_regions has multiple "shared" keys that are subtables filled with many different class-specific strings, but these get clobbered by util.KeyValuesToTable, 
 //so we have to rescue them. also use this chance to get the implementation order, because it makes the equip region list look nicer.
 local tab = {}
-for _, class in ipairs (classes) do //sort these by class so we can filter them easily + print class-based ones in class order
-	tab[class.longname] = {}
+for classid, _ in ipairs (classes) do //sort these by class so we can filter them easily + print class-based ones in class order
+	tab[classid] = {}
 end
 //Also use this opportunity to process item sets and collections in implementation order
 local sets = {}
@@ -751,16 +751,16 @@ for k, v in ipairs (s2) do
 		for k2, v2 in ipairs (v.Value) do
 			if istable(v2.Value) then
 				for k3, v3 in pairs (v2.Value) do
-					for _, class in ipairs (classes) do
-						if string.StartsWith(v3.Key, class.shortname) or string.StartsWith(v3.Key, class.longname) then
-							if used_equip_regions[v3.Key] then table.insert(tab[class.longname], v3.Key) end
+					for classid, class in ipairs (classes) do
+						if string.StartsWith(v3.Key, class.shortname) or (class.extra_equip_region_prefix and string.StartsWith(v3.Key, class.extra_equip_region_prefix)) then
+							if used_equip_regions[v3.Key] then table.insert(tab[classid], v3.Key) end
 							break
 						end
 					end
 						
 				end
 			else
-				if used_equip_regions[v2.Key] then table.insert(tab["(any)"], v2.Key) end
+				if used_equip_regions[v2.Key] then table.insert(tab[1], v2.Key) end
 			end
 		end
 	elseif v.Key == "item_sets" then
@@ -785,8 +785,8 @@ for k, v in ipairs (s2) do
 					//Also keep track of which classes we should show this set for - in case of multi-class items, we still want
 					//to list the set when we're filtering for one of the other classes, but categorize it separately.
 					s.item_sets[v2.Key]._classes = s.item_sets[v2.Key]._classes or {}
-					for k, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
-						s.item_sets[v2.Key]._classes[k] = true
+					for class, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
+						s.item_sets[v2.Key]._classes[class_longname_to_id[class]] = true
 					end
 				end
 			end
@@ -812,8 +812,8 @@ for k, v in ipairs (s2) do
 							s.items[items_by_name[k4]]._rarity = k3
 							//Also keep track of which classes we should show this set for
 							s.item_collections[v2.Key]._classes = s.item_collections[v2.Key]._classes or {}
-							for k, _ in pairs (s.items[items_by_name[k4]].used_by_classes) do
-								s.item_collections[v2.Key]._classes[k] = true
+							for class, _ in pairs (s.items[items_by_name[k4]].used_by_classes) do
+								s.item_collections[v2.Key]._classes[class_longname_to_id[class]] = true
 							end
 						//Also retrieve paintkit rarities and collections here
 						elseif paintkit_items_to_ids[k4] then
@@ -829,8 +829,8 @@ for k, v in ipairs (s2) do
 						s.items[items_by_name[k3]]._item_collection = v2.Key
 						//Also keep track of which classes we should show this set for
 						s.item_collections[v2.Key]._classes = s.item_collections[v2.Key]._classes or {}
-						for k, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
-							s.item_collections[v2.Key]._classes[k] = true
+						for class, _ in pairs (s.items[items_by_name[k3]].used_by_classes) do
+							s.item_collections[v2.Key]._classes[class_longname_to_id[class]] = true
 						end
 					end
 				end
@@ -2118,13 +2118,12 @@ if CLIENT then
 				self.IsRebuilding = true
 				self:Clear()
 				self:AddChoice(str_any, "(any)", old_choice == "(any)")
-				for k, class in ipairs (classes) do //add class-based equip regions in class order
+				for classid, class in ipairs (classes) do //add class-based equip regions in class order
 					//If we have a class selected, filter out equip regions for other classes
-					local _, selected_class = filters.class:GetSelected()
-					selected_class = classes[selected_class].longname or "(any)"
-					if selected_class == "(any)" or class.longname == "(any)" or selected_class == class.longname then
+					local _, selected_classid = filters.class:GetSelected()
+					if selected_classid == 1 or classid == 1 or selected_classid == classid then
 						local added_spacer = false
-						for k, v in ipairs (TF2Items.equip_regions_list[class.longname]) do
+						for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
 							if !added_spacer then 
 								self:AddSpacer()
 								added_spacer = true
@@ -2149,11 +2148,10 @@ if CLIENT then
 				self:AddChoice(str_any, "(any)", old_choice == "(any)")
 				local submenus = {}
 				//If we have a class selected, only show sets containing items for that class
-				local _, selected_class = filters.class:GetSelected()
-				selected_class = classes[selected_class].longname or "(any)"
+				local _, selected_classid = filters.class:GetSelected()
 				local added_spacer = false
 				for _, v in ipairs (sets) do
-					if selected_class == "(any)" or TF2Items.item_sets[v]._classes[selected_class] then
+					if selected_classid == 1 or TF2Items.item_sets[v]._classes[selected_classid] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
 						local k = GetTFLanguageString(TF2Items.item_sets[v].name) or v
 						local cat = TF2Items.item_sets[v]._cat //item sets are further categorized by class because there's so many of them
@@ -2165,7 +2163,7 @@ if CLIENT then
 				end
 				added_spacer = false
 				for _, v in ipairs (collections) do
-					if selected_class == "(any)" or TF2Items.item_collections[v]._classes[selected_class] then
+					if selected_classid == 1 or TF2Items.item_collections[v]._classes[selected_classid] then
 						if !added_spacer then self:AddSpacer() added_spacer = true end
 						local k = GetTFLanguageString(TF2Items.item_collections[v].name) or v
 						local id = self:AddChoice(k, v, old_choice == v)
@@ -2393,19 +2391,26 @@ if CLIENT then
 						if !found then continue end
 					end
 
-					local _, f = filters.class:GetSelected()
-					f = classes[f].longname
-					if f != "(any)" and !v.used_by_classes[f] then continue end
+					if filters.class:GetSelectedID() != 1 then
+						local _, f = filters.class:GetSelected()
+						if !v.used_by_classes[classes[f].longname] then continue end
+					end
 
-					local _, f = filters.item_type:GetSelected()
-					if f != "(any)" and ((f == "other" and v.item_slot and item_slot_types[v.item_slot]) 
-					or (f != "other" and (!v.item_slot or item_slot_types[v.item_slot] != f))) then continue end
+					if filters.item_type:GetSelectedID() != 1 then
+						local _, f = filters.item_type:GetSelected()
+						if (f == "other" and v.item_slot and item_slot_types[v.item_slot]) 
+						or (f != "other" and (!v.item_slot or item_slot_types[v.item_slot] != f)) then continue end
+					end
 
-					local _, f = filters.equip_region:GetSelected()
-					if f != "(any)" and (!v.equip_regions or !v.equip_regions[f]) then continue end
+					if filters.equip_region:GetSelectedID() != 1 then
+						local _, f = filters.equip_region:GetSelected()
+						if !v.equip_regions or !v.equip_regions[f] then continue end
+					end
 
-					local _, f = filters.item_set:GetSelected()
-					if f != "(any)" and (v._item_set != f and v._item_collection != f) then continue end
+					if filters.item_set:GetSelectedID() != 1 then
+						local _, f = filters.item_set:GetSelected()
+						if v._item_set != f and v._item_collection != f then continue end
+					end
 
 					if DoIncludeExcludeFilter(filters.conflicting:GetValue(), window:GetItemHasConflict(k))
 					or DoIncludeExcludeFilter(filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
