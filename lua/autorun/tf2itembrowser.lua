@@ -750,14 +750,33 @@ for k, v in ipairs (s2) do
 	if v.Key == "equip_regions_list" then
 		for k2, v2 in ipairs (v.Value) do
 			if istable(v2.Value) then
+				local conflict_tab = {}
 				for k3, v3 in pairs (v2.Value) do
 					for classid, class in ipairs (classes) do
 						if string.StartsWith(v3.Key, class.shortname) or (class.extra_equip_region_prefix and string.StartsWith(v3.Key, class.extra_equip_region_prefix)) then
-							if used_equip_regions[v3.Key] then table.insert(tab[classid], v3.Key) end
+							if used_equip_regions[v3.Key] then
+								table.insert(tab[classid], v3.Key)
+								conflict_tab[v3.Key] = {}
+							end
 							break
 						end
 					end
-						
+				end
+				//Emulate buggy behavior from TF code that causes all equip regions in the same "shared" table to conflict with each other. 
+				//(https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_schema.cpp#L5127-L5131)
+				//Ideally, it shouldn't be possible to equip more than one region from each table on a single class, because they're all 
+				//class-specific (which is what the TF code had in mind), but some class-specific equip regions are actually on multi-class
+				//items, so you can run into situations where a multi-class "sniper_pocket" item like 30607 The Pocket Raiders conflicts 
+				//with "spy_coat" items when you try to equip them together in TF2. This is dumb and unintuitive, but we should let players
+				//know that these conflicts exist, so that they don't get surprised by them if they build a loadout here and then try to 
+				//recreate it in TF2.
+				for region1, _ in pairs (conflict_tab) do
+					for region2, _ in pairs (conflict_tab) do
+						if region1 != region2 then
+							conflict_tab[region1][region2] = 1
+						end
+					end
+					s.equip_conflicts[region1] = conflict_tab[region1]
 				end
 			else
 				if used_equip_regions[v2.Key] then table.insert(tab[1], v2.Key) end
