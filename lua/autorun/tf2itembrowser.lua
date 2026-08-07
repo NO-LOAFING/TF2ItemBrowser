@@ -75,6 +75,10 @@ if CLIENT then
 				end
 			end
 		end
+		//Fix KeyValuesToTable returning some strings as numbers if the text contained numbers only (i.e. #TF_TournamentMedal_2014)
+		for k, v in pairs (tf_lang) do
+			if !isstring(v) then tf_lang[k] = tostring(v) end
+		end
 		//MsgN("language is now ", lang)
 		//note: conveniently, the context menu and all of its contents are reset upon changing languages, so we don't have to worry 
 		//about resetting the browser to prevent odd behavior caused by controls still using values from the previous language
@@ -705,15 +709,24 @@ for k, v in pairs (s.items) do
 			v.used_by_classes = {none = 1}
 		end
 	end
-	//clear items that still have no class assigned after the above check, which means they have no model (these are items that only exist 
-	//in the backpack like tools, craft items, stamps, most crates+keys); also clear items that have a class assigned, but have no model or 
-	//other visual data (store bundles, invisible action items like damaged capacitor, class craft tokens)
+	//Clear items that still have no class assigned after the above check, which means they have no model
+	//(these are items that only exist in the backpack like tools, craft items, stamps, most crates+keys)
 	if !v.used_by_classes then
 		//MsgN("group 1: ", k, " ", v.name)
 		s.items[k] = nil
-	elseif (!v.model_player and !v.model_player_per_class and !v.visuals and !v.taunt) then
-		//MsgN("group 2: ", k, " ", v.name)
-		s.items[k] = nil
+	else
+		//Also clear items that have a class assigned, but have no model or other visual data 
+		//(store bundles, invisible action items like damaged capacitor, class craft tokens)
+		if (!v.model_player and !v.model_player_per_class and !v.visuals and !v.taunt) then
+			//MsgN("group 2: ", k, " ", v.name)
+			s.items[k] = nil
+		end
+		//Also make sure all used_by_classes keys are uncapitalized, otherwise they won't work (see 252 Dr's Dapper Topper and a few others)
+		local tab = {}
+		for k, v in pairs (v.used_by_classes) do
+			tab[string.lower(k)] = v
+		end
+		v.used_by_classes = tab
 	end
 
 
@@ -2322,15 +2335,63 @@ if CLIENT then
 					if f == "" then
 						f = nil
 					else
-						f = f:lower()
+						f = string.Explode(" ", f:lower()) //allow searching with multiple search terms
 					end
 				end
 				for k, v in pairs (TF2Items.items) do
 					//this filter is on by default and catches >75% of items, so check this first
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
-					//keep the search filter simple, only search by base name
-					if f and !((GetTFLanguageString(v.item_name) or v.item_name):lower():find(f, 1, true)) then continue end
+					if f then
+						if !v._searchstr then
+							//Search by display name, internal name, item type, set/collection, and more
+							local str = (GetTFLanguageString(v.item_name) or v.item_name):lower() .. " " .. v.name:lower()
+							if v.item_type_name then
+								str = str .. " " .. (GetTFLanguageString(v.item_type_name) or ""):lower()
+							end
+							//if v.item_description then
+							//	//this can add irrelevant nonsense sometimes, but can also catch associated words that aren't in any other text. is this worth it?
+							//	str = str .. " " .. (GetTFLanguageString(v.item_description) or ""):lower()
+							//end
+							if v._item_set then
+								str = str .. " " .. (GetTFLanguageString(TF2Items.item_sets[v._item_set].name) or v._item_set):lower()
+							end
+							if v._item_collection then
+								str = str .. " " .. (GetTFLanguageString(TF2Items.item_collections[v._item_collection].name) or v._item_collection):lower()
+							end
+							//Add all model paths to the search string so we can search those too
+							local mdls = {}
+							for class, _ in pairs (v.used_by_classes) do
+								str = str .. " " .. class
+								for _, mdl in pairs (GetItemModelVisuals({id = k, class = class_longname_to_id[class], style = 0}).models) do
+									if !istable(mdl) then //the only model subtables are attached_models and attached_models_festive, which don't contain anything useful for searches, so skip those
+										mdls[mdl] = true
+										//mdls[string.Replace(mdl, class, "")] = true //don't include class names in model paths because that clutters up searches for class names with irrelevant multi-class items; this still doesn't work very well because of class-specific equip regions, some internal names, and class-specific model paths with "demo" instead of "demoman", so give up and let players search for class by typing the name just like they can with equip regions
+									end
+								end
+							end
+							for mdl, _ in pairs (mdls) do
+								str = str .. " " .. string.StripExtension(string.GetFileFromFilename(mdl))
+							end
+							//And equip regions, so players can search something like "beard" and it works intuitively
+							if v.equip_regions then
+								for e, _ in pairs (v.equip_regions) do
+									str = str .. " " .. e
+								end
+							end
+							v._searchstr = str
+						end
+
+						local found
+						for k2, v2 in ipairs (f) do
+							if !v._searchstr:find(v2, nil, true) then
+								break
+							elseif k2 == #f then //if we found a match for ALL the search terms, then add it to the results
+								found = true
+							end
+						end
+						if !found then continue end
+					end
 
 					local _, f = filters.class:GetSelected()
 					f = classes[f].longname
