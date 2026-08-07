@@ -2009,10 +2009,19 @@ if CLIENT then
 				surface.DrawRect(0,0,w,h)
 
 				local mid_w, mid_h = (w-right_scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
-				GrayDialogBorder(mid_w-50, mid_h-50, 100, 100)
+				local x = mid_h-62.5
+				GrayDialogBorder(mid_w-83, x, 166, 125)
 				surface.SetMaterial(spinner)
-				surface.DrawTexturedRect(mid_w-50, mid_h-50, 100, 100)
-				//TODO: this is okay, but i want to do better. add a progress bar and text listing tostring(window.icons_to_add_key-1) .. "/" .. tostring(#window.icons_to_add)
+				x = x-6
+				surface.DrawTexturedRect(mid_w-50, x, 100, 100)
+
+				surface.SetDrawColor(gui_colors.TanDark)
+				x = x+100-11
+				surface.DrawRect(mid_w-60, x, 120, 4)
+				surface.SetDrawColor(gui_colors.LightRed)
+				surface.DrawRect(mid_w-60, x, 120*((window.icons_to_add_key-1)/#window.icons_to_add), 4)
+				x = x+15
+				draw.SimpleText(tostring(window.icons_to_add_key-1) .. " / " .. tostring(#window.icons_to_add), "TF2ItemBrowser_ItemDesc", mid_w, x, gui_colors.LightRed, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 			end
 			right_scroll.OnChildAdded = old_OnChildAdded
 
