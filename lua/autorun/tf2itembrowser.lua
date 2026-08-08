@@ -3108,11 +3108,17 @@ if CLIENT then
 		local icons = {}
 		if data.paint.enabled and !self.mat_overlay then //don't show paint icons for tools that display paint color in the image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3143-L3144)
 			//note: in tf2 code, this icon is also used to show decal tool image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3138-L3141)
-			local paint = self.data.paint.col[false]
-			if self.data.paint.col[true] then
-				paint = {self.data.paint.col[false], self.data.paint.col[true]}
+			local tab = {icon = icon_paint, paint = self.data.paint.col[false]}
+			if self.data.paint.override[true] then
+				tab.paint = {}
+				tab.override = self.data.paint.override[false]
+				tab.override_2 = self.data.paint.override[true]
+			elseif self.data.paint.override[false] > 0 then
+				tab.override = self.data.paint.override[false]
+			elseif self.data.paint.col[true] then
+				tab.paint = {self.data.paint.col[false], self.data.paint.col[true]}
 			end
-			table.insert(icons, {icon = icon_paint, paint = paint})
+			table.insert(icons, tab)
 		end
 		//tf2 code also has "tf2_icon", which is used for items that originate from another game, i think? what is this even used by, some in-game implementation of inter-game steam trading? (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3162-L3172)
 		if i.vision_filter_flags == 1 then
@@ -5576,7 +5582,6 @@ if CLIENT then
 				local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
 				for k, v in ipairs (tab) do
 					//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
-					//TODO: categorize these later; for now, just put them all in a big dropdown list as a proof-of-concept
 					drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
 				end
 			end, function(data)
@@ -6493,6 +6498,13 @@ if CLIENT then
 			local ypos = 2 * item_icon_sizes[icon_size].scale
 			for k, v in ipairs (self.icons) do
 				surface.SetMaterial(v.icon)
+				//update spell colors if applicable
+				if v.override_2 then
+					v.paint[1] = ProxyentPaintColor_GetOverrideColor(v.override)
+					v.paint[2] = ProxyentPaintColor_GetOverrideColor(v.override_2)
+				elseif v.override then
+					v.paint = ProxyentPaintColor_GetOverrideColor(v.override)
+				end
 				if v.paint then
 					if isvector(v.paint) then
 						surface.SetDrawColor(v.paint[1], v.paint[2], v.paint[3])
