@@ -1092,7 +1092,7 @@ if CLIENT then
 	for k, v in pairs (item_icon_sizes[2]) do //just make a small size that's exactly half the normal size, this works better
 		item_icon_sizes[1][k] = v/2//math.Round(v/2)
 	end
-	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser (1 = small, 2 = large)", 2, #item_icon_sizes):GetInt()
+	local icon_size = CreateClientConVar("cl_tf2itembrowser_iconsize", "1", true, false, "Size of icons in TF2 item browser (1 = small, 2 = large)", 1, #item_icon_sizes):GetInt()
 	local popup_w = 480 //keep the width consistent between popup panels, so that when we switch from mouseoverpanel to spawnpanel, it maintains the same horizontal position
 	local popup_pad = 25 //34 would match the padding in tf2's backpack screen, but our text is smaller (13px, from 18px), so scale it down proportionately
 	local betweenitems = 8
@@ -2002,7 +2002,7 @@ if CLIENT then
 			//iconlist_loading:SetZPos(10) //this needs to render above the iconlist
 			iconlist_loading:SetMouseInputEnabled(false)
 			function iconlist_loading:Paint(w, h)
-				if !window.icons_to_add then return end
+				if !window.icons_to_add_showloader then return end
 
 				local w, h = right_scroll:GetSize()
 				surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
@@ -2450,6 +2450,9 @@ if CLIENT then
 
 					table.insert(window.icons_to_add, k)
 				end
+				//If there's enough icons to add that creating them will cause a substantial FPS drop (i.e. filters are set to 
+				//allow tournament medals), then display a loading progress bar so that the player can tell what's going on.
+				window.icons_to_add_showloader = (#window.icons_to_add >= 4000)
 				//Clear the icon list, and resize it to the height of the new list
 				iconlist:Clear()
 				local columns, wide = 0, iconlist:GetWide()
@@ -2465,10 +2468,10 @@ if CLIENT then
 				iconlist.columns = columns
 				local rows = math.floor((#window.icons_to_add-1)/columns)+1
 				iconlist:SetHeight((rows*item_icon_sizes[icon_size].h) + ((rows-1)*item_icon_sizes[icon_size].gap_h))
-				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items until we're done loading
+				//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items if there's a loading bar
 				right_scroll:InvalidateLayout()
 				right_scroll.VBar:SetScroll(0)
-				right_scroll:SetMouseInputEnabled(false)
+				right_scroll:SetMouseInputEnabled(!window.icons_to_add_showloader)
 				//if #window.icons_to_add != 1 then
 					//window.ItemCountText:SetText("(" .. tostring(#window.icons_to_add) .. " items)")
 					window.ItemCountText:SetText("(" .. string.Replace(GetTFLanguageString("#Store_CartItems") or "%s1 Items", "%s1", tostring(#window.icons_to_add)) .. ")")
@@ -2517,35 +2520,37 @@ if CLIENT then
 							//We've gone through the whole table, so we're done here, get rid of it
 							self.icons_to_add = nil
 							self.icons_to_add_key = nil
-							//Allow the list to be scrolled and clicked on now that it's fully loaded
-							right_scroll:SetMouseInputEnabled(true)
+							if self.icons_to_add_showloader then
+								self.icons_to_add_showloader = nil
+								//Allow the list to be scrolled and clicked on now that it's fully loaded
+								right_scroll:SetMouseInputEnabled(true)
+							end
 							break
 						end
 					end
 					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
 					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-				else
-					for k, v in ipairs (self.ImageQueue) do
-						table.remove(self.ImageQueue, k)
-						if IsValid(v.pnl) then
-							local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
-							if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
-								//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
-								v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
-								continue
-							end
-							v.pnl.mat = Material(v.img .. ".vmt")
-							if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
-								TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
-								break //only load one material per frame to prevent bad perf
-							end
+				end
+				for k, v in ipairs (self.ImageQueue) do
+					table.remove(self.ImageQueue, k)
+					if IsValid(v.pnl) then
+						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
+						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
+							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
+							v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
+							continue
+						end
+						v.pnl.mat = Material(v.img .. ".vmt")
+						if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
+							TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
+							break //only load one material per frame to prevent bad perf
 						end
 					end
-					if self.IconRenderQueue[1] then
-						if self.IconRenderQueue[1]() then
-							table.remove(self.IconRenderQueue, 1)
-						end
-					end	
+				end
+				if self.IconRenderQueue[1] then
+					if self.IconRenderQueue[1]() then
+						table.remove(self.IconRenderQueue, 1)
+					end
 				end
 				//if our selected entity is deleted, then update the attached item list
 				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
