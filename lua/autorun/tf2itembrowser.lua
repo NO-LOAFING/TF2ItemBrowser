@@ -1146,6 +1146,7 @@ if CLIENT then
 		_unu_depressed		= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanDark used for unusual selector
 		_unu_hovered		= Color(117*.2, 107*.2, 94*.2, 255*.2),
 
+		_header			= Color(117*0.535, 107*0.535, 94*0.535, 255) //another darker version of TanDark; used for header and matches item icons
 	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
@@ -1976,13 +1977,73 @@ if CLIENT then
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
 		width		= 918,
-		height		= 674,
+		height		= 688,
 		onewindow	= true,
 		init		= function(widgetIcon, window)
 
-			window:SetTitle("TF2 Item Browser")
-			window:SetIcon("games/16/tf.png")
-			window:DockPadding(8, 24--[[ + 8]], 8, 8)
+			local header = 30 //this has to be pretty tall to fit the close button comfortably
+			window:SetTitle("")
+			//window:SetIcon("games/16/tf.png")
+			window:ShowCloseButton(false)
+			window:DockPadding(8, header + 8, 8, 8)
+
+
+			local text = vgui.Create("DLabel", window)
+			text:SetContentAlignment(4) //top middle
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.LightRed)
+			text:SetText(">>")
+			text:SizeToContents()
+			text:SetPos(8, ((header)/2) - (text:GetTall()/2) + 1)
+			local w = text:GetWide()
+
+			local text = vgui.Create("DLabel", window)
+			text:SetContentAlignment(4) //top middle
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.TanLight)
+			text:SetText("TF2 Item Browser")
+			text:SizeToContents()
+			text:SetPos(8+w+8, ((header)/2) - (text:GetTall()/2) + 1)
+
+			local close = vgui.Create("DButton", window)
+			close:SetText("")
+			close:SetSize(22,22)
+			function close:Paint(w,h)
+				if self.Depressed then
+					surface.SetDrawColor(color_white)
+				elseif self.Hovered then
+					surface.SetDrawColor(gui_colors.LightRed)
+				else
+					surface.SetDrawColor(gui_colors.TanDark)
+				end
+				surface.SetMaterial(close_button)
+				surface.DrawTexturedRect(0,0,w,h)
+			end
+			AddTFButtonSounds(close)
+			function close:DoClick()
+				window:Close()
+			end
+
+			function window:PerformLayout()
+				close:SetPos(self:GetWide()-22-4, 4)
+			end
+
+			function window:OnMousePressed() //(based off https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L208-L224)
+				local screenX, screenY = self:LocalToScreen( 0, 0 )
+
+				if ( self.m_bSizable && gui.MouseX() > ( screenX + self:GetWide() - 20 ) && gui.MouseY() > ( screenY + self:GetTall() - 20 ) ) then
+					self.Sizing = { gui.MouseX() - self:GetWide(), gui.MouseY() - self:GetTall() }
+					self:MouseCapture( true )
+					return
+				end
+
+				if ( self:GetDraggable() && gui.MouseY() < ( screenY + header ) ) then //the only change; use our taller header height here
+					self.Dragging = { gui.MouseX() - self.x, gui.MouseY() - self.y }
+					self:MouseCapture( true )
+					return
+				end
+			end
+			
 
 			local right_holder = vgui.Create("DPanel", window)
 			right_holder.Paint = function() end
@@ -2052,8 +2113,12 @@ if CLIENT then
 
 			TF2ItemBrowser = window
 			function window:Paint(w, h)
+				//draw header
+				surface.SetDrawColor(gui_colors._header)
+				surface.DrawRect(0,0,w,header)
+				//draw main body
 				surface.SetDrawColor(gui_colors.TanDarker)
-				surface.DrawRect(0,0,w,h)
+				surface.DrawRect(0,header,w,h-header)
 			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
@@ -2557,6 +2622,11 @@ if CLIENT then
 					self:SetEntity(NULL)
 				end
 				old_Think(self, ...)
+				//Also do hover cursor for our larger header here (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L183)
+				local screenX, screenY = self:LocalToScreen(0, 0)
+				if --[[self.Hovered and]] gui.MouseY() < (screenY + header) then
+					self:SetCursor("sizeall")
+				end
 			end
 
 
@@ -6223,8 +6293,8 @@ if CLIENT then
 
 		local close = vgui.Create("DButton", pnl)
 		close:SetText("")
-		close:SetSize(25,25)
-		close:SetPos(popup_w-close:GetWide()-10, 10)
+		close:SetSize(22,22)
+		close:SetPos(popup_w-close:GetWide()-12, 12)
 		function close:Paint(w,h)
 			if self.Depressed then
 				surface.SetDrawColor(color_white)
