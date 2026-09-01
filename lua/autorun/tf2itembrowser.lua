@@ -7452,12 +7452,27 @@ if SERVER then
 	//The intention is that we *only* want to do these things when a player is using the browser to modify a class's loadout 
 	//- we don't want submodels deleting themselves if a player is using them as ordinary sandbox props, or bodygroups/skins 
 	//spontaneously changing if a player is bonemerging these props manually and then removing them.
-	function TF2ItemBrowser_Item_DoUnequip(_, e) //the first arg is the undo table always supplied by undo.AddFunction; we don't care about this but can't get rid of it
+	function TF2ItemBrowser_Item_DoUnequip(undotab, e)
 
-		//When unequipped, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
+		//Note: When a function is assigned to an undo with undo.AddFunction, the undo continues to exist in the queue even 
+		//if its ent(s) are removed some other way. This means if we, say, attach 2 items to a model, remove the 2nd one with 
+		//the browser's "remove" button, and then press the undo key, this function will get called for the 2nd item that no 
+		//longer exists. Returning false here makes it silently skip over the bad undo, remove it from the queue, and move on 
+		//to the next one instead, which is what we want. If we didn't do this, the player would press the undo key, see 'Undone 
+		//"Attached Item"' for the item that isn't there any more, and have nothing happen, which would be bad and unintuitive.
+		if undotab then
+			local any_valid
+			for k, v in pairs (undotab.Entities) do
+				if IsValid(v) then any_valid = true break end
+			end
+			if !any_valid then return false end
+		end
+
 		if !IsValid(e) then return end
 		local ent = e:GetParent()
 		if !IsValid(ent) then return end
+
+		//When unequipped, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
 		if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item and !e.TF2ItemBrowser_Item_IsSubModelOf then
 			for k, _ in pairs (GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg) do
 				//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
