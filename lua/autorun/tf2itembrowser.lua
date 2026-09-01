@@ -4498,7 +4498,7 @@ if CLIENT then
 			local vis = GetItemModelVisuals(self.data)
 
 			for k, v in ipairs (mdl.models) do
-				v:Remove()
+				if IsValid(v) then v:Remove() end
 			end
 
 			for k, v in ipairs (mdl.particles) do
@@ -6314,7 +6314,7 @@ if CLIENT then
 		function pnl.OnRemove()
 			//Clean up models and particles
 			for k, v in ipairs (mdl.models) do
-				v:Remove()
+				if IsValid(v) then v:Remove() end
 			end
 			for k, v in ipairs (mdl.particles) do
 				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
@@ -6508,7 +6508,7 @@ if CLIENT then
 
 				local function CleanUpModelsAndParticles()
 					for k, v in ipairs (models) do
-						v:Remove()
+						if IsValid(v) then v:Remove() end
 					end
 					for k, v in ipairs (particles) do
 						if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
@@ -6968,7 +6968,7 @@ if SERVER then
 					Override = data.paint.override[data.team] or data.paint.override[false]
 				})
 			elseif e.ProxyentPaintColor then
-				e.ProxyentPaintColor:Remove()
+				if IsValid(e.ProxyentPaintColor) then e.ProxyentPaintColor:Remove() end
 				e.ProxyentPaintColor = nil
 				duplicator.ClearEntityModifier(e, "MatproxyTF2ItemPaint")
 			end
@@ -6993,7 +6993,7 @@ if SERVER then
 					ColorableSparks = bool_to_num(role == "item" and data.crit.sparks_c),
 				})
 			elseif e.ProxyentCritGlow then
-				e.ProxyentCritGlow:Remove()
+				if IsValid(e.ProxyentCritGlow) then e.ProxyentCritGlow:Remove() end
 				e.ProxyentCritGlow = nil
 				duplicator.ClearEntityModifier(e, "MatproxyTF2CritGlow")
 			end
@@ -7196,7 +7196,7 @@ if SERVER then
 					e:ManipulateBoneScale(e:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
 				end
 
-				if e != spawned_models[1] then
+				if e != spawned_models[1] and IsValid(ent) then //only associate item ents together if they're being attached to an entity, not spanwed on the ground
 					constraint.TF2ItemBrowser_Item_SubModel(spawned_models[1], e, v.role, v.attach_num, ply)
 				end
 
@@ -7211,11 +7211,8 @@ if SERVER then
 				undo.Create("TF2ItemBrowser_Item")
 					for _, e in ipairs (spawned_models) do
 						undo.AddEntity(e)
-						if e:GetClass() == "prop_physics" then
-							ply:AddCleanup("props", e)
-						elseif e:GetClass() == "prop_effect" then
-							ply:AddCleanup("effects", e)
-						end
+						//Revert bodygroup changes on the parent entity, and remove submodels
+						undo.AddFunction(TF2ItemBrowser_Item_DoUnequip, e)
 					end
 					undo.SetPlayer(ply)
 				undo.Finish("Attached Item (" .. i.name .. ")") //item name instead of model name because this can change
@@ -7342,9 +7339,9 @@ if SERVER then
 			for role, v in pairs (submodels_to_remove) do
 				if istable(v) then
 					for k2, v2 in pairs (v) do
-						v2:Remove()
+						if IsValid(v2) then v2:Remove() end
 					end
-				else
+				elseif IsValid(v) then
 					v:Remove()
 				end
 				e.TF2ItemBrowser_Item_SubModels[role] = nil
@@ -7394,7 +7391,8 @@ if SERVER then
 			if !hook.Run("CanTool", ply, {Entity = e}, "remover", ply:GetTool("remover"), 1) then return end
 			//TODO: what other hooks should we check to make sure this player is allowed to remove this entity? sandbox doesn't seem to have anything else obvious.
 
-			//Reverting bodygroup changes on the parent entity is handled by the entitymod function
+			//Revert bodygroup changes on the parent entity, and remove submodels
+			TF2ItemBrowser_Item_DoUnequip(nil, e)
 
 			e:Remove()
 
@@ -7436,7 +7434,7 @@ if SERVER then
 					JarateColorableSparks = 0,
 				})
 			elseif ent.ProxyentCritGlow then
-				ent.ProxyentCritGlow:Remove()
+				if IsValid(ent.ProxyentCritGlow) then ent.ProxyentCritGlow:Remove() end
 				ent.ProxyentCritGlow = nil
 				duplicator.ClearEntityModifier(ent, "MatproxyTF2CritGlow")
 			end
@@ -7444,6 +7442,59 @@ if SERVER then
 		end
 
 	end)
+
+	//This func cleans up various things when unequpping the item, and is only called upon undo or attach_item_remove input. 
+	//The intention is that we *only* want to do these things when a player is using the browser to modify a class's loadout 
+	//- we don't want submodels deleting themselves if a player is using them as ordinary sandbox props, or bodygroups/skins 
+	//spontaneously changing if a player is bonemerging these props manually and then removing them.
+	function TF2ItemBrowser_Item_DoUnequip(_, e) //the first arg is the undo table always supplied by undo.AddFunction; we don't care about this but can't get rid of it
+
+		//When unequipped, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
+		if !IsValid(e) then return end
+		local ent = e:GetParent()
+		if !IsValid(ent) then return end
+		if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item and !e.TF2ItemBrowser_Item_IsSubModelOf then
+			for k, _ in pairs (GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg) do
+				//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
+				//item other than the one we're removing, and apply their ply_bg's again to a blank slate parent ent.
+				for i = 0, ent:GetNumBodyGroups() do
+					ent:SetBodygroup(i, 0)
+				end
+				for k, child in ipairs (ent:GetChildren()) do
+					if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
+						for k, v in pairs (GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg) do
+							if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+							ent:SetBodygroup(k, v)
+						end
+					end
+				end
+				break
+			end
+			//Undo parent skin change for zombie skin items
+			local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id]
+			if i.attributes and i.attributes["player skin override"] and ent:GetSkin() > 3 then
+				ent:SetSkin(ent:GetSkin() - 4)
+				//but what if the player had *two* equipped and only removed *one*?? this is stupid, who's going to do this?
+				for k, child in ipairs (ent:GetChildren()) do
+					if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
+						i = TF2Items.items[child.EntityMods.TF2ItemBrowser_Item.id]
+						if i.attributes and i.attributes["player skin override"] --[[and ent:SkinCount() > 4 and ent:GetSkin() <= 3]] then
+							ent:SetSkin(ent:GetSkin() + 4)
+							break
+						end
+					end
+				end
+			end
+		end
+
+		//Remove any existing submodels for the item as well
+		if e.TF2ItemBrowser_Item_SubModels then
+			for k, v in pairs (e.TF2ItemBrowser_Item_SubModels) do
+				if IsValid(v) then v:Remove() end
+			end
+		end
+
+	end
 
 	//Constraint used to keep submodels associated with the main item entity between dupes/saves
 	function constraint.TF2ItemBrowser_Item_SubModel(Ent1, Ent2, Role, Attach_Num, ply)
@@ -7460,7 +7511,7 @@ if SERVER then
 					Ent1.TF2ItemBrowser_Item_SubModels[Role] = Ent2
 				end
 				Ent2.TF2ItemBrowser_Item_IsSubModelOf = Ent1
-				Ent1:DeleteOnRemove(Ent2)
+				//No DeleteOnRemove here, that's handled by TF2ItemBrowser_Item_DoUnequip
 			else
 				//this constraint is also used to associate particle effects with an item; don't do submodel stuff for these
 				Ent1.TF2ItemBrowser_Item_Particles = Ent1.TF2ItemBrowser_Item_Particles or {}
@@ -7492,49 +7543,8 @@ if SERVER then
 	duplicator.RegisterConstraint("TF2ItemBrowser_Item_SubModel", constraint.TF2ItemBrowser_Item_SubModel, "Ent1", "Ent2", "Role", "Attach_Num", "ply")
 
 	duplicator.RegisterEntityModifier("TF2ItemBrowser_Item", function(ply, e, data)
-
+		//This entitymod exists to store item data on the entity for other funcs to access, and doesn't do anything on its own
 		duplicator.StoreEntityModifier(e, "TF2ItemBrowser_Item", data)
-
-		//When removed, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
-		//This is handled here and not in the input receive func, so that we can also run it when removing the item with undo.
-		e:CallOnRemove("TF2ItemBrowser_AttachedItem_OnRemove", function(e)
-			local ent = e:GetParent()
-			if !IsValid(ent) then return end
-			if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item and !e.TF2ItemBrowser_Item_IsSubModelOf then
-				for k, _ in pairs (GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg) do
-					//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
-					//item other than the one we're removing, and apply their ply_bg's again to a blank slate parent ent.
-					for i = 0, ent:GetNumBodyGroups() do
-						ent:SetBodygroup(i, 0)
-					end
-					for k, child in ipairs (ent:GetChildren()) do
-						if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
-							for k, v in pairs (GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg) do
-								if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-								ent:SetBodygroup(k, v)
-							end
-						end
-					end
-					break
-				end
-				//Undo parent skin change for zombie skin items
-				local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id]
-				if i.attributes and i.attributes["player skin override"] and ent:GetSkin() > 3 then
-					ent:SetSkin(ent:GetSkin() - 4)
-					//but what if the player had *two* equipped and only removed *one*?? this is stupid, who's going to do this?
-					for k, child in ipairs (ent:GetChildren()) do
-						if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
-							i = TF2Items.items[child.EntityMods.TF2ItemBrowser_Item.id]
-							if i.attributes and i.attributes["player skin override"] --[[and ent:SkinCount() > 4 and ent:GetSkin() <= 3]] then
-								ent:SetSkin(ent:GetSkin() + 4)
-								break
-							end
-						end
-					end
-				end
-			end
-		end)
-
 	end)
 
 	net.Receive("TF2ItemBrowser_AttachedItems_GetFromSv", function(_, ply)
