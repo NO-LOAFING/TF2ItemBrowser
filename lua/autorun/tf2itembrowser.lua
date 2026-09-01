@@ -2829,8 +2829,13 @@ if CLIENT then
 				LocalPlayer():ConCommand("cl_tf2itembrowser_iconsize " .. data)
 				icon_size = data
 				atticons:UpdateSize()
-				window:SetEntity(window:GetEntity())
 				window.RebuildIconList()
+				//Reset all the item icons inside atticons, so that they're rebuilt at the new size
+				local icons = {}
+				atticons:Clear()
+				net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
+					net.WriteEntity(window:GetEntity())
+				net.SendToServer()
 			end
 
 			local deselect_holder = vgui.Create("Panel", attopts)
@@ -7550,7 +7555,7 @@ if SERVER then
 	net.Receive("TF2ItemBrowser_AttachedItems_GetFromSv", function(_, ply)
 		local ent = net.ReadEntity()
 		if !IsValid(ent) then return end
-		for _, ent2 in ipairs (ent:GetChildren()) do
+		for _, ent2 in ipairs (table.Reverse(ent:GetChildren())) do //note: we reverse the table here so that when we attach items to a model, deselect it, then reselect it again, the items are returned in the same order they were attached in.
 			if ent2.EntityMods and ent2.EntityMods.TF2ItemBrowser_Item and !ent2.TF2ItemBrowser_Item_IsSubModelOf then
 				local data = ent2.EntityMods.TF2ItemBrowser_Item
 				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
