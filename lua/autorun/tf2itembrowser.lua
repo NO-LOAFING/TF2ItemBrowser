@@ -6939,7 +6939,11 @@ if SERVER then
 			if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
 			if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
 			if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
-			if #submodels == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
+			//For totally modelless items like gunslinger/hatlesses, always spawn an invisible model to associate the item with,
+			//which we'll attach to a ragdoll if there's no ent selected. For items like banners that just have all the submodels
+			//toggled off, only spawn an invisible model if we're attaching to an ent (so that we have an item ent that the browser 
+			//can use to turn the model back on); otherwise, just spawn nothing, which matches the preview in the spawn panel.
+			if #submodels == 0 and (IsValid(ent) or table.Count(vis.models) == 0) then table.insert(submodels, {role = "no_model_fallback"}) end
 
 			effect_mats = {
 				[EFFECT_GOLD] = "models/player/shared/gold_player",
@@ -7255,6 +7259,39 @@ if SERVER then
 					//multiple submodels like banners but they're all disabled), then instead spawn an invisible model so that
 					//we still have an entity to associate the item with.
 					model = "models/empty.mdl" //this comes with tf2, it's actually the dragon's fury projectile, but include a copy with this addon just in case this ceases to exist someday (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_projectile_dragons_fury.cpp#L167)
+					if !IsValid(ent) then
+						//if we're spawning a modelless item that isn't attached to anything, then also spawn a 
+						//default class ragdoll for it to attach to. this looks less awkward than clicking to 
+						//spawn a gunslinger or something and getting an invisible effect, but also makes sure 
+						//that spawning unusual hatlesses isn't inconsistent with equipping them to a class.
+						local model, skin = "models/player/" .. classes[data.class].shortname .. ".mdl", 0
+						if data.team then skin = 1 end
+						//again, like CreateItemEntity, we mostly just emulate sandbox's CCSpawn function and the 
+						//various functions it calls (gamemodes/sandbox/gamemode/commands.lua) to ensure that we 
+						//call all the necessary hooks.
+						if gamemode.Call("PlayerSpawnObject", ply, model, skin) and util.IsValidModel(model) and gamemode.Call( "PlayerSpawnRagdoll", ply, model) then
+							local rag = DoPlayerEntitySpawn(ply, "prop_ragdoll", model, skin)
+							if IsValid(rag) then 
+								gamemode.Call("PlayerSpawnedRagdoll", ply, model, rag)
+								//DoPropSpawnedEffect(rag)
+
+								undo.Create("prop_ragdoll")
+									undo.SetPlayer(ply)
+									undo.AddEntity(rag)
+								undo.Finish("#prop_ragdoll (" .. tostring( model ) .. ")")
+								ply:AddCleanup("ragdolls", rag)
+
+								parent = rag
+								//Don't set ent = rag because we don't want to do any of the other 
+								//stuff below like adding a separate undo; instead, just do all the
+								//playermodel bodygroup stuff again here.
+								for k, v in pairs (vis.ply_bg) do
+									if isstring(k) then k = rag:FindBodygroupByName(k) end //on some items, k is a number already
+									rag:SetBodygroup(k, v)
+								end
+							end
+						end
+					end
 					is_fallback = true
 				end
 				//keep this simple, just convert every submodel into an animprop if there's an animation. this is easier than trying 
