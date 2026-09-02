@@ -3049,6 +3049,7 @@ if CLIENT then
 
 						WriteItemDataTable(args[1]) //item data table
 						net.WriteBool(GetConVar("cl_tf2itembrowser_advbone"):GetBool())
+						if input == "attach_item_spawn" then net.WriteBool(args[2]) end //open spawn panel upon received?
 
 					elseif input == "attach_item_modify" then
 
@@ -6319,7 +6320,7 @@ if CLIENT then
 								icon.RebuildIconTexture()
 							end
 							function icon.DoRightClick()
-								//TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
+								////TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
 								//local menu = DermaMenu()
 
 								//local opt = menu:AddOption("Re-render", function()
@@ -6352,7 +6353,7 @@ if CLIENT then
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
 			button:SetText(GetTFLanguageString("#Equip") or "EQUIP")
 		else
-			button:SetText(GetTFLanguageString("#MMenu_Create") or "CREATE")
+			button:SetText(GetTFLanguageString("#MMenu_Create") or "CREATE") //this is the closest thing the tf2 localization files have to the verb "spawn"; gmod's community.properties has the word "spawn" but it might be referring to the location (noun) instead which isn't right
 		end
 		button:Dock(TOP)
 		button:DockMargin(side_margins,betweencategories-betweenitems,side_margins,betweencategories)
@@ -6361,7 +6362,7 @@ if CLIENT then
 			if IsValid(self.entity) then
 				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
 			elseif IsValid(TF2ItemBrowser:GetEntity()) then
-				TF2ItemBrowser:DoInput("attach_item_spawn", self.data)
+				TF2ItemBrowser:DoInput("attach_item_spawn", self.data, true)
 			else
 				TF2ItemBrowser:DoInput("item_spawn", self.data)
 			end
@@ -6700,19 +6701,42 @@ if CLIENT then
 
 	function PANEL:DoRightClick()
 
-		//TODO: this is just a place to put this debug option for now; reformat this later? add more options?
+		surface.PlaySound(self.sound_pressed) //not tf2-authentic to do this on right click, but feels better this way
 		local menu = DermaMenu()
 
-		local opt = menu:AddOption("Print item data in console", function()
-			MsgN(self.data.id, " ", TF2Items.items[self.data.id].name)
-			PrintTable(TF2Items.items[self.data.id])
-			MsgN("")
-		end)
-		opt:SetIcon("icon16/page_copy.png")
+		//quick-spawn options, to spawn/equip items quickly without customizing them first, or to unequip items more efficiently
+		local opt
+		if IsValid(self.entity) then
+			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Store_Remove" or "Remove"))), function()
+				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
+				surface.PlaySound(self.sound_drop)
+			end)
+		elseif IsValid(TF2ItemBrowser:GetEntity()) then
+			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Equip") or "EQUIP")), function()
+				TF2ItemBrowser:DoInput("attach_item_spawn", self.data, false)
+				surface.PlaySound(self.sound_drop)
+			end)
+		else
+			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#MMenu_Create") or "CREATE")), function()
+				TF2ItemBrowser:DoInput("item_spawn", self.data)
+				surface.PlaySound(self.sound_drop)
+			end)
+		end
+
+		//also put this debug option here
+		if GetConVarNumber("developer") >= 1 then
+			menu:AddSpacer()
+			local opt = menu:AddOption("Print item data in console", function()
+				MsgN(self.data.id, " ", TF2Items.items[self.data.id].name)
+				PrintTable(TF2Items.items[self.data.id])
+				MsgN("")
+			end)
+			//opt:SetIcon("icon16/page_copy.png") //this doesn't work well with the tf2-styled dropdown
+		end
 
 		self.menu = menu
 		menu:Open()
-		//AddTFStyleToVGUI(menu)
+		AddTFStyleToVGUI(menu)
 
 	end
 
@@ -6912,7 +6936,7 @@ if SERVER then
 		if !input then return end
 		input = table.KeyFromValue(BrowserInputs, input)
 
-		local ent, data, i, vis, merge_type, submodels, effect_mats
+		local ent, data, i, vis, merge_type, submodels, effect_mats, forceopen
 		if string.StartsWith(input, "attach_") then
 			ent = net.ReadEntity()
 		end
@@ -6922,6 +6946,7 @@ if SERVER then
 			i = TF2Items.items[data.id]
 			vis = GetItemModelVisuals(data)
 			merge_type = net.ReadBool()
+			if input == "attach_item_spawn" then forceopen = net.ReadBool() end
 
 			submodels = {}
 			if data.models.item then
@@ -7353,7 +7378,7 @@ if SERVER then
 				//	if !IsValid(e) then return end
 					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
 						net.WriteEntity(spawned_models[1])
-						net.WriteBool(true) //open upon received
+						net.WriteBool(forceopen) //open spawn panel upon received?
 						WriteItemDataTable(data)
 					net.Send(ply)
 				//end
@@ -7692,7 +7717,7 @@ if SERVER then
 				local data = ent2.EntityMods.TF2ItemBrowser_Item
 				net.Start("TF2ItemBrowser_AttachedItem_SendToCl", true)
 					net.WriteEntity(ent2)
-					net.WriteBool(false) //don't open upon received
+					net.WriteBool(false) //don't open spawn panel upon received
 					WriteItemDataTable(data)
 				net.Send(ply)
 			end
