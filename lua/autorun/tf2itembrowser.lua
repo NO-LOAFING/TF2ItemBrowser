@@ -4758,6 +4758,26 @@ if CLIENT then
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
 
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(gui_colors.LightRed)
+					else
+						surface.SetDrawColor(gui_colors.TanDark)
+					end
+					surface.SetMaterial(close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
+
 				local size = 48
 				local icons = vgui.Create("DIconLayout", container)
 				icons:Dock(TOP)
@@ -4974,6 +4994,26 @@ if CLIENT then
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(gui_colors.LightRed)
+					else
+						surface.SetDrawColor(gui_colors.TanDark)
+					end
+					surface.SetMaterial(close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
 
 				//diconlayout and color picker copied from paint dropdown, bah
 				local size = 48
@@ -5283,6 +5323,26 @@ if CLIENT then
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(gui_colors.LightRed)
+					else
+						surface.SetDrawColor(gui_colors.TanDark)
+					end
+					surface.SetMaterial(close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
 
 				local categories = {}
 				for k, v in ipairs ({"Series 1", "Series 2", "Halloween 2011", "Halloween 2012", "Robotic Boogaloo", "Series 3", "Halloween 2013", "Halloween 2014", "End of the Line", "Invasion"}) do
@@ -5711,6 +5771,26 @@ if CLIENT then
 				text:Dock(TOP)
 				text:DockMargin(0,0,0,8)
 				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(gui_colors.LightRed)
+					else
+						surface.SetDrawColor(gui_colors.TanDark)
+					end
+					surface.SetMaterial(close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
 
 				//the pre-paintkit collections actually have very few paintkits per individual weapon, so collapse them 
 				//into a single category for each update. also collapse the single-paintkit collections containing dragon 
