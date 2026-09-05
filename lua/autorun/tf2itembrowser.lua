@@ -407,6 +407,10 @@ local paintkit_rarities = {}
 local paintkit_ids_to_collections = {}
 
 for k, v in pairs (s.items) do
+	//clear any non-number keys - currently there's only one of these and it's a useless "default" item that gets cleared out anyway, but
+	//since we use string keys to tell custom items apart from normal ones, we want to be *absolutely* sure here to avoid things breaking.
+	if !isnumber(k) then s.items[k] = nil continue end
+
 	//clear useless contracts
 	if v.equip_type == "account" then s.items[k] = nil continue end
 
@@ -880,6 +884,32 @@ end
 TF2Items = s
 
 
+//Load custom items - items saved by the player will be in the data/ folder, while addons can include their own in their data_static/ folder.
+if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn't work here because the player is null at this point
+	MsgN("loading custom items")
+	local function ReadCustomItems(dir, path)
+		local files, _ = file.Find(dir .. "*.txt", path)
+		if !istable(files) then return end
+		for _, v in pairs (files) do
+			local f = file.Read(dir .. v, path)
+			if isstring(f) then
+				local name = string.StripExtension(v)
+				f = util.JSONToTable(f)
+				if !istable(f) then continue end
+				f.name = name
+				TF2Items.items[name] = f
+				MsgN("read custom item ", name, " from ", path)
+			end
+		end
+	end
+	ReadCustomItems("data_static/tf2itembrowser_customitems/", "GAME")
+	//in case of a name conflict, saved items in data folder take priority over addons
+	ReadCustomItems("tf2itembrowser_customitems/", "DATA")
+else
+	//TODO: network the server's table of custom items to non-host clients at some point
+end
+
+
 
 
 
@@ -1195,6 +1225,7 @@ if CLIENT then
 	local icon_unusual = Material("vgui/viewmode_unusual.vmt")
 	local icon_statclock = Material("vgui/viewmode_statclock.vmt")
 	local icon_strange = Material("vgui/viewmode_strange.vmt")
+	local icon_custom = Material("vgui/glyph_steamworkshop.vmt")
 	local snd_hover = "ui/item_info_mouseover.wav"
 	local snd_click = "tf_buttonclick.wav" //custom path because this gets overridden by hl2 sound
 	local snd_release = "tf_buttonclickrelease.wav" //^
@@ -2510,7 +2541,7 @@ if CLIENT then
 					or DoIncludeExcludeFilter(filters.holiday:GetValue(), v.holiday_restriction)
 					or DoIncludeExcludeFilter(filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
 					or DoIncludeExcludeFilter(filters.warpaint:GetValue(), v._paintkit and WP.Weapons.IsSupported(v.model_player))
-					//TODO: filter for custom items when we add those at the end
+					or DoIncludeExcludeFilter(filters.custom:GetValue(), isstring(k)) //custom items use id strings, while normal items use id numbers
 					then continue end
 
 					table.insert(window.icons_to_add, k)
@@ -3007,12 +3038,12 @@ if CLIENT then
 			function window:GetItemHasConflict(item, is_equipped)
 				if !window.EquipRegionConflicts then return end
 				local id
-				if isnumber(item) then
-					//this is an item id number
+				if !ispanel(item) then
+					//this is an item id
 					id = item
 				else
-					//this is an item icon panel, grab the id number from its data table
-					//it may not have built its data table yet; in this case, the id number will be in its place
+					//this is an item icon panel, grab the item id value from its data table
+					//it may not have built its data table yet; in this case, the item id value will be in its place
 					id = item.data
 					if istable(id) then id = id.id end
 					if !id then return end
@@ -3187,6 +3218,9 @@ if CLIENT then
 
 		//add corner icons; order is from the layout function in tf2 code (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L1919-L1952)
 		local icons = {}
+		if isstring(data.id) then //add our own icon to distinguish custom items
+			table.insert(icons, {icon = icon_custom})
+		end
 		if data.paint.enabled and !self.mat_overlay then //don't show paint icons for tools that display paint color in the image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3143-L3144)
 			//note: in tf2 code, this icon is also used to show decal tool image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3138-L3141)
 			local tab = {icon = icon_paint, paint = self.data.paint.col[false]}
@@ -6483,7 +6517,7 @@ if CLIENT then
 	function PANEL:Paint(w, h)
 
 		//This is a newly created icon being drawn for the first time, populate its data table
-		if isnumber(self.data) then self:SetDefaultData() end
+		if self.data and !istable(self.data) then self:SetDefaultData() end
 
 		if self.OpenNextFrame then
 			self:CreateSpawnPanel()
@@ -6789,7 +6823,13 @@ BrowserInputs = table.Flip(BrowserInputs)
 //This lets us add as many networkable strings to this table as we want, without having to manually assign each one a number.
 
 WriteItemDataTable = function(data)
-	net.WriteUInt(data.id, 15)
+	//normal items have id numbers, custom items have id strings
+	net.WriteBool(isstring(data.id))
+	if !isstring(data.id) then
+		net.WriteUInt(data.id, 15)
+	else
+		net.WriteString(data.id)
+	end
 	net.WriteUInt(data.class, 4)
 	net.WriteBool(data.team)
 	net.WriteUInt(data.style, 4)
@@ -6843,8 +6883,15 @@ WriteItemDataTable = function(data)
 end
 
 ReadItemDataTable = function()
+	local id
+	if !net.ReadBool() then
+		id = net.ReadUInt(15)
+	else
+		id = net.ReadString()
+	end
+
 	local tab = {
-		id = net.ReadUInt(15),
+		id = id,
 		class = net.ReadUInt(4),
 		team = net.ReadBool(),
 		style = net.ReadUInt(4),

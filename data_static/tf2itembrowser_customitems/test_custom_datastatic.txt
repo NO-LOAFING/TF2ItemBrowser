@@ -1,0 +1,24 @@
+{
+	"name": "test_custom_datastatic",
+	"item_name": "Test Item - From Data_Static",
+	"item_type_name": "Test Item",
+	"item_description": "This custom item is from an addon's data_static folder.",
+	"image_inventory": "backpack/workshop/player/items/pyro/hwn2025_hellscape/hwn2025_hellscape",
+	
+	"item_slot": "misc",
+	"equip_regions": {
+		"pyro_head_replacement": 1
+	},
+	"used_by_classes": {
+		"pyro": 1
+	},
+	"capabilities": {
+		"paintable": 1,
+	},
+	"model_player": "models/workshop/player/items/pyro/plasma_dome/plasma_dome.mdl",
+	"visuals": {
+		"player_bodygroups": {
+			"head": 1
+		}
+	}
+}
