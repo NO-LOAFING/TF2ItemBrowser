@@ -885,8 +885,10 @@ TF2Items = s
 
 
 //Load custom items - items saved by the player will be in the data/ folder, while addons can include their own in their data_static/ folder.
-if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn't work here because the player is null at this point
-	MsgN("loading custom items")
+//These are determined by the server, not clients, because they need to be consistent between all users - if we want this feature to be useful in 
+//multiplayer, then we want to have item defs for models that the server has available, not for whatever players happen to have saved on their end.
+if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn't work here because the player entity is null at this point
+	//in singleplayer, the client has access to the same data folder as the server, so it can just read the files on its own without networking.
 	local function ReadCustomItems(dir, path)
 		local files, _ = file.Find(dir .. "*.txt", path)
 		if !istable(files) then return end
@@ -898,7 +900,6 @@ if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn
 				if !istable(f) then continue end
 				f.name = name
 				TF2Items.items[name] = f
-				MsgN("read custom item ", name, " from ", path)
 			end
 		end
 	end
@@ -906,7 +907,45 @@ if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn
 	//in case of a name conflict, saved items in data folder take priority over addons
 	ReadCustomItems("tf2itembrowser_customitems/", "DATA")
 else
-	//TODO: network the server's table of custom items to non-host clients at some point
+	//in multiplayer, connecting clients won't have access to the server's data folder, so tell 
+	//them to request the table of custom items from the server once they open the browser.
+	TF2ItemBrowser_RequestCustomItems = true
+end
+
+if SERVER then
+	util.AddNetworkString("TF2ItemBrowser_CustomItems_GetFromSv")
+	util.AddNetworkString("TF2ItemBrowser_CustomItems_SendToCl")
+
+	net.Receive("TF2ItemBrowser_CustomItems_GetFromSv", function(_, ply)
+		local tab = {}
+		for k, v in pairs (TF2Items.items) do
+			if isstring(k) then tab[k] = v end
+		end
+
+		net.Start("TF2ItemBrowser_CustomItems_SendToCl", true)
+			//do this a little more efficiently than net.WriteTable
+			net.WriteUInt(table.Count(tab), 12) //4095 custom items is totally overkill
+			for k, v in pairs (tab) do
+				net.WriteString(k)
+				net.WriteType(v)
+			end
+		net.Send(ply)
+	end)
+else
+	net.Receive("TF2ItemBrowser_CustomItems_SendToCl", function()
+		local tab = {}
+		for i = 1, net.ReadUInt(12) do
+			tab[net.ReadString()] = net.ReadType()
+		end
+
+		if TF2ItemBrowser_RequestCustomItems then
+			for k, v in pairs (tab) do
+				TF2Items.items[k] = v
+			end
+			TF2ItemBrowser_RequestCustomItems = nil
+			if IsValid(TF2ItemBrowser) then TF2ItemBrowser:RebuildIconList() end
+		end
+	end)
 end
 
 
@@ -2094,7 +2133,18 @@ if CLIENT then
 			//iconlist_loading:SetZPos(10) //this needs to render above the iconlist
 			iconlist_loading:SetMouseInputEnabled(false)
 			function iconlist_loading:Paint(w, h)
-				if !window.icons_to_add_showloader then return end
+				local load_text, load_font, load_progress
+				if TF2ItemBrowser_RequestCustomItems then
+					load_text = "Retrieving custom items..."
+					load_progress = 0
+				elseif window.icons_to_add_showloader then
+					load_text = tostring(window.icons_to_add_key-1) .. " / " .. tostring(#window.icons_to_add)
+					load_progress = (window.icons_to_add_key-1)/#window.icons_to_add
+				end
+				if !load_text then return end
+				surface.SetFont("TF2ItemBrowser_ItemDesc")
+				local load_w, _ = surface.GetTextSize(load_text)
+				load_w = math.max(load_w, 120)
 
 				local w, h = right_scroll:GetSize()
 				surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
@@ -2102,18 +2152,18 @@ if CLIENT then
 
 				local mid_w, mid_h = (w-right_scroll.VBar:GetWide()-item_icon_sizes[icon_size].gap_w)/2, h/2
 				local x = mid_h-62.5
-				GrayDialogBorder(mid_w-83, x, 166, 125)
+				GrayDialogBorder(mid_w-((load_w+46)/2), x, load_w+46, 125)
 				surface.SetMaterial(spinner)
 				x = x-6
 				surface.DrawTexturedRect(mid_w-50, x, 100, 100)
 
 				surface.SetDrawColor(gui_colors.TanDark)
 				x = x+100-11
-				surface.DrawRect(mid_w-60, x, 120, 4)
+				surface.DrawRect(mid_w-(load_w/2), x, load_w, 4)
 				surface.SetDrawColor(gui_colors.LightRed)
-				surface.DrawRect(mid_w-60, x, 120*((window.icons_to_add_key-1)/#window.icons_to_add), 4)
+				surface.DrawRect(mid_w-(load_w/2), x, load_w*load_progress, 4)
 				x = x+15
-				draw.SimpleText(tostring(window.icons_to_add_key-1) .. " / " .. tostring(#window.icons_to_add), "TF2ItemBrowser_ItemDesc", mid_w, x, gui_colors.LightRed, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+				draw.SimpleText(load_text, "TF2ItemBrowser_ItemDesc", mid_w, x, gui_colors.LightRed, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 			end
 			right_scroll.OnChildAdded = old_OnChildAdded
 
@@ -2173,7 +2223,7 @@ if CLIENT then
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemName")
 			text:SetColor(gui_colors.TanDark)
-			text:SetText(("(10030 items)"))
+			text:SetText("")
 			text:Dock(FILL)
 			window.ItemCountText = text
 
@@ -2433,7 +2483,7 @@ if CLIENT then
 
 
 			window.RebuildIconList = function()
-				if filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
+				if TF2ItemBrowser_RequestCustomItems or filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
 
 				window.icons = {}
 				window.icons_to_add = {}
@@ -2601,6 +2651,10 @@ if CLIENT then
 			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
 			local iconsperframe = 100
 			function window:Think(...)
+				if TF2ItemBrowser_RequestCustomItems then
+					net.Start("TF2ItemBrowser_CustomItems_GetFromSv", true)
+					net.SendToServer()
+				end
 				if self.icons_to_add and self.icons_to_add_key then
 					for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
 						local v = self.icons_to_add[k]
