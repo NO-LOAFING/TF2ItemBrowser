@@ -987,7 +987,7 @@ end
 //Given an item data table with id, class, team, style, returns a table with the models, skin, and bodygroups to use.
 local function GetItemModelVisuals(data)
 
-	local i = TF2Items.items[data.id]
+	local i = TF2Items.items[data.id] or {}
 	local vis = {
 		models = {},
 		skin = nil,
@@ -1083,7 +1083,7 @@ end
 
 local function GetItemDefaultParticleEffects(data)
 
-	local i = TF2Items.items[data.id]
+	local i = TF2Items.items[data.id] or {}
 	local pe_def = {}
 
 	if i.visuals and i.visuals.attached_particlesystems then
@@ -3043,9 +3043,9 @@ if CLIENT then
 				//Get all equip regions occupied by equipped items, and track how many items are occupying each region
 				local regions = {}
 				for k, v in pairs (atticons.icons) do
-					local r = TF2Items.items[v.data.id].equip_regions
-					if !r then continue end
-					for k2, v2 in pairs (r) do
+					local i = TF2Items.items[v.data.id]
+					if !i or !i.equip_regions then continue end
+					for k2, v2 in pairs (i.equip_regions) do
 						regions[k2] = (regions[k2] or 0) + 1
 						//If this region has an equip_conflicts table, add all of those too 
 						//(i.e. if a whole_head item is equipped, occupy the hat region too)
@@ -3058,7 +3058,7 @@ if CLIENT then
 						//(i.e. if a hat item is equipped, occupy the whole_head region too)
 						for k3, v3 in pairs (TF2Items.equip_conflicts) do
 							for k4, v4 in pairs (v3) do
-								if r[k4] then
+								if i.equip_regions[k4] then
 									regions[k3] = (regions[k3] or 0) + 1
 								end
 							end
@@ -3103,10 +3103,10 @@ if CLIENT then
 					if !id then return end
 				end
 
-				local r = TF2Items.items[id]
-				if !r or !r.equip_regions then return end
+				local i = TF2Items.items[id]
+				if !i or !i.equip_regions then return end
 				local conflicting
-				for k, v in pairs (r.equip_regions) do
+				for k, v in pairs (i.equip_regions) do
 					//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict.
 					//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict.
 					if window.EquipRegionConflicts[k] and (!is_equipped or window.EquipRegionConflicts[k] > 1) then
@@ -3189,7 +3189,7 @@ if CLIENT then
 			//this can be called with no arg just to make the panel acknowledge changes made to the data table
 			data = self.data
 		end
-		local i = TF2Items.items[data.id]
+		local i = TF2Items.items[data.id] or {}
 
 		//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
 		local vis = GetItemModelVisuals(data)
@@ -3233,6 +3233,8 @@ if CLIENT then
 			self.mat = nil
 			self.ImageToQueue = nil
 			self.IconRenderToQueue = true
+		elseif img_override == nil then
+			self.no_image = true
 		else
 			//Tell our paint func to queue loading a standard icon texture from the game files
 			self.IconRenderToQueue = nil
@@ -3317,7 +3319,7 @@ if CLIENT then
 		//to populate the data table. This is so we don't have to run all this a thousand times at once for icons we might not even use.
 		local id = self.data
 		if istable(id) then id = self.data.id end
-		local i = TF2Items.items[id]
+		local i = TF2Items.items[id] or {}
 
 		local _, class = TF2ItemBrowser.filters.class:GetSelected()
 		if class == 1 then
@@ -3494,7 +3496,14 @@ if CLIENT then
 
 		local desc = {}
 		local i = TF2Items.items[self.data.id]
-		if !i then return desc end
+		if !i then
+			if !isstring(self.data.id) then
+				table.insert(desc, {str = "Valve item ID \"" .. self.data.id .. "\" not found.\nThis shouldn't happen, report this bug!", col = desc_colors.neutral})
+			else
+				table.insert(desc, {str = "Custom item ID \"" .. self.data.id .. "\" not found.\nThis could be from an addon that isn't mounted, a local custom item that was deleted, or another player's custom item from a dupe or save.", col = desc_colors.neutral})
+			end
+			return desc 
+		end
 
 		if self.rarity then
 			//Item rarity; based on CEconItemDescription::Generate_ItemRarityDesc https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1521
@@ -4085,8 +4094,13 @@ if CLIENT then
 		local models = {}
 		local particles = {}
 
-		local i = TF2Items.items[self.data.id]
+		local i = TF2Items.items[self.data.id] or {}
 		local vis = GetItemModelVisuals(self.data)
+		//if this icon is for an invalid item (i.e. a custom item from an outdated save), then show the entity's current model in the panel.
+		if !TF2Items.items[self.data.id] and IsValid(self.entity) then
+			vis.models.item = self.entity:GetModel()
+			self.data.models.item = true
+		end
 		local submodels = {}
 		if self.data.models.item then
 			table.insert(submodels, {role = "item"})
@@ -4410,7 +4424,7 @@ if CLIENT then
 
 	function PANEL:CreateSpawnPanel()
 
-		local i = TF2Items.items[self.data.id]
+		local i = TF2Items.items[self.data.id] or {}
 		local betweenitems = 8
 
 		if IsValid(TF2ItemBrowser.SpawnPanel) then
@@ -4627,31 +4641,33 @@ if CLIENT then
 			//Hide the class selector if all classes use the same model (i.e. medals)
 			//Also compare the bodygroups because of use_per_class_bodygroups.
 			local should_show_class = false
-			for k, v in pairs (i.used_by_classes) do
-				if k != classes[self.data.class].longname then
-					local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[k], team = self.data.team, style = self.data.style})
-					if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
-						for k, v in pairs (vis2.item_bg) do
-							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
-							//badges like the dueling badges have useless bodygroup setters for some reason
-							if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
-								should_show_class = true
-								break
-							end
-						end
-						if should_show_class then break end
-					end
-					for k, v in pairs (vis2.models) do
-						if istable(v) then
-							for k2, v2 in pairs (v) do
-								if vis.models[k][k2] != v2 then
+			if i.used_by_classes then
+				for k, v in pairs (i.used_by_classes) do
+					if k != classes[self.data.class].longname then
+						local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[k], team = self.data.team, style = self.data.style})
+						if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
+							for k, v in pairs (vis2.item_bg) do
+								//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+								//badges like the dueling badges have useless bodygroup setters for some reason
+								if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
 									should_show_class = true
 									break
 								end
 							end
-						elseif vis.models[k] != v then
-							should_show_class = true
-							break
+							if should_show_class then break end
+						end
+						for k, v in pairs (vis2.models) do
+							if istable(v) then
+								for k2, v2 in pairs (v) do
+									if vis.models[k][k2] != v2 then
+										should_show_class = true
+										break
+									end
+								end
+							elseif vis.models[k] != v then
+								should_show_class = true
+								break
+							end
 						end
 					end
 				end
@@ -4749,7 +4765,7 @@ if CLIENT then
 
 		pnl.class = AddDropdown(GetTFLanguageString("#TF_ImportFile_Models") or "Class:", function(drop)
 			for k, v in ipairs (classes) do //add class options in class order
-				if i.used_by_classes[v.longname] then
+				if i.used_by_classes and i.used_by_classes[v.longname] then
 					drop:AddChoice(GetTFLanguageString(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
 				end
 			end
@@ -6735,7 +6751,7 @@ if CLIENT then
 					return true
 				end)
 			end
-		else
+		elseif !self.no_image then
 			//show loading icon
 			surface.SetMaterial(spinner)
 			surface.DrawTexturedRect((w/2)-(h/2), 0, h, h)
@@ -7044,7 +7060,7 @@ if SERVER then
 
 		if input == "item_spawn" or input == "attach_item_spawn" or input == "attach_item_modify" then
 			data = ReadItemDataTable()
-			i = TF2Items.items[data.id]
+			i = TF2Items.items[data.id] or {}
 			vis = GetItemModelVisuals(data)
 			merge_type = net.ReadBool()
 			if input == "attach_item_spawn" then forceopen = net.ReadBool() end
@@ -7566,7 +7582,7 @@ if SERVER then
 				end
 
 				//Update the model and skin of each submodel
-				if model != e2:GetModel() then
+				if model and model != e2:GetModel() then //note: model will be nil here if we're toggling the team on an invalid custom item; just skip this part in that case
 					e2:SetModel(model)
 					//For advbonemerge ents, replace the boneinfo table with a new one, because the new model's bones might not match
 					if e2.AdvBone_BoneInfo then
@@ -7734,7 +7750,7 @@ if SERVER then
 				break
 			end
 			//Undo parent skin change for zombie skin items
-			local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id]
+			local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id] or {}
 			if i.attributes and i.attributes["player skin override"] and ent:GetSkin() > 3 then
 				ent:SetSkin(ent:GetSkin() - 4)
 				//but what if the player had *two* equipped and only removed *one*?? this is stupid, who's going to do this?
