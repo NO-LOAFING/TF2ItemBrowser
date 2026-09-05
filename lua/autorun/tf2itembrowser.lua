@@ -6896,7 +6896,7 @@ WriteItemDataTable = function(data)
 	//normal items have id numbers, custom items have id strings
 	net.WriteBool(isstring(data.id))
 	if !isstring(data.id) then
-		net.WriteUInt(data.id, 15)
+		net.WriteUInt(data.id, 15) //max 32767; as of summer 2026 the highest spawnable item id is 31629, so probably a while before we need to increase this
 	else
 		net.WriteString(data.id)
 	end
@@ -6938,7 +6938,7 @@ WriteItemDataTable = function(data)
 	end
 
 	net.WriteBool(data.pe_def)
-	net.WriteUInt(data.pe_unusual, 15) //the whopper
+	net.WriteUInt(data.pe_unusual, 10) //max 1023; as of summer 2026 the highest effect id that can be applied to a hat or weapon is 704 - taunt fx go as high as 3229, and killstreakers go all the way up to 22008, but we currently don't need to spawn either of those, so we'll revisit this later if necessary
 	net.WriteBool(data.pe_unusual_offset != nil)
 	if data.pe_unusual_offset != nil then
 		net.WriteFloat(data.pe_unusual_offset)
@@ -6946,7 +6946,7 @@ WriteItemDataTable = function(data)
 
 	net.WriteBool(data.wp.enabled)
 	if data.wp.enabled then
-		net.WriteUInt(data.wp.id, 10)
+		net.WriteUInt(data.wp.id, 10) //max 1023; as of summer 2026 the highest paintkit id is 442, so very unlikely we'll ever need more
 		net.WriteUInt(data.wp.wear, 3)
 		net.WriteString(data.wp.seed)
 	end
@@ -7017,7 +7017,7 @@ ReadItemDataTable = function()
 	end
 
 	tab.pe_def = net.ReadBool()
-	tab.pe_unusual = net.ReadUInt(15)
+	tab.pe_unusual = net.ReadUInt(10)
 	if net.ReadBool() then
 		tab.pe_unusual_offset = net.ReadFloat()
 	end
