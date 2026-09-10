@@ -1533,6 +1533,88 @@ if CLIENT then
 				surface.DrawRect(0,0,w,h)
 				draw.SimpleText("8", "TF2ItemBrowser_GUISymbols", w/2, h/2, gui_colors.Gray, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER) //right-pointing arrow
 			end
+		elseif class == "DFrame" then
+			local title = pnl:GetTitle()
+			local header = 30 //this has to be pretty tall to fit the close button comfortably
+			pnl:SetTitle("")
+			pnl:ShowCloseButton(false)
+			pnl:DockPadding(8, header + 8, 8, 8)
+
+
+			local text = vgui.Create("DLabel", pnl)
+			text:SetContentAlignment(4) //top middle
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.LightRed)
+			text:SetText(">>")
+			text:SizeToContents()
+			text:SetPos(8, ((header)/2) - (text:GetTall()/2) + 1)
+			local w = text:GetWide()
+
+			local text = vgui.Create("DLabel", pnl)
+			text:SetContentAlignment(4) //top middle
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(gui_colors.TanLight)
+			text:SetText(title)
+			text:SizeToContents()
+			text:SetPos(8+w+8, ((header)/2) - (text:GetTall()/2) + 1)
+
+			local close = vgui.Create("DButton", pnl)
+			close:SetText("")
+			close:SetSize(22,22)
+			function close:Paint(w,h)
+				if self.Depressed then
+					surface.SetDrawColor(color_white)
+				elseif self.Hovered then
+					surface.SetDrawColor(gui_colors.LightRed)
+				else
+					surface.SetDrawColor(gui_colors.TanDark)
+				end
+				surface.SetMaterial(close_button)
+				surface.DrawTexturedRect(0,0,w,h)
+			end
+			AddTFButtonSounds(close)
+			function close:DoClick()
+				pnl:Close()
+			end
+
+			function pnl:PerformLayout()
+				close:SetPos(self:GetWide()-22-4, 4)
+			end
+
+			function pnl:OnMousePressed() //(based off https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L208-L224)
+				local screenX, screenY = self:LocalToScreen( 0, 0 )
+
+				if ( self.m_bSizable && gui.MouseX() > ( screenX + self:GetWide() - 20 ) && gui.MouseY() > ( screenY + self:GetTall() - 20 ) ) then
+					self.Sizing = { gui.MouseX() - self:GetWide(), gui.MouseY() - self:GetTall() }
+					self:MouseCapture( true )
+					return
+				end
+
+				if ( self:GetDraggable() && gui.MouseY() < ( screenY + header ) ) then //the only change; use our taller header height here
+					self.Dragging = { gui.MouseX() - self.x, gui.MouseY() - self.y }
+					self:MouseCapture( true )
+					return
+				end
+			end
+
+			function pnl:Paint(w, h)
+				//draw header
+				surface.SetDrawColor(gui_colors._header)
+				surface.DrawRect(0,0,w,header)
+				//draw main body
+				surface.SetDrawColor(gui_colors.TanDarker)
+				surface.DrawRect(0,header,w,h-header)
+			end
+
+			local old_Think = pnl.Think
+			function pnl:Think(...)
+				old_Think(self, ...)
+				//Do hover cursor for our larger header here (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L183)
+				local screenX, screenY = self:LocalToScreen(0, 0)
+				if --[[self.Hovered and]] gui.MouseY() < (screenY + header) then
+					self:SetCursor("sizeall")
+				end
+			end
 		end
 	end
 	local function TFStyleVGUI(class, par, alt_style)
@@ -1585,6 +1667,23 @@ if CLIENT then
 			end
 			old_Paint(self,w,h,...)
 		end
+	end
+	//convenience func for adding labels to dropdown dcomboboxes and such
+	local function AddTFLabelToVGUI(child, label)
+		local parent = child:GetParent()
+		local pnl = vgui.Create("Panel", parent)
+		pnl.Label = vgui.Create("DLabel", pnl)
+		pnl.Label:SetColor(gui_colors.TanLight)
+		pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+		pnl.Label:SetText(label)
+		pnl.Label:Dock(LEFT)
+		child:SetParent(pnl)
+		child:Dock(FILL)
+		pnl:SetHeight(20)
+		function pnl.PerformLayout(_, w, h)
+			pnl.Label:SetWide(w / 2.4)
+		end
+		return pnl
 	end
 
 
@@ -2044,76 +2143,12 @@ if CLIENT then
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
 
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
-		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit, hrmph
+		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit in the desktop icon's label, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
 		width		= 918,
 		height		= 688,
 		onewindow	= true,
-		init		= function(widgetIcon, window)
-
-			local header = 30 //this has to be pretty tall to fit the close button comfortably
-			window:SetTitle("")
-			//window:SetIcon("games/16/tf.png")
-			window:ShowCloseButton(false)
-			window:DockPadding(8, header + 8, 8, 8)
-
-
-			local text = vgui.Create("DLabel", window)
-			text:SetContentAlignment(4) //top middle
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(gui_colors.LightRed)
-			text:SetText(">>")
-			text:SizeToContents()
-			text:SetPos(8, ((header)/2) - (text:GetTall()/2) + 1)
-			local w = text:GetWide()
-
-			local text = vgui.Create("DLabel", window)
-			text:SetContentAlignment(4) //top middle
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(gui_colors.TanLight)
-			text:SetText("TF2 Item Browser")
-			text:SizeToContents()
-			text:SetPos(8+w+8, ((header)/2) - (text:GetTall()/2) + 1)
-
-			local close = vgui.Create("DButton", window)
-			close:SetText("")
-			close:SetSize(22,22)
-			function close:Paint(w,h)
-				if self.Depressed then
-					surface.SetDrawColor(color_white)
-				elseif self.Hovered then
-					surface.SetDrawColor(gui_colors.LightRed)
-				else
-					surface.SetDrawColor(gui_colors.TanDark)
-				end
-				surface.SetMaterial(close_button)
-				surface.DrawTexturedRect(0,0,w,h)
-			end
-			AddTFButtonSounds(close)
-			function close:DoClick()
-				window:Close()
-			end
-
-			function window:PerformLayout()
-				close:SetPos(self:GetWide()-22-4, 4)
-			end
-
-			function window:OnMousePressed() //(based off https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L208-L224)
-				local screenX, screenY = self:LocalToScreen( 0, 0 )
-
-				if ( self.m_bSizable && gui.MouseX() > ( screenX + self:GetWide() - 20 ) && gui.MouseY() > ( screenY + self:GetTall() - 20 ) ) then
-					self.Sizing = { gui.MouseX() - self:GetWide(), gui.MouseY() - self:GetTall() }
-					self:MouseCapture( true )
-					return
-				end
-
-				if ( self:GetDraggable() && gui.MouseY() < ( screenY + header ) ) then //the only change; use our taller header height here
-					self.Dragging = { gui.MouseX() - self.x, gui.MouseY() - self.y }
-					self:MouseCapture( true )
-					return
-				end
-			end
-			
+		init		= function(widgetIcon, window)			
 
 			local right_holder = vgui.Create("DPanel", window)
 			right_holder.Paint = function() end
@@ -2192,15 +2227,9 @@ if CLIENT then
 			divider:SetLeftWidth(230)
 
 
+			window:SetTitle("TF2 Item Browser")
+			AddTFStyleToVGUI(window)
 			TF2ItemBrowser = window
-			function window:Paint(w, h)
-				//draw header
-				surface.SetDrawColor(gui_colors._header)
-				surface.DrawRect(0,0,w,header)
-				//draw main body
-				surface.SetDrawColor(gui_colors.TanDarker)
-				surface.DrawRect(0,header,w,h-header)
-			end
 			window:SetSizable(true)
 			local p1, _, p2, _ = window:GetDockPadding()
 			local p3, _, p4, _ = left_holder:GetDockPadding()
@@ -2240,27 +2269,17 @@ if CLIENT then
 			end
 
 			local function AddDropdownFilter(label, populatefunc, select_extras)
-				local drop = vgui.Create("Panel", filters)
-				drop.Label = vgui.Create("DLabel", drop)
-				drop.Label:SetColor(gui_colors.TanLight)
-				drop.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-				drop.Label:SetText(label)
-				drop.Label:Dock(LEFT)
-				drop.Combo = TFStyleVGUI("DComboBox", drop)
-				drop.Combo:Dock(FILL)
-				drop:SetHeight(20)
-				drop:Dock(TOP)
-				drop:DockMargin(0,0,0,betweenitems)
-				function drop.PerformLayout(_, w, h)
-					drop.Label:SetWide(w / 2.4)
-				end
-				drop.Combo:SetSortItems(false)
-				populatefunc(drop.Combo)
-				function drop.Combo.OnSelect(_, index, value, data)
+				local combo = TFStyleVGUI("DComboBox", filters)
+				local pnl = AddTFLabelToVGUI(combo, label)
+				pnl:Dock(TOP)
+				pnl:DockMargin(0,0,0,betweenitems)
+				combo:SetSortItems(false)
+				populatefunc(combo)
+				function combo.OnSelect(_, index, value, data)
 					if select_extras then select_extras() end
 					window.RebuildIconList()
 				end
-				return drop.Combo
+				return combo
 			end
 
 			filters.class = AddDropdownFilter(GetTFLanguageString("#TF_Tag_Category_Class") or "Class", function(self)
@@ -2471,7 +2490,7 @@ if CLIENT then
 			button:Dock(RIGHT)
 			button:DockMargin(0,0,0,0)
 			button.DoClick = function()
-				//TODO: open custom item dialog
+				window:OpenCustomItemEditor()
 			end
 
 			filters:InvalidateLayout(true)
@@ -2707,11 +2726,6 @@ if CLIENT then
 					self:SetEntity(NULL)
 				end
 				old_Think(self, ...)
-				//Also do hover cursor for our larger header here (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dframe.lua#L183)
-				local screenX, screenY = self:LocalToScreen(0, 0)
-				if --[[self.Hovered and]] gui.MouseY() < (screenY + header) then
-					self:SetCursor("sizeall")
-				end
 			end
 
 
@@ -3160,8 +3174,60 @@ if CLIENT then
 
 			end
 
+
+
+
+
+
+
+
+
+
+			function window:OpenCustomItemEditor(id)
+
+				if !IsValid(TF2ItemBrowser_Editor) then
+					
+					local editor = g_ContextMenu:Add("DFrame")
+					editor:SetSize(900,750) //TODO: finalize later
+					editor:SetTitle("Custom Item Editor")
+					editor:Center()
+					AddTFStyleToVGUI(editor)
+					TF2ItemBrowser_Editor = editor
+					editor:SetSizable(true)
+
+					local scroll = TFStyleVGUI("DScrollPanel", editor)
+					scroll:Dock(FILL)
+
+					//Place all controls in 3 side-by-side columns of equal width
+					local holder_holder = vgui.Create("Panel", scroll)
+					holder_holder:Dock(FILL)
+					local holder_1 = vgui.Create("Panel", holder_holder)
+					holder_1:Dock(LEFT)
+					local holder_2 = vgui.Create("Panel", holder_holder)
+					holder_2:Dock(LEFT)
+					holder_2:DockMargin(8,0,8,0)
+					local holder_3 = vgui.Create("Panel", holder_holder)
+					holder_3:Dock(LEFT)
+					function holder_holder:PerformLayout(w, h)
+						local holder_w = (w-(8*2))/3
+						holder_1:SetWide(holder_w)
+						holder_2:SetWide(holder_w)
+						holder_3:SetWide(holder_w)
+					end
+
+					--[[
+					function holder_3:Paint(w,h)
+						draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
+					end]]
+				end
+
+				//TODO: if TF2Items.items[id], then set the values on all editor elements using the item data table
+
+			end
+
 		end
 	})
+
 
 
 
@@ -4739,28 +4805,18 @@ if CLIENT then
 		end	
 
 		local function AddDropdown(label, populatefunc, select_extras)
-			local drop = vgui.Create("Panel", pnl)
-			drop.Label = vgui.Create("DLabel", drop)
-			drop.Label:SetColor(gui_colors.TanLight)
-			drop.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			drop.Label:SetText(label)
-			drop.Label:Dock(LEFT)
-			drop.Combo = TFStyleVGUI("DComboBox", drop)
-			drop.Combo:Dock(FILL)
-			drop:SetHeight(20)
-			drop:Dock(TOP)
-			drop:DockMargin(side_margins,0,side_margins,betweenitems)
-			function drop.PerformLayout(_, w, h)
-				drop.Label:SetWide(w / 2.4)
-			end
-			drop.Combo:SetSortItems(false)
-			populatefunc(drop.Combo)
-			function drop.Combo.OnSelect(_, index, value, data)
+			local combo = TFStyleVGUI("DComboBox", pnl)
+			local _pnl = AddTFLabelToVGUI(combo, label)
+			_pnl:Dock(TOP)
+			_pnl:DockMargin(side_margins,0,side_margins,betweenitems)
+			combo:SetSortItems(false)
+			populatefunc(combo)
+			function combo.OnSelect(_, index, value, data)
 				if select_extras then select_extras(data) end
-				drop.Combo.value = data
+				combo.value = data
 				pnl.OnSettingChanged()
 			end
-			return drop.Combo
+			return combo
 		end
 
 		pnl.class = AddDropdown(GetTFLanguageString("#TF_ImportFile_Models") or "Class:", function(drop)
@@ -6032,16 +6088,10 @@ if CLIENT then
 				icons:SetSpaceX(8)
 				icons:SetSpaceY(8)
 
-				local entrypnl = vgui.Create("Panel", container)
+				local entry = TFStyleVGUI("DTextEntry", container, true)
+				local entrypnl = AddTFLabelToVGUI(entry, "Seed")
 				entrypnl:Dock(TOP)
 				entrypnl:DockMargin(0,16,0,0)
-				local label = vgui.Create("DLabel", entrypnl)
-				label:SetColor(gui_colors.TanLight)
-				label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-				label:SetText("Seed")
-				label:Dock(LEFT)
-				local entry = TFStyleVGUI("DTextEntry", entrypnl, true)
-				entry:Dock(FILL)
 				entry:SetNumeric(true)
 				entry:SetText(self.data.wp.seed or "0")
 				entry.OnEnter = function()
@@ -6054,16 +6104,7 @@ if CLIENT then
 				entry.OnFocusChanged = function(_, b) 
 					if !b then entry:OnEnter() end
 				end
-				function entrypnl.PerformLayout(_, w, h)
-					local w2, h2 = label:GetTextSize()
-					//label:SetWide(w2 + 14*2)
-					label:SetWide(w / 2.4)
-				end
-
 				local button = TFStyleVGUI("DButton", entrypnl)
-				//button:SetHeight(30) //backpack page button proportions
-				//entrypnl:SetTall(button:GetTall())
-				entrypnl:SetTall(entry:GetTall())
 				button:SetText(GetTFLanguageString("#TF_ItemPreview_PaintkitSeed") or "Randomize")
 				button:SizeToContentsX(20)
 				button:Dock(RIGHT)
@@ -6094,27 +6135,17 @@ if CLIENT then
 
 				//The rest of these paintkit settings are global convars, not saved to the entity, so categorize them separately
 
-				local drop3 = vgui.Create("Panel", container)
-				drop3.Label = vgui.Create("DLabel", drop3)
-				drop3.Label:SetColor(gui_colors.TanLight)
-				drop3.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-				drop3.Label:SetText("Texture Resolution (Global)")
-				drop3.Label:Dock(LEFT)
-				drop3.Combo = AddSubDropdown(drop3)
-				drop3.Combo:Dock(FILL)
-				drop3:SetHeight(20)
-				drop3:Dock(TOP)
-				drop3:DockMargin(0,16,0,0)
-				function drop3.PerformLayout(_, w, h)
-					drop3.Label:SetWide(w / 2.4)
-				end
-				drop3.Combo:SetSortItems(false)
+				local combo = AddSubDropdown(container)
+				local combopnl = AddTFLabelToVGUI(combo, "Texture Resolution (Global)")
+				combopnl:Dock(TOP)
+				combopnl:DockMargin(0,16,0,0)
+				combo:SetSortItems(false)
 				local cv = GetConVar("warpaint_rtt_resolution")
 				if cv then cv = cv:GetString() end
-				drop3.Combo:AddChoice("512x512 (Fast)", "512", cv == "512")
-				drop3.Combo:AddChoice("1024x1024 (Balanced)", "1024", cv == "1024")
-				drop3.Combo:AddChoice("2048x2048 (High Quality)", "2048", cv == "2048")
-				function drop3.Combo.OnSelect(_, index, value, data)
+				combo:AddChoice("512x512 (Fast)", "512", cv == "512")
+				combo:AddChoice("1024x1024 (Balanced)", "1024", cv == "1024")
+				combo:AddChoice("2048x2048 (High Quality)", "2048", cv == "2048")
+				function combo.OnSelect(_, index, value, data)
 					RunConsoleCommand("warpaint_rtt_resolution", tostring(data or value))
 					//wait a moment for the convar change to take effect, otherwise the updated skin it generates will use the old 
 					//setting. not sure if this is the right approach (are there circumstances where this isn't enough time?), is 
@@ -6220,7 +6251,7 @@ if CLIENT then
 						scratch_help:SetTall(0)
 					end
 					local w, h = icons.CurW, icons.CurH
-					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + drop3:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
+					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + combopnl:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
 						icons_holder:SetSize(w, h) //set this again to prevent the height from getting clobbered when the "increased intensity wears" check is toggled multiple times
