@@ -2533,6 +2533,8 @@ if CLIENT then
 					//this filter is on by default and catches >75% of items, so check this first
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
+					if !v.anim_slot then continue end //test
+
 					if f then
 						if !v._searchstr then
 							//Search by display name, internal name, item type, set/collection, and more
@@ -2774,7 +2776,6 @@ if CLIENT then
 			end
 
 			local attopts = vgui.Create("DPanel", left_scroll)
-			attopts.Paint = function() end
 			attopts:Dock(TOP)
 			attopts:DockMargin(0,8,0,0)
 			attopts:DockPadding(16,16,16,16)
@@ -3186,7 +3187,7 @@ if CLIENT then
 			function window:OpenCustomItemEditor(id)
 
 				if !IsValid(TF2ItemBrowser_Editor) then
-					
+
 					local editor = g_ContextMenu:Add("DFrame")
 					editor:SetSize(900,750) //TODO: finalize later
 					editor:SetTitle("Custom Item Editor")
@@ -3194,6 +3195,7 @@ if CLIENT then
 					AddTFStyleToVGUI(editor)
 					TF2ItemBrowser_Editor = editor
 					editor:SetSizable(true)
+					editor.controls = {}
 
 					local scroll = TFStyleVGUI("DScrollPanel", editor)
 					scroll:Dock(FILL)
@@ -3213,15 +3215,283 @@ if CLIENT then
 						holder_1:SetWide(holder_w)
 						holder_2:SetWide(holder_w)
 						holder_3:SetWide(holder_w)
+						holder_1:InvalidateChildren()
+						holder_2:InvalidateChildren()
+						holder_3:InvalidateChildren()
+						holder_1:SizeToChildren(false, true)
+						holder_2:SizeToChildren(false, true)
+						holder_3:SizeToChildren(false, true)
+						holder_holder:SizeToChildren(false, true)
 					end
 
-					--[[
-					function holder_3:Paint(w,h)
-						draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
-					end]]
+					local function AddBox(parent, label)
+						local box = vgui.Create("DSizeToContents")
+						if parent:HasChildren() then
+							box:DockMargin(0,8,0,0)
+						end
+						box:SetParent(parent)
+						box:Dock(TOP)
+						box:DockPadding(16,16,16,16)
+						function box:Paint(w,h)
+							draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
+						end
+
+						if label then
+							local text = vgui.Create("DLabel", box)
+							text:SetContentAlignment(7) //top left
+							text:SetAutoStretchVertical(true)
+							text:SetFont("TF2ItemBrowser_ItemName")
+							text:SetColor(gui_colors.TanLight)
+							text:SetText(label)
+							text:Dock(TOP)
+							text:DockMargin(-8,-8,0,betweenitems)
+						end
+
+						return box
+					end
+
+
+					local box = AddBox(holder_1)
+
+					//Selector for item type - this sets item_slot as well as animation-related overrides
+					//TODO: this seems way too cluttered, there's got to be a better way to do this
+					local combo = TFStyleVGUI("DComboBox", box)
+					local _pnl = AddTFLabelToVGUI(combo, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type")
+					_pnl:Dock(TOP)
+					//This control is complicated and reads from/saves to multiple different values, so add separate load/save funcs for each option
+					local options = {
+						{ //Cosmetic
+							Label = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",
+							Load = function(i)
+								if i.item_slot == "cosmetic" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "cosmetic"
+							end
+						},
+						{ //Primary
+							PrependSpacer = true,
+							Label = GetTFLanguageString("#TR_Primary") or "Primary",
+							Load = function(i)
+								if i.item_slot == "primary" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "primary"
+							end
+						},
+						{ //Primary (FaN/huntsman, uses item2 animations)
+							Label = (GetTFLanguageString("#TR_Primary") or "Primary") .. " (" .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Scattergun_Double") or "Force-a-Nature") .. " / " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_CompoundBow") or "Huntsman") .. ")",
+							Load = function(i)
+								if i.item_slot == "primary" and i.anim_slot == "item2" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "primary"
+								i.anim_slot = "item2"
+							end
+						},
+						//shortstop has primary slot and secondary animations, i don't think this is necessary, just use secondary
+						{ //Primary (cow mangler, uses primary2 animations)
+							Label = (GetTFLanguageString("#TR_Primary") or "Primary") .. " (" .. string.lower(GetTFLanguageString("#TF_CowMangler") or "Cow Mangler 5000") .. ")",
+							Load = function(i)
+								if i.item_slot == "primary" and i.anim_slot == "primary2" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "primary"
+								i.anim_slot = "primary2"
+							end
+						},
+						{ //Secondary
+							Label = GetTFLanguageString("#TR_Secondary") or "Secondary",
+							Load = function(i)
+								if i.item_slot == "secondary" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+							end
+						},
+						{ //Secondary (flaregun/sandvich/wrangler/jar, uses item1 animations)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_Weapon_FlareGun") or "Flare Gun") .. " / " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_LunchBox") or "Sandvich") .. " / " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Laser_Pointer") or "Wrangler") .. " / " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "item1" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "item1"
+							end
+						},
+						{ //Secondary (scout drink, uses item1 animations and hand grip poseparam)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout")  .. " " .. string.lower(GetTFLanguageString("#TF_EnergyDrink") or "Drink") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "item1" and i.visuals and 
+								i.visuals.player_poseparam and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "item1"
+								i.visuals = i.visuals or {}
+								i.visuals.player_poseparam = {r_hand_grip = 16}
+							end
+						},
+						{ //Secondary (passive, uses no animations)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#tf_zi_ui_passive") or "PASSIVE") .. ")", //this is a lame localization string to use for "passive" but it's the best we've got
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "FORCE_NOT_USED" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "FORCE_NOT_USED"
+							end
+						},
+						--[[{ //Secondary (banner, uses melee animations) //not necessary? just use melee
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_SoldierBuff") or "Buff Banner") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "melee" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "melee"
+							end
+						},]]
+						{ //Secondary (bison, uses secondary2 animations)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_RighteousBison") or "Righteous Bison") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "secondary2" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "secondary2"
+							end
+						},
+						{ //Secondary (bread jars, uses melee_allclass animations and hand grip poseparam)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_Wearable_Bread") or "Bread")  .. " " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "melee_allclass" and i.visuals and 
+								i.visuals.player_poseparam and i.visuals.player_poseparam.r_hand_grip == 13 then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "melee_allclass"
+								i.visuals = i.visuals or {}
+								i.visuals.player_poseparam = {r_hand_grip = 13}
+							end
+						},
+						{ //Secondary (gas passer, uses melee_allclass animations and a different hand grip poseparam)
+							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " (" .. string.lower(GetTFLanguageString("#TF_GasPasser") or "Gas Passer") .. ")",
+							Load = function(i)
+								if i.item_slot == "secondary" and i.anim_slot == "melee_allclass" and i.visuals and 
+								i.visuals.player_poseparam and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "secondary"
+								i.anim_slot = "melee_allclass"
+								i.visuals = i.visuals or {}
+								i.visuals.player_poseparam = {r_hand_grip = 16}
+							end
+						},
+						{ //Melee
+							Label = GetTFLanguageString("#TR_Melee") or "Melee",
+							Load = function(i)
+								if i.item_slot == "melee" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "melee"
+							end
+						},
+						{ //Melee (all-class, uses melee_allclass animations)
+							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " (" .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. ")",
+							Load = function(i)
+								if i.item_slot == "melee" and i.anim_slot == "melee_allclass" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "melee"
+								i.anim_slot = "melee_allclass"
+							end
+						},
+						{ //Melee (sword/sharp dresser, uses item1 animations)
+							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Demoman") or "Demoman")  .. " " .. string.lower(GetTFLanguageString("#TF_Weapon_Sword") or "Sword") .. " / " .. string.lower(GetTFLanguageString("#TF_SharpDresser") or "Sharp Dresser") .. ")",
+							Load = function(i)
+								if i.item_slot == "melee" and i.anim_slot == "item1" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "melee"
+								i.anim_slot = "item1"
+							end
+						},
+						{ //Melee (gunslinger, uses item2 animations)
+							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " (" .. string.lower(GetTFLanguageString("#TF_Unique_Robot_Arm") or "Gunslinger") .. ")",
+							Load = function(i)
+								if i.item_slot == "melee" and i.anim_slot == "item2" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "melee"
+								i.anim_slot = "item2"
+							end
+						},
+						//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
+						{ //Melee (hot hand, uses melee_allclass animations and multiple poseparams)
+							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " (" .. string.lower(GetTFLanguageString("#TF_Weapon_HotHand") or "Hot Hand") .. ")",
+							Load = function(i)
+								if i.item_slot == "melee" and i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam and 
+								i.visuals.player_poseparam.r_arm == 3 and i.visuals.player_poseparam.r_hand_grip == 15 then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "melee"
+								i.anim_slot = "melee_allclass"
+								i.visuals = i.visuals or {}
+								i.visuals.player_poseparam = {r_arm = 3, r_hand_grip = 15}
+							end
+						},
+						{ //Building (toolbox/sapper)
+							Label = (GetTFLanguageString("#LoadoutSlot_Building") or "Building") .. " (toolbox / " .. string.lower(GetTFLanguageString("#TF_Weapon_Spy_Sapper") or "Sapper") .. ")",
+							Load = function(i)
+								if i.item_slot == "building" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "building"
+							end
+						},
+						{ //Pass time jack
+							Label = (GetTFLanguageString("#GameType_Passtime") or "PASS Time") .. " JACK",
+							Load = function(i)
+								if i.item_slot == "utility" and i.anim_slot == "passtime_ball" then return true end
+							end,
+							Save = function(i)
+								i.item_slot = "utility"
+								i.anim_slot = "passtime_ball"
+							end
+						},
+					}
+					combo:SetSortItems(false)
+					for k, v in ipairs (options) do
+						if options[k].PrependSpacer then combo:AddSpacer() end
+						options[k].id = combo:AddChoice(v.Label, k)
+					end
+					editor.controls[combo] = {
+						Load = function(i)
+							local sel
+							for k, v in ipairs (options) do
+								if v.Load(i) == true then
+									sel = v.id
+									//don't break, multiple options can return true and we want to choose the lowermost one
+								end
+							end
+							if sel == nil then sel = 1 end
+							combo:ChooseOptionID(sel)
+						end,
+						Save = function(i)
+							local _, opt = combo:GetSelected()
+							options[opt].Save(i)
+						end,
+					}
+
 				end
 
-				//TODO: if TF2Items.items[id], then set the values on all editor elements using the item data table
+
+				local i = TF2Items.items[id] or {}
+				for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
+					if funcs.Load then funcs.Load(i) end
+				end
+				//TODO: save the id somewhere, so that when user presses the save button, it defaults to saving to the same file that was loaded?
 
 			end
 
@@ -6840,34 +7110,38 @@ if CLIENT then
 		local menu = DermaMenu()
 
 		//quick-spawn options, to spawn/equip items quickly without customizing them first, or to unequip items more efficiently
-		local opt
 		if IsValid(self.entity) then
-			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Store_Remove" or "Remove"))), function()
+			menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Store_Remove" or "Remove"))), function()
 				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
 				surface.PlaySound(self.sound_drop)
 			end)
 		elseif IsValid(TF2ItemBrowser:GetEntity()) then
-			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Equip") or "EQUIP")), function()
+			menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#Equip") or "EQUIP")), function()
 				TF2ItemBrowser:DoInput("attach_item_spawn", self.data, false)
 				surface.PlaySound(self.sound_drop)
 			end)
 		else
-			opt = menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#MMenu_Create") or "CREATE")), function()
+			menu:AddOption(string.NiceName(string.lower(GetTFLanguageString("#MMenu_Create") or "CREATE")), function()
 				TF2ItemBrowser:DoInput("item_spawn", self.data)
 				surface.PlaySound(self.sound_drop)
 			end)
 		end
 
+		if isstring(self.data.id) then
+			menu:AddOption("Edit custom item", function()
+				TF2ItemBrowser:OpenCustomItemEditor(self.data.id)
+			end)
+		end
+
 		//also put this debug option here
-		if GetConVarNumber("developer") >= 1 then
+		//if GetConVarNumber("developer") >= 1 then
 			menu:AddSpacer()
-			local opt = menu:AddOption("Print item data in console", function()
+			menu:AddOption("Print item data in console", function()
 				MsgN(self.data.id, " ", TF2Items.items[self.data.id].name)
 				PrintTable(TF2Items.items[self.data.id])
 				MsgN("")
 			end)
-			//opt:SetIcon("icon16/page_copy.png") //this doesn't work well with the tf2-styled dropdown
-		end
+		//end
 
 		self.menu = menu
 		menu:Open()
