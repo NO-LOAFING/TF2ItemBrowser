@@ -1325,11 +1325,11 @@ if CLIENT then
 			function pnl:PerformLayout()
 				local x = self.m_iIndent || 0
 
-				self.Button:SetSize( 20, 20 ) //the only change
+				self.Button:SetSize( 20, 20 ) //change 1/2
 				self.Button:SetPos( x, math.floor( ( self:GetTall() - self.Button:GetTall() ) / 2 ) )
 
 				self.Label:SizeToContents()
-				self.Label:SetPos( x + self.Button:GetWide() + 9, math.floor( ( self:GetTall() - self.Label:GetTall() ) / 2 ) )
+				self.Label:SetPos( x + self.Button:GetWide() + 6, math.floor( ( self:GetTall() - self.Label:GetTall() ) / 2 ) ) //+6 to width is change 2/2
 			end
 			pnl.Label:SetColor(gui_colors.Yellow)
 			pnl.Label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
@@ -2445,7 +2445,7 @@ if CLIENT then
 					self.Button2:SetPos(self.Button1:GetWide() + 2, math.floor((self:GetTall() - self.Button2:GetTall()) / 2))
 
 					self.Label:SizeToContents()
-					self.Label:SetPos(self.Button1:GetWide() + 2 + self.Button2:GetWide() + 9, math.floor((self:GetTall() - self.Label:GetTall()) / 2))
+					self.Label:SetPos(self.Button1:GetWide() + 2 + self.Button2:GetWide() + 6, math.floor((self:GetTall() - self.Label:GetTall()) / 2))
 				end
 				function self:GetValue()
 					if self.Button1:GetChecked() then return 1
@@ -3230,32 +3230,30 @@ if CLIENT then
 					end
 
 
-					local scroll = TFStyleVGUI("DScrollPanel", editor)
-					scroll:Dock(FILL)
-
-					//Place all other controls in 3 side-by-side columns of equal width
-					local holder_holder = vgui.Create("Panel", scroll)
-					holder_holder:Dock(FILL)
-					local holder_1 = vgui.Create("Panel", holder_holder)
-					holder_1:Dock(LEFT)
-					local holder_2 = vgui.Create("Panel", holder_holder)
-					holder_2:Dock(LEFT)
-					holder_2:DockMargin(8,0,8,0)
-					local holder_3 = vgui.Create("Panel", holder_holder)
-					holder_3:Dock(LEFT)
-					function holder_holder:PerformLayout(w, h)
-						local holder_w = (w-(8*2))/3
-						holder_1:SetWide(holder_w)
-						holder_2:SetWide(holder_w)
-						holder_3:SetWide(holder_w)
-						holder_1:InvalidateChildren()
-						holder_2:InvalidateChildren()
-						holder_3:InvalidateChildren()
-						holder_1:SizeToChildren(false, true)
-						holder_2:SizeToChildren(false, true)
-						holder_3:SizeToChildren(false, true)
-						holder_holder:SizeToChildren(false, true)
-						scroll:InvalidateLayout(true)
+					local function AddColumnHolder(parent, column_count, column_space)
+						local holder = vgui.Create("Panel", parent)
+						local columns = {}
+						for i = 1, column_count do
+							columns[i] = vgui.Create("Panel", holder)
+							columns[i]:Dock(LEFT)
+							local left_margin = 0
+							if i > 1 then left_margin = column_space/2 end
+							local right_margin = 0
+							if i < column_count then right_margin = column_space/2 end
+							columns[i]:DockMargin(left_margin, 0, right_margin, 0)
+						end
+						function holder:PerformLayout(w, h)
+							local holder_w = (w-(column_space*(column_count-1)))/column_count
+							for i = 1, column_count do
+								columns[i]:SetWide(holder_w)
+								columns[i]:InvalidateChildren()
+								columns[i]:SizeToChildren(false, true)
+							end
+							holder:SizeToChildren(false, true)
+							parent:InvalidateLayout(true)
+						end
+						holder.columns = columns
+						return holder
 					end
 
 					local function AddBox(parent, label)
@@ -3324,8 +3322,15 @@ if CLIENT then
 					end
 
 
+					//Place all other controls in 3 side-by-side columns of equal width
+					local scroll = TFStyleVGUI("DScrollPanel", editor)
+					scroll:Dock(FILL)
+					local holder = AddColumnHolder(scroll, 3, 8)
+					holder:Dock(FILL)
+
+
 					//Unlabeled box for item type and type-specific controls
-					local box = AddBox(holder_1)
+					local box = AddBox(holder.columns[1])
 
 					//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
 					local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", "item_slot", {
@@ -3341,7 +3346,7 @@ if CLIENT then
 					function combo:OnSelect(index, value, data)
 						local val = combo.options[index].Value
 						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
-						holder_holder:InvalidateLayout(true)
+						holder:InvalidateLayout(true)
 					end
 
 					//Selector for weapon anim_slot as well as some relevant pose parameters
@@ -3444,6 +3449,41 @@ if CLIENT then
 						}
 						//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
 					}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
+
+
+					//Checkboxes to select classes in any combination
+					local box = AddBox(holder.columns[1], GetTFLanguageString("#Store_ClassFilterLabel") or "Classes:")
+					editor.classes = AddColumnHolder(box, 3, 0)
+					editor.classes:Dock(TOP)
+					editor.classes.checks = {}
+					for i = 2, 10 do
+						local check = TFStyleVGUI("DCheckBoxLabel", editor.classes.columns[math.fmod(i-2, 3)+1])
+						check:Dock(TOP)
+						if i > 4 then
+							check:DockMargin(0,betweenitems,0,0)
+						end
+						check:SetText(GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
+						editor.classes.checks[classes[i].longname] = check
+						//TODO: OnChange func to enable/disable other controls that are dependent on class selection
+					end
+					editor.controls[editor.classes] = {
+						Load = function(i)
+							if !i.used_by_classes then return end
+							for class, _ in pairs (i.used_by_classes) do
+								editor.classes.checks[class]:SetValue(true)
+							end
+						end,
+						Save = function(i)
+							local tab = {}
+							for class, check in pairs (editor.classes.checks) do
+								if check:GetChecked() then
+									tab[class] = 1
+								end
+							end
+							if table.Count(tab) == 0 then tab = {none = 1} end
+							i.used_by_classes = tab
+						end
+					}
 
 				end
 
@@ -5961,7 +6001,7 @@ if CLIENT then
 					
 					//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
 					check = TFStyleVGUI("DCheckBox", slider)
-					check:DockMargin(0,0,9,0) //+9 on right emulates DCheckBoxLabel (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dcheckbox.lua#L130)
+					check:DockMargin(0,0,6,0) //+6 on right emulates our custom DCheckBoxLabel style
 					check:Dock(LEFT)
 					check:SetZPos(-1) //dock this to the left of the slider's label
 					check:SetChecked(self.data.pe_unusual_offset != nil)
