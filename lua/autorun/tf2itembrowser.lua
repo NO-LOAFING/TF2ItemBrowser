@@ -1536,9 +1536,10 @@ if CLIENT then
 		elseif class == "DFrame" then
 			local title = pnl:GetTitle()
 			local header = 30 //this has to be pretty tall to fit the close button comfortably
+			local border = 3
 			pnl:SetTitle("")
 			pnl:ShowCloseButton(false)
-			pnl:DockPadding(8, header + 8, 8, 8)
+			pnl:DockPadding(border+8, header+8, border+8, border+8)
 
 
 			local text = vgui.Create("DLabel", pnl)
@@ -1598,12 +1599,12 @@ if CLIENT then
 			end
 
 			function pnl:Paint(w, h)
-				//draw header
+				//draw header and border
 				surface.SetDrawColor(gui_colors._header)
-				surface.DrawRect(0,0,w,header)
+				surface.DrawRect(0,0,w,h)
 				//draw main body
 				surface.SetDrawColor(gui_colors.TanDarker)
-				surface.DrawRect(0,header,w,h-header)
+				surface.DrawRect(border,header,w-(border*2),h-header-border)
 			end
 
 			local old_Think = pnl.Think
@@ -2145,8 +2146,8 @@ if CLIENT then
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slighly too long to fit in the desktop icon's label, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
-		width		= 918,
-		height		= 688,
+		width		= 924,
+		height		= 691,
 		onewindow	= true,
 		init		= function(widgetIcon, window)			
 
@@ -3188,7 +3189,7 @@ if CLIENT then
 				if !IsValid(TF2ItemBrowser_Editor) then
 
 					local editor = g_ContextMenu:Add("DFrame")
-					editor:SetSize(900,750) //TODO: finalize later
+					editor:SetSize(920,750) //TODO: finalize later
 					editor:SetTitle("Custom Item Editor")
 					editor:Center()
 					AddTFStyleToVGUI(editor)
