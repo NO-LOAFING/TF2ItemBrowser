@@ -3250,14 +3250,50 @@ if CLIENT then
 						return box
 					end
 
+					local function AddDropdown(parent, label, key_to_set, options, default_option_id)
+						local combo = TFStyleVGUI("DComboBox")
+						local _pnl = AddTFLabelToVGUI(combo, label)
+						if parent:HasChildren() then
+							_pnl:DockMargin(0,betweenitems,0,0)
+						end
+						_pnl:SetParent(parent)
+						_pnl:Dock(TOP)
+						combo:SetSortItems(false)
+						for k, v in ipairs (options) do
+							if options[k].PrependSpacer then combo:AddSpacer() end
+							options[k].id = combo:AddChoice(v.Label, k)
+						end
+						editor.controls[combo] = {
+							Load = function(i)
+								local sel
+								for k, v in ipairs (options) do
+									if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
+										sel = v.id
+										//don't break, multiple options can return true and we want to choose the lowermost one
+									end
+								end
+								if sel == nil then sel = (default_option_id or 1) end
+								combo:ChooseOptionID(sel)
+							end,
+							Save = function(i)
+								if !self:IsVisible() then return end
+								local _, opt = combo:GetSelected()
+								if options[opt].Value then
+									i[key_to_set] = options[opt].Value
+								elseif v.Save then 
+									options[opt].Save(i)
+								end
+							end,
+						}
+						combo.options = options
+						return combo
+					end
+
 
 					local box = AddBox(holder_1)
 
 					//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
-					local combo = TFStyleVGUI("DComboBox", box)
-					local _pnl = AddTFLabelToVGUI(combo, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type")
-					_pnl:Dock(TOP)
-					local options = {
+					local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", "item_slot", {
 						{
 							Label = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",
 							Value = "misc",
@@ -3266,43 +3302,16 @@ if CLIENT then
 							Label = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",
 							Value = "_custom_weapon", //assign custom weapons to a generic "slot" instead of primary/etc to declutter these options just a bit
 						},
-					}
-					combo:SetSortItems(false)
-					for k, v in ipairs (options) do
-						options[k].id = combo:AddChoice(v.Label, k)
-					end
-					editor.controls[combo] = {
-						Load = function(i)
-							local sel
-							for k, v in ipairs (options) do
-								if i.item_slot == v.Value then
-									sel = v.id
-									break
-								end
-							end
-							if sel == nil then sel = 1 end
-							combo:ChooseOptionID(sel)
-						end,
-						Save = function(i)
-							local _, opt = combo:GetSelected()
-							i.item_slot = options[opt].Value
-						end,
-					}
+					})
 					function combo:OnSelect(index, value, data)
-						local val = options[index].Value
+						local val = combo.options[index].Value
 						editor.anim:SetVisible(val == "_custom_weapon")
 						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
 						holder_holder:InvalidateLayout(true)
 					end
 
 					//Selector for weapon anim_slot as well as some relevant pose parameters
-					local combo = TFStyleVGUI("DComboBox", box)
-					editor.anim = combo
-					local _pnl = AddTFLabelToVGUI(combo, GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation")
-					_pnl:Dock(TOP)
-					_pnl:DockMargin(0,betweenitems,0,0)
-					//This control is complicated and reads from/saves to multiple different values, so add separate load/save funcs for each option
-					local options = {
+					editor.anim = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation", "anim_slot", {
 						{
 							Label = str_none,
 							Value = "FORCE_NOT_USED"
@@ -3400,34 +3409,7 @@ if CLIENT then
 							Value = "passtime_ball"
 						}
 						//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
-					}
-					combo:SetSortItems(false)
-					for k, v in ipairs (options) do
-						if options[k].PrependSpacer then combo:AddSpacer() end
-						options[k].id = combo:AddChoice(v.Label, k)
-					end
-					editor.controls[combo] = {
-						Load = function(i)
-							local sel
-							for k, v in ipairs (options) do
-								if (v.Value and i.anim_slot == v.Value) or (v.Load and v.Load(i) == true) then
-									sel = v.id
-									//don't break, multiple options can return true and we want to choose the lowermost one
-								end
-							end
-							if sel == nil then sel = 2 end
-							combo:ChooseOptionID(sel)
-						end,
-						Save = function(i)
-							if !self:IsVisible() then return end
-							local _, opt = combo:GetSelected()
-							if options[opt].Value then
-								i.anim_slot = options[opt].Value
-							elseif v.Save then 
-								options[opt].Save(i)
-							end
-						end,
-					}
+					}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
 
 				end
 
