@@ -3196,10 +3196,44 @@ if CLIENT then
 					editor:SetSizable(true)
 					editor.controls = {}
 
+
+					//Dock save and cancel buttons to bottom of panel
+					local button_holder = vgui.Create("Panel", editor)
+					local button_1 = TFStyleVGUI("DButton", button_holder)
+					button_1:SetText(GetTFLanguageString("#TF_CancelSavePreset") or "CANCEL")
+					button_1:SizeToContentsX(20)
+					button_1.DoClick = function()
+						editor:Close()
+					end
+					local button_2 = TFStyleVGUI("DButton", button_holder)
+					button_2:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
+					button_2:SizeToContentsX(20)
+					button_2.DoClick = function()
+						//TODO: for now, just use this button to preview the table created by the save funcs to 
+						//make sure they're working right. we'll make this button actually save the table later.
+						local i = {}
+						for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
+							if funcs.Save then funcs.Save(i) end
+						end
+						MsgN("\n\n\n")
+						PrintTable(i)
+					end
+					button_holder:Dock(BOTTOM)
+					button_holder:DockMargin(0,8,0,0)
+					local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+					function button_holder:PerformLayout(w, h)
+						button_1:SetWide(button_w)
+						button_1:SetPos((w/2)-4-button_w, 0)
+						button_2:SetWide(button_w)
+						button_2:SetPos((w/2)+4, 0)
+						button_holder:SizeToChildren(false, true)
+					end
+
+
 					local scroll = TFStyleVGUI("DScrollPanel", editor)
 					scroll:Dock(FILL)
 
-					//Place all controls in 3 side-by-side columns of equal width
+					//Place all other controls in 3 side-by-side columns of equal width
 					local holder_holder = vgui.Create("Panel", scroll)
 					holder_holder:Dock(FILL)
 					local holder_1 = vgui.Create("Panel", holder_holder)
@@ -3276,11 +3310,11 @@ if CLIENT then
 								combo:ChooseOptionID(sel)
 							end,
 							Save = function(i)
-								if !self:IsVisible() then return end
+								if !_pnl:IsVisible() then return end
 								local _, opt = combo:GetSelected()
 								if options[opt].Value then
 									i[key_to_set] = options[opt].Value
-								elseif v.Save then 
+								elseif options[opt].Save then 
 									options[opt].Save(i)
 								end
 							end,
@@ -3290,6 +3324,7 @@ if CLIENT then
 					end
 
 
+					//Unlabeled box for item type and type-specific controls
 					local box = AddBox(holder_1)
 
 					//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
@@ -3305,7 +3340,6 @@ if CLIENT then
 					})
 					function combo:OnSelect(index, value, data)
 						local val = combo.options[index].Value
-						editor.anim:SetVisible(val == "_custom_weapon")
 						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
 						holder_holder:InvalidateLayout(true)
 					end
@@ -7064,9 +7098,9 @@ if CLIENT then
 		//if GetConVarNumber("developer") >= 1 then
 			menu:AddSpacer()
 			menu:AddOption("Print item data in console", function()
+				MsgN("\n\n\n")
 				MsgN(self.data.id, " ", TF2Items.items[self.data.id].name)
 				PrintTable(TF2Items.items[self.data.id])
-				MsgN("")
 			end)
 		//end
 
