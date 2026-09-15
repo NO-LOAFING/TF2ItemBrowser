@@ -1666,7 +1666,7 @@ if CLIENT then
 					TF2ItemBrowser_Tooltip:Remove()
 				end
 			end
-			old_Paint(self,w,h,...)
+			if old_Paint then old_Paint(self,w,h,...) end
 		end
 	end
 	//convenience func for adding labels to dropdown dcomboboxes and such
@@ -3247,7 +3247,7 @@ if CLIENT then
 							local holder_w = (w-(column_space*(column_count-1)))/column_count
 							for i = 1, column_count do
 								columns[i]:SetWide(holder_w)
-								columns[i]:InvalidateChildren()
+								columns[i]:InvalidateChildren(true)
 								columns[i]:SizeToChildren(false, true)
 							end
 							holder:SizeToChildren(false, true)
@@ -3465,7 +3465,20 @@ if CLIENT then
 						end
 						check:SetText(GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
 						editor.classes.checks[classes[i].longname] = check
-						//TODO: OnChange func to enable/disable other controls that are dependent on class selection
+						//make sure user can read the text if it's cut off
+						AddTFStyleTooltip(check.Label, check:GetText())
+						local old_IsHovered = check.Label.IsHovered
+						function check.Label:IsHovered(...)
+							return old_IsHovered(self, ...) or check:IsHovered(...)
+						end
+						function check:OnChange(val)
+							//Only show equip regions for the currently selected class
+							for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
+								pnl:SetVisible(val)
+							end
+							//TODO: other controls that are dependent on class selection
+							holder:InvalidateLayout(true)
+						end
 					end
 					editor.controls[editor.classes] = {
 						Load = function(i)
@@ -3483,6 +3496,64 @@ if CLIENT then
 							end
 							if table.Count(tab) == 0 then tab = {none = 1} end
 							i.used_by_classes = tab
+						end
+					}
+
+					//Checkboxes to set equip region, again in any combination
+					local box = AddBox(holder.columns[1], (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ":" ) //no localization string for "equip regions" plural, oh well
+					editor.equip_regions = AddColumnHolder(box, 2, 0)
+					editor.equip_regions:Dock(TOP)
+					editor.equip_regions.checks_by_class = {}
+					editor.equip_regions.all_checks = {}
+					for classid, class in ipairs (classes) do //add class-based equip regions in class order
+						local checkbox_height
+						for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
+							local check = TFStyleVGUI("DCheckBoxLabel", editor.equip_regions.columns[math.fmod(k-1, 2)+1])
+							check:Dock(TOP)
+							if k > 2 then
+								check:DockMargin(0,betweenitems,0,0)
+							elseif classid > 1 then
+								check:DockMargin(0,betweencategories,0,0) //add space between different classes' equip regions
+							end
+							check:SetText(string.NiceName(v))
+							editor.equip_regions.checks_by_class[classid] = editor.equip_regions.checks_by_class[classid] or {}
+							editor.equip_regions.checks_by_class[classid][v] = check
+							editor.equip_regions.all_checks[v] = check
+							checkbox_height = checkbox_height or check:GetTall()
+							//make sure user can read the text if it's cut off
+							AddTFStyleTooltip(check.Label, check:GetText())
+							local old_IsHovered = check.Label.IsHovered
+							function check.Label:IsHovered(...)
+								return old_IsHovered(self, ...) or check:IsHovered(...)
+							end
+						end
+						//if number of entries is odd, then add another to prevent spacing issues with the next class
+						if editor.equip_regions.checks_by_class[classid] and table.Count(editor.equip_regions.checks_by_class[classid]) % 2 != 0 then
+							local pnl = vgui.Create("Panel", editor.equip_regions.columns[2])
+							pnl:SetHeight(checkbox_height)
+							pnl:Dock(TOP)
+							pnl:DockMargin(0,betweenitems,0,0)
+							editor.equip_regions.checks_by_class[classid]["_FILLER"] = pnl
+						end
+					end
+					editor.controls[editor.equip_regions] = {
+						Load = function(i)
+							for classid, tab in pairs (editor.equip_regions.checks_by_class) do
+								for k, check in pairs (tab) do
+									if check.SetValue then check:SetValue(i.equip_regions and i.equip_regions[k]) end
+									check:SetVisible(classid == 1 or (i.used_by_classes and i.used_by_classes[classes[classid].longname]))
+								end
+							end
+						end,
+						Save = function(i)
+							local tab
+							for k, check in pairs (editor.equip_regions.all_checks) do
+								if check:IsVisible() and check:GetChecked() then
+									tab = tab or {}
+									tab[k] = 1
+								end
+							end
+							if tab then i.equip_regions = tab end
 						end
 					}
 
