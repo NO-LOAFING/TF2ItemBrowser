@@ -15,7 +15,9 @@
 	"capabilities": {
 		"paintable": 1,
 	},
-	"model_player": "models/workshop/player/items/pyro/plasma_dome/plasma_dome.mdl",
+	"model_player_per_class": {
+		"basename": "models/workshop/player/items/pyro/plasma_dome/plasma_dome.mdl",
+	},
 	"visuals": {
 		"player_bodygroups": {
 			"head": 1

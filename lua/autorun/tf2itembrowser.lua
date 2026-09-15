@@ -1636,7 +1636,7 @@ if CLIENT then
 					local time = CurTime()
 					self.HoverTime = self.HoverTime or time
 					if time - self.HoverTime > 0.1 then
-						local pnl = vgui.Create("DLabel", TF2ItemBrowser:GetParent())
+						local pnl = vgui.Create("DLabel", g_ContextMenu)
 						pnl:SetFont(font)
 						pnl:SetText(text)
 						pnl:SetTextColor(fgcol)
@@ -3283,13 +3283,10 @@ if CLIENT then
 						return box
 					end
 
-					local function AddDropdown(parent, label, key_to_set, options, default_option_id)
-						local combo = TFStyleVGUI("DComboBox")
+					local function AddDropdown(parent, label, subtable, key_to_set, options, default_option_id)
+						local combo = TFStyleVGUI("DComboBox", parent)
 						local _pnl = AddTFLabelToVGUI(combo, label)
-						if parent:HasChildren() then
-							_pnl:DockMargin(0,betweenitems,0,0)
-						end
-						_pnl:SetParent(parent)
+						_pnl:DockMargin(0,betweenitems,0,0)
 						_pnl:Dock(TOP)
 						combo:SetSortItems(false)
 						for k, v in ipairs (options) do
@@ -3299,10 +3296,15 @@ if CLIENT then
 						editor.controls[combo] = {
 							Load = function(i)
 								local sel
-								for k, v in ipairs (options) do
-									if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
-										sel = v.id
-										//don't break, multiple options can return true and we want to choose the lowermost one
+								if subtable then
+									i = i[subtable]
+								end
+								if i then
+									for k, v in ipairs (options) do
+										if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
+											sel = v.id
+											//don't break, multiple options can return true and we want to choose the lowermost one
+										end
 									end
 								end
 								if sel == nil then sel = (default_option_id or 1) end
@@ -3312,7 +3314,12 @@ if CLIENT then
 								if !_pnl:IsVisible() then return end
 								local _, opt = combo:GetSelected()
 								if options[opt].Value then
-									i[key_to_set] = options[opt].Value
+									if subtable then
+										i[subtable] = i[subtable] or {}
+										i[subtable][key_to_set] = options[opt].Value
+									else
+										i[key_to_set] = options[opt].Value
+									end
 								elseif options[opt].Save then 
 									options[opt].Save(i)
 								end
@@ -3320,6 +3327,38 @@ if CLIENT then
 						}
 						combo.options = options
 						return combo
+					end
+
+					local function AddTextEntry(parent, label, subtable, key_to_set)
+						local entry = TFStyleVGUI("DTextEntry", parent)
+						local _pnl = AddTFLabelToVGUI(entry, label)
+						_pnl:DockMargin(0,betweenitems,0,0)
+						_pnl:Dock(TOP)
+						//most entries won't have an OnEnter func, but include this just in case
+						entry.OnFocusChanged = function(_, b) 
+							if !b then entry:OnEnter() end
+						end
+						editor.controls[entry] = {
+							Load = function(i)
+								local sel
+								if subtable then
+									i = i[subtable]
+								end
+								if i and i[key_to_set] then
+									entry:SetText(i[key_to_set])
+								end
+							end,
+							Save = function(i)
+								if !_pnl:IsVisible() or entry:GetText() == "" then return end
+								if subtable then
+									i[subtable] = i[subtable] or {}
+									i[subtable][key_to_set] = entry:GetText()
+								else
+									i[key_to_set] = entry:GetText()
+								end
+							end,
+						}
+						return entry
 					end
 
 
@@ -3334,7 +3373,7 @@ if CLIENT then
 					local box = AddBox(holder.columns[1])
 
 					//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
-					local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", "item_slot", {
+					local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", nil, "item_slot", {
 						{
 							Label = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",
 							Value = "misc",
@@ -3344,6 +3383,7 @@ if CLIENT then
 							Value = "_custom_weapon", //assign custom weapons to a generic "slot" instead of primary/etc to declutter these options just a bit
 						},
 					})
+					combo:GetParent():DockMargin(0,0,0,0)
 					function combo:OnSelect(index, value, data)
 						local val = combo.options[index].Value
 						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
@@ -3351,7 +3391,7 @@ if CLIENT then
 					end
 
 					//Selector for weapon anim_slot as well as some relevant pose parameters
-					editor.anim = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation", "anim_slot", {
+					editor.anim = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation", nil, "anim_slot", {
 						{
 							Label = str_none,
 							Value = "FORCE_NOT_USED"
@@ -3476,6 +3516,8 @@ if CLIENT then
 							for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
 								pnl:SetVisible(val)
 							end
+							//Update visibility of class-specific model fields
+							editor.class_models:UpdateVisibility()
 							//TODO: other controls that are dependent on class selection
 							holder:InvalidateLayout(true)
 						end
@@ -3498,6 +3540,7 @@ if CLIENT then
 							i.used_by_classes = tab
 						end
 					}
+
 
 					//Checkboxes to set equip region, again in any combination
 					local box = AddBox(holder.columns[1], (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ":" ) //no localization string for "equip regions" plural, oh well
@@ -3556,6 +3599,59 @@ if CLIENT then
 							if tab then i.equip_regions = tab end
 						end
 					}
+
+
+					local box = AddBox(holder.columns[2], string.NiceName(language.GetPhrase("#models")) .. ":")
+
+					//Base model
+					local entry = AddTextEntry(box, "Item model path", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
+					entry:GetParent():DockMargin(0,0,0,0)
+					entry.OnEnter = function()
+						//TODO: update spawnicon preview
+					end
+
+					//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Class-specific model paths?")
+					check:DockMargin(0,betweenitems,0,0)
+					check:Dock(TOP)
+					editor.class_models = check
+					check.classes = {}
+					editor.controls[check] = {
+						Load = function(i)
+							//Only start off checked if there are already per-class models in the table
+							for classid = 2, 10 do
+								if i.model_player_per_class and i.model_player_per_class[classes[classid].longname] then
+									check:SetChecked(true)
+									break
+								end
+							end
+							timer.Simple(0, function() check:UpdateVisibility() end)
+						end
+					}
+					function check:OnChange(val)
+						check:UpdateVisibility()
+					end
+					function check:UpdateVisibility()
+						local selected_class_count = 0
+						for _, pnl in pairs (editor.classes.checks) do
+							if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
+						end
+						//Only show the checkbox if multiple classes are selected
+						check:SetVisible(selected_class_count > 1)
+						//Only show the entry box for each class if the checkbox is selected, the corresponding class is selected, AND multiple classes are selected
+						for i = 2, 10 do
+							editor.class_models.classes[i]:GetParent():SetVisible(check:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
+						end
+					end
+					for i = 2, 10 do
+						local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname), "model_player_per_class", classes[i].longname)
+						check.classes[i] = entry
+						entry.OnEnter = function()
+							//TODO: update spawnicon preview
+						end
+					end
+					//TODO: add help text telling the user about the %s token as an alternative to manually entering class model paths
 
 				end
 

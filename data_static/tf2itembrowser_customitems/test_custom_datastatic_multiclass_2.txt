@@ -1,0 +1,27 @@
+{
+	"name": "test_custom_datastatic_multiclass_2",
+	"item_name": "Test Item - Multi-Class 2",
+	"item_type_name": "Test Item",
+	"item_description": "This custom item is for multiple classes, and uses a single model path with the %s token.",
+	"image_inventory": "backpack/workshop/player/items/all_class/hwn2021_towering_patch/hwn2021_towering_patch",
+	"item_slot": "misc",
+	"equip_regions": {
+		"hat": 1
+	},
+	"used_by_classes": {
+		"demoman": 1,
+		"engineer": 1
+	},
+	"capabilities": {
+		"paintable": 1,
+	},
+	"model_player_per_class": {
+		"basename": "models/workshop/player/items/all_class/hwn2021_towering_patch/hwn2021_towering_patch_%s.mdl",
+	},
+	"visuals": {
+		"player_bodygroups": {
+			"hat": 1,
+			"headphones": 1
+		}
+	}
+}
