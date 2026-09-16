@@ -3643,6 +3643,8 @@ if CLIENT then
 						for i = 2, 10 do
 							editor.class_models.classes[i]:GetParent():SetVisible(check:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
 						end
+						//Only show the help text if we're showing the class-specific entries
+						check.help:SetVisible(selected_class_count > 1 and check:GetChecked())
 					end
 					for i = 2, 10 do
 						local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname), "model_player_per_class", classes[i].longname)
@@ -3651,7 +3653,15 @@ if CLIENT then
 							//TODO: update spawnicon preview
 						end
 					end
-					//TODO: add help text telling the user about the %s token as an alternative to manually entering class model paths
+					local help = vgui.Create("DLabel", box)
+					help:SetWrap(true)
+					help:SetAutoStretchVertical(true)
+					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					help:SetColor(gui_colors.TanLight)
+					help:SetText("Tip: As an alternative, \"%s\" (percent sign s) in the main model path will be read as the class the item is spawned for - \"hat_%s\" will become \"hat_demo\", \"hat_engineer\", and so on.")
+					help:Dock(TOP)
+					help:DockMargin(0,betweenitems,0,0)
+					check.help = help
 
 				end
 
