@@ -3759,41 +3759,64 @@ if CLIENT then
 						//TODO: update spawnicon preview when team is changed
 					end
 
-					//Attached models
-					for i = 0, 3 do
-						local text = ""
-						if i == 0 then text = "Attached models" end
-						local entry = AddTextEntry(box, text)
-						if i == 0 then
-							entry:GetParent():DockMargin(0,betweencategories,0,0)
-							editor.attached_models = entry
-							entry.entries = {}
-							editor.controls[entry] = {
-								Load = function(i)
-									if i.visuals and i.visuals.attached_models then
-										for k, v in pairs (editor.attached_models.entries) do
-											if i.visuals.attached_models[k] then
-												v:SetText(i.visuals.attached_models[k].model)
-											end
-										end
-									end
-								end,
-								Save = function(i)
-									for k, v in pairs (editor.attached_models.entries) do
-										if v:GetText() != "" then
-											i.visuals = i.visuals or {}
-											i.visuals.attached_models = i.visuals.attached_models or {}
-											//put these into a sequential table starting with 0, to match the formatting of tf2 items
-											table.insert(i.visuals.attached_models, table.Count(i.visuals.attached_models), {model = v:GetText()})
-										end
-									end
-								end
-							}
-						else
-							editor.controls[entry] = nil
+					//Text entries for attached models - this creates as many entries as needed, 
+					//adding an empty one to the list when the existing ones are all filled
+					local pnl = vgui.Create("DSizeToContents", box)
+					pnl:Dock(TOP)
+					pnl:DockMargin(0,betweencategories-betweenitems,0,0)
+					editor.attached_models = pnl
+					pnl.entries = {}
+					function pnl:UpdateEntries()
+						//Clear out blank entries except the last one
+						local entries_to_remove = {}
+						for k, v in ipairs (pnl.entries) do
+							if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
 						end
-						editor.attached_models.entries[i] = entry
+						for k, v in pairs (entries_to_remove) do
+							v:GetParent():Remove()
+							table.remove(pnl.entries, k)
+						end
+						for k, v in ipairs (pnl.entries) do
+							v:Dock(TOP)
+						end
+						//Make sure we always have a blank entry at the end of the list
+						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
+							pnl:AddEntry()
+						end
+						pnl.entries[1]:GetParent().Label:SetText("Attached model(s)")
 					end
+					function pnl:AddEntry()
+						local entry = AddTextEntry(pnl, "")
+						table.insert(pnl.entries, entry)
+						local old_OnLoseFocus = entry.OnLoseFocus
+						function entry:OnLoseFocus(...)
+							pnl:UpdateEntries()
+							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
+						end
+						editor.controls[entry] = nil
+						return entry
+					end
+					editor.controls[pnl] = {
+						Load = function(i)
+							if i.visuals and i.visuals.attached_models then
+								for k, v in pairs (i.visuals.attached_models) do
+									local entry = pnl:AddEntry()
+									entry:SetText(i.visuals.attached_models[k].model)
+								end
+							end
+							pnl:UpdateEntries()
+						end,
+						Save = function(i)
+							for k, v in ipairs (pnl.entries) do
+								if v:GetText() != "" then
+									i.visuals = i.visuals or {}
+									i.visuals.attached_models = i.visuals.attached_models or {}
+									//put these into a sequential table starting with 0, to match the formatting of tf2 items
+									table.insert(i.visuals.attached_models, table.Count(i.visuals.attached_models), {model = v:GetText()})
+								end
+							end
+						end
+					}
 					local help = vgui.Create("DLabel", box)
 					help:SetWrap(true)
 					help:SetAutoStretchVertical(true)
@@ -3803,47 +3826,68 @@ if CLIENT then
 					help:Dock(TOP)
 					help:DockMargin(0,betweenitems,0,0)
 
-					//Extra wearables
-					for i = 0, 1 do
-						local text = ""
-						if i == 0 then text = "Extra wearables" end
-						local entry = AddTextEntry(box, text)
-						if i == 0 then
-							entry:GetParent():DockMargin(0,betweencategories,0,0)
-							editor.extra_wearables = entry
-							entry.entries = {}
-							editor.controls[entry] = {
-								Load = function(i)
-									for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
-										if i[key] then
-											for k, v in pairs (editor.extra_wearables.entries) do
-												if v:GetText() == "" then
-													v:SetText(i[key])
-													break
-												end
-											end
-										end
-									end
-								end,
-								Save = function(i)
-									for k, v in pairs (editor.extra_wearables.entries) do
-										//if the user only fills the second entry, then save it as the first extra_wearable
-										if v:GetText() != "" then
-											for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
-												if !i[key] then
-													i[key] = v:GetText()
-													break
-												end
-											end
-										end
-									end
-								end
-							}
-						else
-							editor.controls[entry] = nil
+					//Text entries for extra wearables - this works like the above but with a max of 2
+					local pnl = vgui.Create("DSizeToContents", box)
+					pnl:Dock(TOP)
+					pnl:DockMargin(0,betweencategories-betweenitems,0,0)
+					editor.extra_wearables = pnl
+					pnl.entries = {}
+					function pnl:UpdateEntries()
+						//Clear out blank entries except the last one
+						local entries_to_remove = {}
+						for k, v in ipairs (pnl.entries) do
+							if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
 						end
-						editor.extra_wearables.entries[i] = entry
+						for k, v in pairs (entries_to_remove) do
+							v:GetParent():Remove()
+							table.remove(pnl.entries, k)
+						end
+						for k, v in ipairs (pnl.entries) do
+							v:Dock(TOP)
+						end
+						//Make sure we always have a blank entry at the end of the list
+						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
+							pnl:AddEntry()
+						end
+						pnl.entries[1]:GetParent().Label:SetText("Extra wearable(s)")
+						if pnl.entries[2] then
+							pnl.entries[2]:GetParent().Label:SetText("(max 2)")
+						end
 					end
+					function pnl:AddEntry()
+						//number of extra wearables has to be capped at 2 due to technical limitations -
+						//every spawned item needs to track and network whether each extra_wearable slot 
+						//is enabled, whether the item actually uses it or not
+						if #pnl.entries > 1 then return end
+						local entry = AddTextEntry(pnl, "")
+						table.insert(pnl.entries, entry)
+						local old_OnLoseFocus = entry.OnLoseFocus
+						function entry:OnLoseFocus(...)
+							pnl:UpdateEntries()
+							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
+						end
+						editor.controls[entry] = nil
+						return entry
+					end
+					editor.controls[pnl] = {
+						Load = function(i)
+							for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
+								if i[key] then
+									local entry = pnl:AddEntry()
+									if entry then entry:SetText(i[key]) end
+								end
+							end
+							pnl:UpdateEntries()
+						end,
+						Save = function(i)
+							for k, v in ipairs (pnl.entries) do
+								if v:GetText() != "" then
+									local tab = {"extra_wearable", "extra_wearable_2"}
+									i[tab[k]] = v:GetText()
+								end
+							end
+						end
+					}
 					local help = vgui.Create("DLabel", box)
 					help:SetWrap(true)
 					help:SetAutoStretchVertical(true)
