@@ -3386,12 +3386,54 @@ if CLIENT then
 					combo:GetParent():DockMargin(0,0,0,0)
 					function combo:OnSelect(index, value, data)
 						local val = combo.options[index].Value
+						editor.paintable:SetVisible(val == "misc")
+						editor.genteel_smoke:SetVisible(val == "misc")
 						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
 						holder:InvalidateLayout(true)
 					end
 
+					//Paintable toggle
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					editor.paintable = check
+					check:Dock(TOP)
+					check:DockMargin(0,betweenitems,0,0)
+					check:SetText("Paintable")
+					editor.controls[check] = {
+						Load = function(i)
+							if i.capabilities and i.capabilities.paintable then check:SetChecked(true) end
+						end,
+						Save = function(i)
+							if check:IsVisible() and check:GetChecked() then
+								i.capabilities = i.capabilities or {}
+								i.capabilities.paintable = 1
+							end
+						end
+					}
+
+					//Genteel smoke toggle
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					editor.genteel_smoke = check
+					check:Dock(TOP)
+					check:DockMargin(0,betweenitems,0,0)
+					check:SetText("Add " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect\n(requires \"cig_drg_smoke\" attachment)")
+					editor.controls[check] = {
+						Load = function(i)
+							if i.attributes and i.attributes["attach particle effect static"] and 
+							i.attributes["attach particle effect static"].value == 28 then check:SetChecked(true) end
+						end,
+						Save = function(i)
+							if check:IsVisible() and check:GetChecked() then
+								i.attributes = i.attributes or {}
+								i.attributes["attach particle effect static"] = {
+									attribute_class = "set_attached_particle_static",
+									value = 28
+								}
+							end
+						end
+					}
+
 					//Selector for weapon anim_slot as well as some relevant pose parameters
-					editor.anim = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_AnimationSource") or "Animation", nil, "anim_slot", {
+					editor.anim = AddDropdown(box, "Animation slot", nil, "anim_slot", {
 						{
 							Label = str_none,
 							Value = "FORCE_NOT_USED"
@@ -3714,7 +3756,102 @@ if CLIENT then
 								end
 							end,
 						}
+						//TODO: update spawnicon preview when team is changed
 					end
+
+					//Attached models
+					for i = 0, 3 do
+						local text = ""
+						if i == 0 then text = "Attached models" end
+						local entry = AddTextEntry(box, text)
+						if i == 0 then
+							entry:GetParent():DockMargin(0,betweencategories,0,0)
+							editor.attached_models = entry
+							entry.entries = {}
+							editor.controls[entry] = {
+								Load = function(i)
+									if i.visuals and i.visuals.attached_models then
+										for k, v in pairs (editor.attached_models.entries) do
+											if i.visuals.attached_models[k] then
+												v:SetText(i.visuals.attached_models[k].model)
+											end
+										end
+									end
+								end,
+								Save = function(i)
+									for k, v in pairs (editor.attached_models.entries) do
+										if v:GetText() != "" then
+											i.visuals = i.visuals or {}
+											i.visuals.attached_models = i.visuals.attached_models or {}
+											//put these into a sequential table starting with 0, to match the formatting of tf2 items
+											table.insert(i.visuals.attached_models, table.Count(i.visuals.attached_models), {model = v:GetText()})
+										end
+									end
+								end
+							}
+						else
+							editor.controls[entry] = nil
+						end
+						editor.attached_models.entries[i] = entry
+					end
+					local help = vgui.Create("DLabel", box)
+					help:SetWrap(true)
+					help:SetAutoStretchVertical(true)
+					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					help:SetColor(gui_colors.TanLight)
+					help:SetText("Extra models attached to the item, i.e. festive lights, botkillers, flamethrower pilot lights")
+					help:Dock(TOP)
+					help:DockMargin(0,betweenitems,0,0)
+
+					//Extra wearables
+					for i = 0, 1 do
+						local text = ""
+						if i == 0 then text = "Extra wearables" end
+						local entry = AddTextEntry(box, text)
+						if i == 0 then
+							entry:GetParent():DockMargin(0,betweencategories,0,0)
+							editor.extra_wearables = entry
+							entry.entries = {}
+							editor.controls[entry] = {
+								Load = function(i)
+									for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
+										if i[key] then
+											for k, v in pairs (editor.extra_wearables.entries) do
+												if v:GetText() == "" then
+													v:SetText(i[key])
+													break
+												end
+											end
+										end
+									end
+								end,
+								Save = function(i)
+									for k, v in pairs (editor.extra_wearables.entries) do
+										//if the user only fills the second entry, then save it as the first extra_wearable
+										if v:GetText() != "" then
+											for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
+												if !i[key] then
+													i[key] = v:GetText()
+													break
+												end
+											end
+										end
+									end
+								end
+							}
+						else
+							editor.controls[entry] = nil
+						end
+						editor.extra_wearables.entries[i] = entry
+					end
+					local help = vgui.Create("DLabel", box)
+					help:SetWrap(true)
+					help:SetAutoStretchVertical(true)
+					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					help:SetColor(gui_colors.TanLight)
+					help:SetText("Extra models attached to the player model, i.e. medigun/banner backpacks, banner flags")
+					help:Dock(TOP)
+					help:DockMargin(0,betweenitems,0,0)
 
 				end
 
