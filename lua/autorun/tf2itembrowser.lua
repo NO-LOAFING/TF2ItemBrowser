@@ -3438,6 +3438,10 @@ if CLIENT then
 							Label = (GetTFLanguageString("#Item") or "Item") .. " 2 (" .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Scattergun_Double") or "Force-a-Nature") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Robot_Arm") or "Gunslinger") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_CompoundBow") or "Huntsman") .. ")",
 							Value = "item2"
 						},
+						{
+							Label = (GetTFLanguageString("#Item") or "Item") .. " 4 (" .. string.lower(GetTFLanguageString("#TF_ThermalThruster") or "Thermal Thruster") .. ")",
+							Value = "item4"
+						},
 						//TODO: cow mangler has anim_slot "primary2" but this only has fire/reload anims and i'm not even sure if tf2 uses them; revisit later when we do anim functionality
 						{
 							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " 2 (" ..  string.lower(GetTFLanguageString("#TF_BISON") or "BISON")  .. ")",
@@ -3662,6 +3666,55 @@ if CLIENT then
 					help:Dock(TOP)
 					help:DockMargin(0,betweenitems,0,0)
 					check.help = help
+
+					//Skin id pickers
+					local skins = vgui.Create("Panel", box)
+					skins:Dock(TOP)
+					skins:DockMargin(0,betweenitems,0,0)
+					skins:SetHeight(20)
+					function skins:PerformLayout(w, h)
+						w = w - (8*3) - (50*2)
+						self.label1:SetWide(w/2)
+						self.label2:SetWide(w/2)
+						//when docked to the left, clicking one of the nums moves it to the right of the panel, despite its ZPos value not changing. what?? position it manually instead.
+						self.label1:SetPos(0,0)
+						self.num1:SetPos(self.label1:GetWide()+8,0)
+						self.label2:SetPos(self.label1:GetWide()+8+50+8,0)
+						self.num2:SetPos(self.label1:GetWide()+8+50+8+self.label2:GetWide()+8,0)
+					end
+					for k, v in ipairs ({
+						[1] = {label = language.GetPhrase("#skin") .. " - " .. (GetTFLanguageString("#TF_RedTeam_Name") or "RED"), subtable = "visuals_red", col = desc_colors.negative},
+						[2] = {label = language.GetPhrase("#skin") .. " - " .. (GetTFLanguageString("#TF_BlueTeam_Name") or "BLU"), subtable = "visuals_blu", col = desc_colors.positive},
+					}) do
+						local text = vgui.Create("DLabel", skins)
+						text:SetColor(gui_colors.TanLight)
+						text:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+						text:SetText(v.label)
+						text:SetHeight(20)
+						skins["label" .. k] = text
+						local num = TFStyleVGUI("DNumberWang", skins, true)
+						num:SetDecimals(0)
+						num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
+						num:SetValue(k-1)
+						num:SetWide(50)
+						num:SetHeight(20)
+						num.FGColor = v.col
+						skins["num" .. k] = num
+						editor.controls[num] = {
+							Load = function(i)
+								if i[v.subtable] and i[v.subtable].skin != nil then
+									num:SetValue(i[v.subtable].skin)
+								end
+							end,
+							Save = function(i)
+								local val = num:GetValue()
+								if val != k-1 then //don't save default values
+									i[v.subtable] = i[v.subtable] or {}
+									i[v.subtable].skin = val
+								end
+							end,
+						}
+					end
 
 				end
 
