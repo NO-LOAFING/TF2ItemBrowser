@@ -3713,56 +3713,6 @@ if CLIENT then
 					help:DockMargin(0,betweenitems,0,0)
 					check.help = help
 
-					//Skin id pickers
-					local skins = vgui.Create("Panel", box)
-					skins:Dock(TOP)
-					skins:DockMargin(0,betweenitems,0,0)
-					skins:SetHeight(20)
-					function skins:PerformLayout(w, h)
-						w = w - (8*3) - (50*2)
-						self.label1:SetWide(w/2)
-						self.label2:SetWide(w/2)
-						//when docked to the left, clicking one of the nums moves it to the right of the panel, despite its ZPos value not changing. what?? position it manually instead.
-						self.label1:SetPos(0,0)
-						self.num1:SetPos(self.label1:GetWide()+8,0)
-						self.label2:SetPos(self.label1:GetWide()+8+50+8,0)
-						self.num2:SetPos(self.label1:GetWide()+8+50+8+self.label2:GetWide()+8,0)
-					end
-					for k, v in ipairs ({
-						[1] = {label = language.GetPhrase("#skin") .. " - " .. (GetTFLanguageString("#TF_RedTeam_Name") or "RED"), subtable = "visuals_red", col = desc_colors.negative},
-						[2] = {label = language.GetPhrase("#skin") .. " - " .. (GetTFLanguageString("#TF_BlueTeam_Name") or "BLU"), subtable = "visuals_blu", col = desc_colors.positive},
-					}) do
-						local text = vgui.Create("DLabel", skins)
-						text:SetColor(gui_colors.TanLight)
-						text:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-						text:SetText(v.label)
-						text:SetHeight(20)
-						skins["label" .. k] = text
-						local num = TFStyleVGUI("DNumberWang", skins, true)
-						num:SetDecimals(0)
-						num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
-						num:SetValue(k-1)
-						num:SetWide(50)
-						num:SetHeight(20)
-						num.FGColor = v.col
-						skins["num" .. k] = num
-						editor.controls[num] = {
-							Load = function(i)
-								if i[v.subtable] and i[v.subtable].skin != nil then
-									num:SetValue(i[v.subtable].skin)
-								end
-							end,
-							Save = function(i)
-								local val = num:GetValue()
-								if val != k-1 then //don't save default values
-									i[v.subtable] = i[v.subtable] or {}
-									i[v.subtable].skin = val
-								end
-							end,
-						}
-						//TODO: update spawnicon preview when team is changed
-					end
-
 					//Text entries for attached models - this creates as many entries as needed, 
 					//adding an empty one to the list when the existing ones are all filled
 					local pnl = vgui.Create("DSizeToContents", box)
@@ -3900,6 +3850,45 @@ if CLIENT then
 					help:SetText("Extra models attached to the player model, i.e. medigun/banner backpacks, banner flags")
 					help:Dock(TOP)
 					help:DockMargin(0,betweenitems,0,0)
+
+					//Skin id pickers
+					local skins = vgui.Create("Panel", box)
+					local _pnl = AddTFLabelToVGUI(skins, "#skin")
+					_pnl:DockMargin(0,betweencategories,0,0)
+					_pnl:Dock(TOP)
+					function skins:PerformLayout(w, h)
+						w = (w - 8) / 2
+						self.label1:SetWide(w)
+						self.label2:SetWide(w)
+						self.label1:SetPos(0,0)
+						self.label2:SetPos(w+8,0)
+					end
+					for k, v in ipairs ({
+						[1] = {label = GetTFLanguageString("#TF_RedTeam_Name") or "RED", subtable = "visuals_red", col = desc_colors.negative},
+						[2] = {label = GetTFLanguageString("#TF_BlueTeam_Name") or "BLU", subtable = "visuals_blu", col = desc_colors.positive},
+					}) do
+						local num = TFStyleVGUI("DNumberWang", skins, true)
+						num:SetDecimals(0)
+						num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
+						num:SetValue(k-1)
+						num.FGColor = v.col
+						skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
+						editor.controls[num] = {
+							Load = function(i)
+								if i[v.subtable] and i[v.subtable].skin != nil then
+									num:SetValue(i[v.subtable].skin)
+								end
+							end,
+							Save = function(i)
+								local val = num:GetValue()
+								if val != k-1 then //don't save default values
+									i[v.subtable] = i[v.subtable] or {}
+									i[v.subtable].skin = val
+								end
+							end,
+						}
+						//TODO: update spawnicon preview when team is changed
+					end
 
 
 					//Checkboxes to set player bodygroups
