@@ -1646,6 +1646,7 @@ if CLIENT then
 						//pnl:DockPadding(4,4,4,4)
 						pnl:SizeToContents()
 						pnl:SetSize(pnl:GetWide() + 8, pnl:GetTall() + 8)
+						pnl:SetMouseInputEnabled(false)
 
 						function pnl:Paint(w,h)
 							surface.SetDrawColor(bgcol)
@@ -3564,6 +3565,8 @@ if CLIENT then
 							end
 							//Update visibility of class-specific model fields
 							editor.class_models:UpdateVisibility()
+							//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+							editor.bodygroups:UpdateVisibility()
 							//TODO: other controls that are dependent on class selection
 							holder:InvalidateLayout(true)
 						end
@@ -3672,13 +3675,14 @@ if CLIENT then
 									break
 								end
 							end
-							timer.Simple(0, function() check:UpdateVisibility() end)
+							timer.Simple(0, function() check.HasLoaded = true check:UpdateVisibility() end)
 						end
 					}
 					function check:OnChange(val)
 						check:UpdateVisibility()
 					end
 					function check:UpdateVisibility()
+						if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
 						local selected_class_count = 0
 						for _, pnl in pairs (editor.classes.checks) do
 							if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
@@ -3869,12 +3873,13 @@ if CLIENT then
 						editor.controls[entry] = nil
 						return entry
 					end
+					local tab = {"extra_wearable", "extra_wearable_2"}
 					editor.controls[pnl] = {
 						Load = function(i)
-							for _, key in ipairs ({"extra_wearable", "extra_wearable_2"}) do
-								if i[key] then
+							for k, v in ipairs (tab) do
+								if i[v] then
 									local entry = pnl:AddEntry()
-									if entry then entry:SetText(i[key]) end
+									if entry then entry:SetText(i[v]) end
 								end
 							end
 							pnl:UpdateEntries()
@@ -3882,7 +3887,6 @@ if CLIENT then
 						Save = function(i)
 							for k, v in ipairs (pnl.entries) do
 								if v:GetText() != "" then
-									local tab = {"extra_wearable", "extra_wearable_2"}
 									i[tab[k]] = v:GetText()
 								end
 							end
@@ -3896,6 +3900,152 @@ if CLIENT then
 					help:SetText("Extra models attached to the player model, i.e. medigun/banner backpacks, banner flags")
 					help:Dock(TOP)
 					help:DockMargin(0,betweenitems,0,0)
+
+
+					//Checkboxes to set player bodygroups
+					local box = AddBox(holder.columns[2], GetTFLanguageString("#TF_ImportFile_Bodygroups") or "Bodygroup:")
+					editor.bodygroups = AddColumnHolder(box, 2, 0)
+					editor.bodygroups:Dock(TOP)
+					editor.bodygroups.checks = {}
+					local bodygroups = {
+						{
+							label = "Hat",
+							bgs = {
+								scout = "hat",
+								soldier = "hat",
+								engineer = "hat",
+								sniper = "hat"
+							}
+						},
+						{
+							label = "Headphones", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
+							bgs = {
+								scout = "headphones"
+							}
+						},
+						{
+							label = "Head", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ")",
+							bgs = {
+								pyro = "head"
+							}
+						},
+						{
+							label = "Dogtags", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
+							bgs = {
+								scout = "dogtags"
+							}
+						},
+						{
+							label = "Grenades",
+							bgs = {
+								soldier = "grenades",
+								pyro = "grenades",
+								demoman = "grenades"
+							}
+						},
+						{
+							label = "Bullets", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
+							bgs = {
+								heavy = "bullets"
+								//sniper has a bullets bodygroup but it's not useful here, it just enables sydney sleeper darts
+							}
+						},
+						{
+							label = "Backpack", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Medic") or "Medic") .. ")",
+							bgs = {
+								pyro = "backpack",
+								medic = "medic_backpack"
+							}
+						},
+						{
+							label = "Hands", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
+							bgs = {
+								heavy = "hands"
+							}
+						},
+						{
+							label = "Right hand", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Engineer") or "Engineer") ..  ")",
+							bgs = {
+								pyro = "righthand",
+								engineer = {name = "rightarm", val = 2} //rightarm 1 is gunslinger
+							}
+						},
+						{
+							label = "Shoes", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Demoman") or "Demo") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") ..  ")",
+							bgs = {
+								scout = "shoes_socks",
+								demoman = "shoes",
+							}
+						},
+					}
+					local keys_by_bg = {}
+					for k, v in ipairs (bodygroups) do
+						for class, bg in pairs (v.bgs) do
+							local val = 1
+							if istable(bg) then 
+								val = bg.val
+								bg = bg.name
+							end
+							keys_by_bg[bg] = {val = val, k = k}
+						end
+						local check = TFStyleVGUI("DCheckBoxLabel", editor.bodygroups.columns[math.fmod(k-1, 2)+1])
+						check:Dock(TOP)
+						if k > 2 then
+							check:DockMargin(0,betweenitems,0,0)
+						end
+						check:SetText(v.label)
+						editor.bodygroups.checks[k] = check
+						//make sure user can read the text if it's cut off
+						AddTFStyleTooltip(check.Label, check:GetText())
+						local old_IsHovered = check.Label.IsHovered
+						function check.Label:IsHovered(...)
+							return old_IsHovered(self, ...) or check:IsHovered(...)
+						end
+					end
+					function editor.bodygroups:UpdateVisibility()
+						if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
+						//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+						for k, v in ipairs (editor.bodygroups.checks) do
+							local selected_classes = 0
+							for class, bg in pairs (bodygroups[k].bgs) do
+								if editor.classes.checks[class]:GetChecked() then
+									selected_classes = selected_classes + 1
+								end
+							end
+							v:SetEnabled(selected_classes > 0)
+							v:SetChecked(selected_classes > 0 and v:GetChecked())
+						end
+					end
+					editor.controls[editor.bodygroups] = {
+						Load = function(i)
+							if i.visuals and i.visuals.player_bodygroups then
+								for k, v in pairs (i.visuals.player_bodygroups) do
+									MsgN(keys_by_bg[k], ", ", keys_by_bg[k].val, ", ", keys_by_bg[k].k)
+									if keys_by_bg[k] and v == keys_by_bg[k].val then
+										MsgN(k)
+										editor.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
+									end
+								end
+							end
+							timer.Simple(0, function() editor.bodygroups.HasLoaded = true editor.bodygroups:UpdateVisibility() end)
+						end,
+						Save = function(i)
+							for k, v in ipairs (editor.bodygroups.checks) do
+								if !v:GetChecked() then continue end
+								for class, bg in pairs (bodygroups[k].bgs) do
+									if !editor.classes.checks[class]:GetChecked() then continue end
+									i.visuals = i.visuals or {}
+									i.visuals.player_bodygroups = i.visuals.player_bodygroups or {}
+									local val = 1
+									if istable(bg) then
+										val = bg.val
+										bg = bg.name
+									end
+									i.visuals.player_bodygroups[bg] = val
+								end
+							end
+						end
+					}
 
 				end
 
