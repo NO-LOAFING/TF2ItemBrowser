@@ -4054,20 +4054,30 @@ if CLIENT then
 
 						local box = AddBox(holder.columns[2])
 						local i = table.insert(editor.styles, box)
+						//for most of these boxes, we have a thick dockpadding on all sides to make the controls fit inside nicely, while the label at the top
+						//uses negative dockmargins to appear closer to the edges at the controls. unfortunately, DSizeToContents doesn't like items within it
+						//using negative dockmargins on the right side specifically, which we'd have to do to make the "remove style" button match the label.
+						//guess we have to apply the padding to all the controls manually, bah!
+						local _a, _b, side_margin, _c = box:GetDockPadding()
+						box:DockPadding(_a, _b, 0, _c)
+						
 
-						local entry = TFStyleVGUI("DTextEntry", box)
+						local text_holder = vgui.Create("Panel", box)
+						text_holder:SetHeight(22)
+						text_holder:Dock(TOP)
+						text_holder:DockMargin(-8-3,-8-3,0,betweenitems)
+						local entry = TFStyleVGUI("DTextEntry", text_holder)
 						entry:SetFont("TF2ItemBrowser_ItemName")
 						entry:SetPlaceholderText("Style " .. tostring(i))
-						entry:Dock(TOP)
-						entry:DockMargin(-8-3,-8-3,14,betweenitems)
+						entry:Dock(FILL)
 						box.name = entry
 
-						local close = vgui.Create("DButton", holder.columns[2]) //dumb hack: can't put this inside of box because negative dockmargin on the right side screws up the dsizetocontents
+						local close = vgui.Create("DButton", text_holder)
 						close:SetText("")
 						close:SetSize(22,22)
+						close:Dock(RIGHT)
+						close:DockMargin(5,0,5,0)
 						function close:Paint(w,h)
-							local x, y = box:GetPos()
-							close:SetPos(x+holder.columns[2]:GetWide()-26, y+4)
 							if self.Depressed then
 								surface.SetDrawColor(color_white)
 							elseif self.Hovered then
@@ -4090,8 +4100,8 @@ if CLIENT then
 
 
 						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Change models?")
-						check:DockMargin(0,betweenitems,0,0)
+						check:SetText("Change model(s)?")
+						check:DockMargin(0,betweenitems,side_margin,0)
 						check:Dock(TOP)
 						box.model_check = check
 						function check:OnChange(val)
@@ -4100,6 +4110,7 @@ if CLIENT then
 
 						//Base model
 						local entry = AddTextEntry(box, "Item model path")
+						entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 						box.model = entry
 						entry.OnEnter = function()
 							//TODO: update spawnicon preview
@@ -4108,7 +4119,7 @@ if CLIENT then
 						//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
 						local check = TFStyleVGUI("DCheckBoxLabel", box)
 						check:SetText("Class-specific model paths?")
-						check:DockMargin(0,betweenitems,0,0)
+						check:DockMargin(0,betweenitems,side_margin,0)
 						check:Dock(TOP)
 						box.class_models = check
 						check.classes = {}
@@ -4117,13 +4128,14 @@ if CLIENT then
 						end
 						for i = 2, 10 do
 							local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
+							entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 							check.classes[i] = entry
 							entry.OnEnter = function()
 								//TODO: update spawnicon preview
 							end
 						end
 
-						
+
 						function box:UpdateVisibility()
 							if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
 							local selected_class_count = 0
@@ -4147,6 +4159,7 @@ if CLIENT then
 							if i.visuals and i.visuals.styles then
 								for k, v in pairs (i.visuals.styles) do
 									local style = button:AddStyle()
+									if v.name then style.name:SetText(v.name) end
 									if v.model_player_per_class then
 										style.model_check:SetChecked(true)
 										if v.model_player_per_class.basename then
@@ -4167,6 +4180,9 @@ if CLIENT then
 							local tab = {}
 							for i2, style in pairs (editor.styles) do
 								local tab2 = {}
+								if style.name:GetText() != "" then
+									tab2.name = style.name:GetText()
+								end
 								if style.model:GetParent():IsVisible() and style.model:GetText() != "" then
 									tab2.model_player_per_class = tab2.model_player_per_class or {}
 									tab2.model_player_per_class.basename = style.model:GetText()
