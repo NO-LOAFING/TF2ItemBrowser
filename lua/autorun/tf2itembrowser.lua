@@ -3569,7 +3569,7 @@ if CLIENT then
 							editor.class_models:UpdateVisibility()
 							//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
 							editor.bodygroups:UpdateVisibility()
-							//Update visibility of class-specific model fields in styles
+							//Also update visibility of class-specific model fields and bodygroups in styles
 							for _, style in pairs (editor.styles) do
 								style:UpdateVisibility()
 							end
@@ -3989,6 +3989,12 @@ if CLIENT then
 						end
 						check:SetText(v.label)
 						editor.bodygroups.checks[k] = check
+						function check:OnChange(val)
+							//Update bodygroups in styles - bodygroups that are already enabled here should be checked and grayed out in styles
+							for _, style in pairs (editor.styles) do
+								style:UpdateVisibility()
+							end
+						end
 						//make sure user can read the text if it's cut off
 						AddTFStyleTooltip(check.Label, check:GetText())
 						local old_IsHovered = check.Label.IsHovered
@@ -4171,6 +4177,35 @@ if CLIENT then
 						end
 
 
+						local check = TFStyleVGUI("DCheckBoxLabel", box)
+						check:SetText("Additional bodygroups?")
+						check:DockMargin(0,betweencategories,side_margin,0)
+						check:Dock(TOP)
+						box.bodygroups_check = check
+						function check:OnChange(val)
+							box:UpdateVisibility()
+						end
+
+						//Checkboxes to set player bodygroups
+						box.bodygroups = AddColumnHolder(box, 2, 0)
+						box.bodygroups:Dock(TOP)
+						box.bodygroups:DockMargin(0,0,side_margin,0)
+						box.bodygroups.checks = {}
+						for k, v in ipairs (bodygroups) do
+							local check = TFStyleVGUI("DCheckBoxLabel", box.bodygroups.columns[math.fmod(k-1, 2)+1])
+							check:Dock(TOP)
+							check:DockMargin(0,betweenitems,0,0)
+							check:SetText(v.label)
+							box.bodygroups.checks[k] = check
+							//make sure user can read the text if it's cut off
+							AddTFStyleTooltip(check.Label, check:GetText())
+							local old_IsHovered = check.Label.IsHovered
+							function check.Label:IsHovered(...)
+								return old_IsHovered(self, ...) or check:IsHovered(...)
+							end
+						end
+
+
 						function box:UpdateVisibility()
 							if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
 							local selected_class_count = 0
@@ -4187,6 +4222,30 @@ if CLIENT then
 							end
 
 							skins:GetParent():SetVisible(box.skins_check:GetChecked())
+
+							box.bodygroups:SetVisible(box.bodygroups_check:GetChecked())
+							for k, v in ipairs (box.bodygroups.checks) do
+								if editor.bodygroups.checks[k]:GetChecked() then
+									//Bodygroups that are already enabled in the base settings should be checked and grayed out here
+									v:SetEnabled(false)
+									v:SetChecked(true)
+									v.ForceCheckedByBase = true
+								else
+									//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+									local selected_classes = 0
+									for class, bg in pairs (bodygroups[k].bgs) do
+										if editor.classes.checks[class]:GetChecked() then
+											selected_classes = selected_classes + 1
+										end
+									end
+									v:SetEnabled(selected_classes > 0)
+									if v.ForceCheckedByBase then
+										v:SetChecked(false)
+										v.ForceCheckedByBase = nil
+									end
+									v:SetChecked(selected_classes > 0 and v:GetChecked())
+								end
+							end
 						end
 						return box
 
@@ -4217,6 +4276,13 @@ if CLIENT then
 										style.skins_check:SetChecked(true)
 										style.skins.num2:SetValue(v.skin_blu)
 									end
+									if v.additional_hidden_bodygroups then
+										for k, v in pairs (v.additional_hidden_bodygroups) do
+											if keys_by_bg[k] and v == keys_by_bg[k].val then
+												style.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
+											end
+										end
+									end
 									timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
 								end
 							end
@@ -4244,6 +4310,21 @@ if CLIENT then
 									end
 									if style.skins.num2:GetValue() != 1 then 
 										tab2.skin_blu = style.skins.num2:GetValue()
+									end
+								end
+								if style.bodygroups:IsVisible() then
+									for k, v in ipairs (style.bodygroups.checks) do
+										if !v:GetChecked() or v.ForceCheckedByBase then continue end
+										for class, bg in pairs (bodygroups[k].bgs) do
+											if !editor.classes.checks[class]:GetChecked() then continue end
+											tab2.additional_hidden_bodygroups = tab2.additional_hidden_bodygroups or {}
+											local val = 1
+											if istable(bg) then
+												val = bg.val
+												bg = bg.name
+											end
+											tab2.additional_hidden_bodygroups[bg] = val
+										end
 									end
 								end
 								if table.Count(tab2) > 0 then tab[i2-1] = tab2 end
