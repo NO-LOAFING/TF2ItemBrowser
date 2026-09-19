@@ -3419,6 +3419,13 @@ if CLIENT then
 					check:Dock(TOP)
 					check:DockMargin(0,betweenitems,0,0)
 					check:SetText("Add " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect\n(requires \"cig_drg_smoke\" attachment)")
+					function check:OnChange(val)
+						//Toggle visibility of "disable genteel smoke" checkboxes in styles
+						for _, style in pairs (editor.styles) do
+							style:UpdateVisibility()
+						end
+						holder:InvalidateLayout(true)
+					end
 					editor.controls[check] = {
 						Load = function(i)
 							if i.attributes and i.attributes["attach particle effect static"] and 
@@ -3860,6 +3867,7 @@ if CLIENT then
 					local _pnl = AddTFLabelToVGUI(skins, "#skin")
 					_pnl:DockMargin(0,betweencategories,0,0)
 					_pnl:Dock(TOP)
+					editor.skins = skins
 					function skins:PerformLayout(w, h)
 						w = (w - 8) / 2
 						self.label1:SetWide(w)
@@ -3877,6 +3885,7 @@ if CLIENT then
 						num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
 						num:SetValue(k-1)
 						num.FGColor = v.col
+						skins["num" .. k] = num
 						skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
 						editor.controls[num] = {
 							Load = function(i)
@@ -4178,7 +4187,7 @@ if CLIENT then
 
 
 						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Additional bodygroups?")
+						check:SetText("Set additional bodygroups?")
 						check:DockMargin(0,betweencategories,side_margin,0)
 						check:Dock(TOP)
 						box.bodygroups_check = check
@@ -4204,6 +4213,14 @@ if CLIENT then
 								return old_IsHovered(self, ...) or check:IsHovered(...)
 							end
 						end
+
+
+						//Toggle to disable genteel smoke effect
+						local check = TFStyleVGUI("DCheckBoxLabel", box)
+						check:SetText("Disable " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect")
+						check:DockMargin(0,betweencategories,side_margin,0)
+						check:Dock(TOP)
+						box.disable_genteel_smoke = check
 
 
 						function box:UpdateVisibility()
@@ -4246,6 +4263,8 @@ if CLIENT then
 									v:SetChecked(selected_classes > 0 and v:GetChecked())
 								end
 							end
+
+							box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked()) 
 						end
 						return box
 
@@ -4283,6 +4302,9 @@ if CLIENT then
 											end
 										end
 									end
+									if v.use_smoke_particle_effect and v.use_smoke_particle_effect == 0 then
+										style.disable_genteel_smoke:SetChecked(true)
+									end
 									timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
 								end
 							end
@@ -4305,10 +4327,10 @@ if CLIENT then
 									end
 								end
 								if style.skins:GetParent():IsVisible() then
-									if style.skins.num1:GetValue() != 0 then 
+									if style.skins.num1:GetValue() != editor.skins.num1:GetValue() then 
 										tab2.skin_red = style.skins.num1:GetValue()
 									end
-									if style.skins.num2:GetValue() != 1 then 
+									if style.skins.num2:GetValue() != editor.skins.num2:GetValue() then 
 										tab2.skin_blu = style.skins.num2:GetValue()
 									end
 								end
@@ -4326,6 +4348,9 @@ if CLIENT then
 											tab2.additional_hidden_bodygroups[bg] = val
 										end
 									end
+								end
+								if style.disable_genteel_smoke:IsVisible() and style.disable_genteel_smoke:GetChecked() then
+									tab2.use_smoke_particle_effect = 0
 								end
 								if table.Count(tab2) > 0 then tab[i2-1] = tab2 end
 							end
