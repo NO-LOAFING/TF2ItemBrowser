@@ -3867,10 +3867,11 @@ if CLIENT then
 						self.label1:SetPos(0,0)
 						self.label2:SetPos(w+8,0)
 					end
-					for k, v in ipairs ({
+					local _skins = {
 						[1] = {label = GetTFLanguageString("#TF_RedTeam_Name") or "RED", subtable = "visuals_red", col = desc_colors.negative},
 						[2] = {label = GetTFLanguageString("#TF_BlueTeam_Name") or "BLU", subtable = "visuals_blu", col = desc_colors.positive},
-					}) do
+					}
+					for k, v in ipairs (_skins) do
 						local num = TFStyleVGUI("DNumberWang", skins, true)
 						num:SetDecimals(0)
 						num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
@@ -4100,7 +4101,7 @@ if CLIENT then
 
 
 						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Change model(s)?")
+						check:SetText("Change models?")
 						check:DockMargin(0,betweenitems,side_margin,0)
 						check:Dock(TOP)
 						box.model_check = check
@@ -4136,6 +4137,40 @@ if CLIENT then
 						end
 
 
+						local check = TFStyleVGUI("DCheckBoxLabel", box)
+						check:SetText("Change skins?")
+						check:DockMargin(0,betweencategories,side_margin,0)
+						check:Dock(TOP)
+						box.skins_check = check
+						function check:OnChange(val)
+							box:UpdateVisibility()
+						end
+
+						//Skin id pickers
+						local skins = vgui.Create("Panel", box)
+						local _pnl = AddTFLabelToVGUI(skins, "#skin")
+						_pnl:DockMargin(0,betweenitems,side_margin,0)
+						_pnl:Dock(TOP)
+						box.skins = skins
+						function skins:PerformLayout(w, h)
+							w = (w - 8) / 2
+							self.label1:SetWide(w)
+							self.label2:SetWide(w)
+							self.label1:SetPos(0,0)
+							self.label2:SetPos(w+8,0)
+						end
+						for k, v in ipairs (_skins) do
+							local num = TFStyleVGUI("DNumberWang", skins, true)
+							num:SetDecimals(0)
+							num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
+							num:SetValue(k-1)
+							num.FGColor = v.col
+							skins["num" .. k] = num
+							skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
+							//TODO: update spawnicon preview when team is changed
+						end
+
+
 						function box:UpdateVisibility()
 							if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
 							local selected_class_count = 0
@@ -4150,6 +4185,8 @@ if CLIENT then
 							for i = 2, 10 do
 								box.class_models.classes[i]:GetParent():SetVisible(box.model_check:GetChecked() and box.class_models:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
 							end
+
+							skins:GetParent():SetVisible(box.skins_check:GetChecked())
 						end
 						return box
 
@@ -4172,6 +4209,14 @@ if CLIENT then
 											end
 										end
 									end
+									if v.skin_red then
+										style.skins_check:SetChecked(true)
+										style.skins.num1:SetValue(v.skin_red)
+									end
+									if v.skin_blu then
+										style.skins_check:SetChecked(true)
+										style.skins.num2:SetValue(v.skin_blu)
+									end
 									timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
 								end
 							end
@@ -4191,6 +4236,14 @@ if CLIENT then
 									if v:GetParent():IsVisible() and v:GetText() != "" then
 										tab2.model_player_per_class = tab2.model_player_per_class or {}
 										tab2.model_player_per_class[classes[k].longname] = v:GetText()
+									end
+								end
+								if style.skins:GetParent():IsVisible() then
+									if style.skins.num1:GetValue() != 0 then 
+										tab2.skin_red = style.skins.num1:GetValue()
+									end
+									if style.skins.num2:GetValue() != 1 then 
+										tab2.skin_blu = style.skins.num2:GetValue()
 									end
 								end
 								if table.Count(tab2) > 0 then tab[i2-1] = tab2 end
