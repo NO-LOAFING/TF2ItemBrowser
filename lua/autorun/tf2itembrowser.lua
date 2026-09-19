@@ -3364,6 +3364,30 @@ if CLIENT then
 						return entry
 					end
 
+					local function AddMultilineTextEntry(parent, label, subtable, key_to_set)
+						local entry = AddTextEntry(parent, label, subtable, key_to_set)
+						entry:SetMultiline(true)
+						//undock the entry from the panel containing it and the text label, so we can display it at full width. 
+						//then, dock it into a new panel that only exists to be a container, because otherwise, clicking on a 
+						//textentry docked directly into one of our DSizeToContents boxes moves it to the bottom?? why??
+						local _pnl = entry:GetParent()
+						local _pnl2 = vgui.Create("Panel", parent)
+						_pnl2:Dock(TOP)
+						_pnl2:SetHeight(20)
+						entry:SetParent(_pnl2)
+						entry:Dock(FILL)
+						//Automatically resize the entry to show all lines
+						function entry:OnTextChanged()
+							_pnl2:SetHeight((19*math.max(1,entry:GetNumLines()))+1)
+						end
+						local old_Load = editor.controls[entry].Load
+						editor.controls[entry].Load = function(i)
+							old_Load(i)
+							timer.Simple(0, function() entry:OnTextChanged() end)
+						end
+						return entry, _pnl, _pnl2
+					end
+
 
 					//Place all other controls in 3 side-by-side columns of equal width
 					local scroll = TFStyleVGUI("DScrollPanel", editor)
@@ -4361,6 +4385,37 @@ if CLIENT then
 						end,
 					}
 
+
+					local box = AddBox(holder.columns[3], language.GetPhrase("#information") .. ":")
+
+					local entry = AddTextEntry(box, GetTFLanguageString("#TF_ImportFile_NameLabel" or "Item Name"), nil, "item_name")
+					entry:GetParent():DockMargin(0,0,0,0)
+					
+					local entry = AddMultilineTextEntry(box, string.TrimRight(GetTFLanguageString("#TF_PublishFile_DescLabel") or "Description:", ":"), nil, "item_description")
+
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Add fake attributes?")
+					check:DockMargin(0,betweencategories,0,0)
+					check:Dock(TOP)
+					check.entries = {}
+					function check:OnChange(val)
+						check:UpdateVisibility()
+					end
+					editor.controls[check] = {
+						Load = function(i)
+							check:SetChecked(i._display_attributes != nil)
+							check:UpdateVisibility()
+						end
+					}
+					function check:UpdateVisibility()
+						for k, v in ipairs (check.entries) do
+							v:SetVisible(check:GetChecked())
+						end
+					end
+					_, check.entries[1], check.entries[2] = AddMultilineTextEntry(box, "Neutral", "_display_attributes", "neutral")
+					_, check.entries[3], check.entries[4] = AddMultilineTextEntry(box, "Positive", "_display_attributes", "positive")
+					_, check.entries[5], check.entries[6] = AddMultilineTextEntry(box, "Negative", "_display_attributes", "negative")
+
 				end
 
 
@@ -4889,6 +4944,15 @@ if CLIENT then
 			if sorted_attribs[v.name] then
 				for _, attrib in SortedPairs (sorted_attribs[v.name]) do
 					table.insert(desc, {str = attrib, col = v.color})
+				end
+			end
+		end
+
+		//Add fake display attributes from custom items; these won't be sorted with real attributes, but no item should have both, so it's fine
+		if i._display_attributes then
+			for _, type in ipairs ({"neutral", "positive", "negative"}) do
+				if i._display_attributes[type] then
+					table.insert(desc, {str = i._display_attributes[type], col = desc_colors[type]})
 				end
 			end
 		end
