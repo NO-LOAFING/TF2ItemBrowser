@@ -3339,26 +3339,28 @@ if CLIENT then
 						entry.OnFocusChanged = function(_, b) 
 							if !b then entry:OnEnter() end
 						end
-						editor.controls[entry] = {
-							Load = function(i)
-								local sel
-								if subtable then
-									i = i[subtable]
-								end
-								if i and i[key_to_set] then
-									entry:SetText(i[key_to_set])
-								end
-							end,
-							Save = function(i)
-								if !_pnl:IsVisible() or entry:GetText() == "" then return end
-								if subtable then
-									i[subtable] = i[subtable] or {}
-									i[subtable][key_to_set] = entry:GetText()
-								else
-									i[key_to_set] = entry:GetText()
-								end
-							end,
-						}
+						if key_to_set then
+							editor.controls[entry] = {
+								Load = function(i)
+									local sel
+									if subtable then
+										i = i[subtable]
+									end
+									if i and i[key_to_set] then
+										entry:SetText(i[key_to_set])
+									end
+								end,
+								Save = function(i)
+									if !_pnl:IsVisible() or entry:GetText() == "" then return end
+									if subtable then
+										i[subtable] = i[subtable] or {}
+										i[subtable][key_to_set] = entry:GetText()
+									else
+										i[key_to_set] = entry:GetText()
+									end
+								end,
+							}
+						end
 						return entry
 					end
 
@@ -3567,6 +3569,10 @@ if CLIENT then
 							editor.class_models:UpdateVisibility()
 							//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
 							editor.bodygroups:UpdateVisibility()
+							//Update visibility of class-specific model fields in styles
+							for _, style in pairs (editor.styles) do
+								style:UpdateVisibility()
+							end
 							//TODO: other controls that are dependent on class selection
 							holder:InvalidateLayout(true)
 						end
@@ -3747,7 +3753,6 @@ if CLIENT then
 							pnl:UpdateEntries()
 							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
 						end
-						editor.controls[entry] = nil
 						return entry
 					end
 					editor.controls[pnl] = {
@@ -3820,7 +3825,6 @@ if CLIENT then
 							pnl:UpdateEntries()
 							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
 						end
-						editor.controls[entry] = nil
 						return entry
 					end
 					local tab = {"extra_wearable", "extra_wearable_2"}
@@ -4009,9 +4013,7 @@ if CLIENT then
 						Load = function(i)
 							if i.visuals and i.visuals.player_bodygroups then
 								for k, v in pairs (i.visuals.player_bodygroups) do
-									MsgN(keys_by_bg[k], ", ", keys_by_bg[k].val, ", ", keys_by_bg[k].k)
 									if keys_by_bg[k] and v == keys_by_bg[k].val then
-										MsgN(k)
 										editor.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
 									end
 								end
@@ -4034,6 +4036,154 @@ if CLIENT then
 								end
 							end
 						end
+					}
+
+
+					local button = TFStyleVGUI("DButton", holder.columns[2])
+					button:SetText("Add Style")
+					button:Dock(TOP)
+					button:DockMargin(0,8,0,0)
+					button:SetZPos(1) //keep this below all the styles we create
+					function button:DoClick()
+						local style = self:AddStyle()
+						style.HasLoaded = true
+						style:UpdateVisibility()
+					end
+					editor.styles = {}
+					function button:AddStyle()
+
+						local box = AddBox(holder.columns[2])
+						local i = table.insert(editor.styles, box)
+
+						local entry = TFStyleVGUI("DTextEntry", box)
+						entry:SetFont("TF2ItemBrowser_ItemName")
+						entry:SetPlaceholderText("Style " .. tostring(i))
+						entry:Dock(TOP)
+						entry:DockMargin(-8-3,-8-3,14,betweenitems)
+						box.name = entry
+
+						local close = vgui.Create("DButton", holder.columns[2]) //dumb hack: can't put this inside of box because negative dockmargin on the right side screws up the dsizetocontents
+						close:SetText("")
+						close:SetSize(22,22)
+						function close:Paint(w,h)
+							local x, y = box:GetPos()
+							close:SetPos(x+holder.columns[2]:GetWide()-26, y+4)
+							if self.Depressed then
+								surface.SetDrawColor(color_white)
+							elseif self.Hovered then
+								surface.SetDrawColor(gui_colors.LightRed)
+							else
+								surface.SetDrawColor(gui_colors.TanDark)
+							end
+							surface.SetMaterial(close_button)
+							surface.DrawTexturedRect(0,0,w,h)
+						end
+						AddTFButtonSounds(close)
+						function close:DoClick()
+							table.remove(editor.styles, table.KeyFromValue(editor.styles, box))
+							close:Remove()
+							box:Remove()
+							for i, style in ipairs (editor.styles) do
+								style.name:SetPlaceholderText("Style " .. tostring(i))
+							end
+						end
+
+
+						local check = TFStyleVGUI("DCheckBoxLabel", box)
+						check:SetText("Change models?")
+						check:DockMargin(0,betweenitems,0,0)
+						check:Dock(TOP)
+						box.model_check = check
+						function check:OnChange(val)
+							box:UpdateVisibility()
+						end
+
+						//Base model
+						local entry = AddTextEntry(box, "Item model path")
+						box.model = entry
+						entry.OnEnter = function()
+							//TODO: update spawnicon preview
+						end
+
+						//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
+						local check = TFStyleVGUI("DCheckBoxLabel", box)
+						check:SetText("Class-specific model paths?")
+						check:DockMargin(0,betweenitems,0,0)
+						check:Dock(TOP)
+						box.class_models = check
+						check.classes = {}
+						function check:OnChange(val)
+							box:UpdateVisibility()
+						end
+						for i = 2, 10 do
+							local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
+							check.classes[i] = entry
+							entry.OnEnter = function()
+								//TODO: update spawnicon preview
+							end
+						end
+
+						
+						function box:UpdateVisibility()
+							if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
+							local selected_class_count = 0
+							for _, pnl in pairs (editor.classes.checks) do
+								if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
+							end
+							//Only show the model entry box (or anything else below) if the model checkbox is selected
+							box.model:GetParent():SetVisible(box.model_check:GetChecked())
+							//Only show the multi-class checkbox if multiple classes are selected
+							box.class_models:SetVisible(box.model_check:GetChecked() and selected_class_count > 1)
+							//Only show the entry box for each class if the multi-class checkbox is selected, the corresponding class is selected, AND multiple classes are selected
+							for i = 2, 10 do
+								box.class_models.classes[i]:GetParent():SetVisible(box.model_check:GetChecked() and box.class_models:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
+							end
+						end
+						return box
+
+					end
+					editor.controls[button] = {
+						Load = function(i)
+							if i.visuals and i.visuals.styles then
+								for k, v in pairs (i.visuals.styles) do
+									local style = button:AddStyle()
+									if v.model_player_per_class then
+										style.model_check:SetChecked(true)
+										if v.model_player_per_class.basename then
+											style.model:SetText(v.model_player_per_class.basename)
+										end
+										for i2 = 2, 10 do
+											if v.model_player_per_class[classes[i2].longname] then
+												style.class_models:SetChecked(true)
+												style.class_models.classes[i2]:SetText(v.model_player_per_class[classes[i2].longname])
+											end
+										end
+									end
+									timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
+								end
+							end
+						end,
+						Save = function(i)
+							local tab = {}
+							for i2, style in pairs (editor.styles) do
+								local tab2 = {}
+								if style.model:GetParent():IsVisible() and style.model:GetText() != "" then
+									tab2.model_player_per_class = tab2.model_player_per_class or {}
+									tab2.model_player_per_class.basename = style.model:GetText()
+								end
+								for k, v in pairs (style.class_models.classes) do
+									if v:GetParent():IsVisible() and v:GetText() != "" then
+										tab2.model_player_per_class = tab2.model_player_per_class or {}
+										tab2.model_player_per_class[classes[k].longname] = v:GetText()
+									end
+								end
+								if table.Count(tab2) > 0 then tab[i2-1] = tab2 end
+							end
+							if table.Count(tab) > 0 then
+								i.visuals = i.visuals or {}
+								i.visuals.styles = tab
+							end
+						end,
 					}
 
 				end
