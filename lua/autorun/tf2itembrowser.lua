@@ -1135,6 +1135,7 @@ if CLIENT then
 	local GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
 	local OutlinedGreyBox = GWEN.CreateTextureBorder(0, 0, 128, 64, 24, 24, 24, 0, Material("vgui/loadout_round_rect_selected.vmt"))
+	local BackpackItemBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt")) //for custom item editor's preview; the version used by item icons is defined down in the item icon code and scales with the currently selected icon size
 	local item_icon_sizes = {
 		--[[{ //attempt at a size that makes the icons 64px like spawnicons; these look good, but it's awkward to switch between this and backpack-sized, because the window never fits both sizes well
 			//name = "Small",
@@ -3290,18 +3291,24 @@ if CLIENT then
 						_pnl:DockMargin(0,betweenitems,0,0)
 						_pnl:Dock(TOP)
 						combo:SetSortItems(false)
-						for k, v in ipairs (options) do
-							if options[k].PrependSpacer then combo:AddSpacer() end
-							options[k].id = combo:AddChoice(v.Label, k)
+						function combo:PopulateOptions(options)
+							combo:Clear()
+							combo.options = options
+							for k, v in ipairs (combo.options) do
+								if combo.options[k].PrependSpacer then combo:AddSpacer() end
+								combo.options[k].id = combo:AddChoice(v.Label, k)
+							end
 						end
+						combo:PopulateOptions(options)
 						editor.controls[combo] = {
 							Load = function(i)
+								if table.Count(combo.options) == 0 then return end
 								local sel
 								if subtable then
 									i = i[subtable]
 								end
 								if i then
-									for k, v in ipairs (options) do
+									for k, v in ipairs (combo.options) do
 										if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
 											sel = v.id
 											//don't break, multiple options can return true and we want to choose the lowermost one
@@ -3312,21 +3319,20 @@ if CLIENT then
 								combo:ChooseOptionID(sel)
 							end,
 							Save = function(i)
-								if !_pnl:IsVisible() then return end
+								if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
 								local _, opt = combo:GetSelected()
-								if options[opt].Value then
+								if combo.options[opt].Value then
 									if subtable then
 										i[subtable] = i[subtable] or {}
-										i[subtable][key_to_set] = options[opt].Value
+										i[subtable][key_to_set] = combo.options[opt].Value
 									else
-										i[key_to_set] = options[opt].Value
+										i[key_to_set] = combo.options[opt].Value
 									end
-								elseif options[opt].Save then 
-									options[opt].Save(i)
+								elseif combo.options[opt].Save then 
+									combo.options[opt].Save(i)
 								end
 							end,
 						}
-						combo.options = options
 						return combo
 					end
 
@@ -3591,7 +3597,7 @@ if CLIENT then
 						function check.Label:IsHovered(...)
 							return old_IsHovered(self, ...) or check:IsHovered(...)
 						end
-						function check:OnChange(val)
+						function check:OnChange(val) //Update all controls that are dependent on class selection
 							//Only show equip regions for the currently selected class
 							for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
 								pnl:SetVisible(val)
@@ -3604,7 +3610,8 @@ if CLIENT then
 							for _, style in pairs (editor.styles) do
 								style:UpdateVisibility()
 							end
-							//TODO: other controls that are dependent on class selection
+							//Update classes listed in backpack icon class dropdown
+							editor.bp_class:UpdateVisibility()
 							holder:InvalidateLayout(true)
 						end
 					end
@@ -4111,6 +4118,10 @@ if CLIENT then
 						entry:SetPlaceholderText("Style " .. tostring(i))
 						entry:Dock(FILL)
 						box.name = entry
+						entry.OnEnter = function()
+							//update backpack icon style selector
+							editor.bp_style:UpdateVisibility()
+						end
 
 						local close = vgui.Create("DButton", text_holder)
 						close:SetText("")
@@ -4136,6 +4147,8 @@ if CLIENT then
 							for i, style in ipairs (editor.styles) do
 								style.name:SetPlaceholderText("Style " .. tostring(i))
 							end
+							//update backpack icon style selector
+							editor.bp_style:UpdateVisibility()
 						end
 
 
@@ -4290,6 +4303,10 @@ if CLIENT then
 
 							box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked()) 
 						end
+
+						//update backpack icon style selector
+						editor.bp_style:UpdateVisibility()
+
 						return box
 
 					end
@@ -4383,6 +4400,124 @@ if CLIENT then
 								i.visuals.styles = tab
 							end
 						end,
+					}
+
+
+					local box = AddBox(holder.columns[3], (GetTFLanguageString("#TF_ImportFile_IconLabel") or "Backpack Icon") .. ":")
+
+					local bpcontainer = vgui.Create("Panel", box)
+					bpcontainer:Dock(TOP)
+					local mdl = vgui.Create("DPanel", bpcontainer)
+					editor.bp = mdl
+					mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
+					function mdl:Paint(w,h)
+						BackpackItemBorderUnscaled(0,0,w,h)
+					end
+					mdl:Dock(LEFT)
+					bpcontainer:SetHeight(mdl:GetTall())
+					//TODO:
+					//- equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
+					//- make various draw and control funcs from the itemicon's dmodelpanel global so that we can reuse them here
+
+					local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
+					editor.bp_class = drop
+					function drop:UpdateVisibility()
+						local _, old_sel = drop:GetSelected()
+						if old_sel and drop:GetParent():IsVisible() then
+							old_sel = drop.options[old_sel].Value
+						else
+							old_sel = ""
+						end
+						local options = {}
+						for i = 2, 10 do
+							if editor.classes.checks[classes[i].longname]:GetChecked() then
+								table.insert(options, {
+									Label = GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname),
+									Value = classes[i].longname
+								})
+							end
+						end
+						drop:GetParent():SetVisible(#options > 1)
+						editor.bp_showclass:SetVisible(#options > 0) //set this here as well
+						drop:PopulateOptions(options)
+						if #options > 0 then
+							//Reselect the previously selected option if it still exists, otherwise select the first one
+							for k, v in ipairs (options) do
+								if v.Value == old_sel then
+									drop:ChooseOptionID(v.id)
+									old_sel = nil
+									break
+								end
+							end
+							if old_sel then drop:ChooseOptionID(1) end
+						end
+					end
+					local old_Load = editor.controls[entry].Load
+					editor.controls[drop].Load = function(i)
+						//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait a frame
+						timer.Simple(0, function()
+							drop:UpdateVisibility()
+							old_Load(i)
+						end)
+					end
+
+					local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
+					editor.bp_style = drop
+					function drop:UpdateVisibility()
+						local _, old_sel = drop:GetSelected()
+						if old_sel and drop:GetParent():IsVisible() then
+							old_sel = drop.options[old_sel].Value
+						else
+							old_sel = ""
+						end
+						local options = {}
+						for i, style in pairs (editor.styles) do
+							local name = style.name:GetText()
+							if name == "" then
+								name = "Style " .. tostring(i)
+							end
+							table.insert(options, {
+								Label = name,
+								Value = i-1
+							})
+						end
+						drop:GetParent():SetVisible(#options > 1)
+						drop:PopulateOptions(options)
+						if #options > 0 then
+							//Reselect the previously selected option if it still exists, otherwise select the first one
+							for k, v in ipairs (options) do
+								if v.Value == old_sel then
+									drop:ChooseOptionID(v.id)
+									old_sel = nil
+									break
+								end
+							end
+							if old_sel then drop:ChooseOptionID(1) end
+						end
+					end
+					editor.controls[drop].Load = function(i)
+						//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait a frame
+						timer.Simple(0, function()
+							drop:UpdateVisibility()
+							old_Load(i)
+						end)
+					end
+
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Show class model in icon")
+					check:DockMargin(0,betweenitems,0,0)
+					check:Dock(TOP)
+					editor.bp_showclass = check
+					editor.controls[check] = {
+						Load = function(i)
+							if i._customitem_bp and i._customitem_bp.showclass then check:SetChecked(true) end
+						end,
+						Save = function(i)
+							if check:IsVisible() and check:GetChecked() then
+								i._customitem_bp = i._customitem_bp or {}
+								i._customitem_bp.showclass = 1
+							end
+						end
 					}
 
 
