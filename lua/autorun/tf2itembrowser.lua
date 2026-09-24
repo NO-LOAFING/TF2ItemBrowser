@@ -2141,6 +2141,7 @@ if CLIENT then
 		unusual_butterfly_teamcolor_blue = {Vector(-20,-20,-12), Vector(20,20,30)},
 		unusual_butterfly_parent_purple = {Vector(-20,-20,-12), Vector(20,20,30)},
 	}
+	local DrawItemModels, DoItemModelCamera, CreateItemIconModelPanel
 
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
@@ -3400,6 +3401,12 @@ if CLIENT then
 					scroll:Dock(FILL)
 					local holder = AddColumnHolder(scroll, 3, 8)
 					holder:Dock(FILL)
+					//fix: make sure that scrolling to change the icon's fov doesn't mistakenly scroll this panel
+					local old_OnMouseWheeled = scroll.VBar.OnMouseWheeled
+					function scroll.VBar:OnMouseWheeled(dlta)
+						if editor.bp.Capturing or editor.bp:IsHovered() then return end
+						return old_OnMouseWheeled(self, dlta)
+					end
 
 
 					//Unlabeled box for item type and type-specific controls
@@ -3699,8 +3706,9 @@ if CLIENT then
 					//Base model
 					local entry = AddTextEntry(box, "Item model path", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
 					entry:GetParent():DockMargin(0,0,0,0)
-					entry.OnEnter = function()
-						//TODO: update spawnicon preview
+					editor.model = entry
+					function entry:OnEnter()
+						editor.bp:Refresh()
 					end
 
 					//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
@@ -3739,12 +3747,14 @@ if CLIENT then
 						end
 						//Only show the help text if we're showing the class-specific entries
 						check.help:SetVisible(selected_class_count > 1 and check:GetChecked())
+						//Refresh the backpack icon modelpanel, just in case the currently used model was disabled or something
+						editor.bp:Refresh()
 					end
 					for i = 2, 10 do
 						local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname), "model_player_per_class", classes[i].longname)
 						check.classes[i] = entry
-						entry.OnEnter = function()
-							//TODO: update spawnicon preview
+						function entry:OnEnter()
+							editor.bp:Refresh()
 						end
 					end
 					local help = vgui.Create("DLabel", box)
@@ -3790,6 +3800,9 @@ if CLIENT then
 						function entry:OnLoseFocus(...)
 							pnl:UpdateEntries()
 							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
+						end
+						function entry:OnEnter()
+							editor.bp:Refresh()
 						end
 						return entry
 					end
@@ -3863,6 +3876,9 @@ if CLIENT then
 							pnl:UpdateEntries()
 							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
 						end
+						function entry:OnEnter()
+							editor.bp:Refresh()
+						end
 						return entry
 					end
 					local tab = {"extra_wearable", "extra_wearable_2"}
@@ -3932,7 +3948,11 @@ if CLIENT then
 								end
 							end,
 						}
-						//TODO: update spawnicon preview when team is changed
+						if k == 1 then
+							function num:OnValueChanged()
+								editor.bp:Refresh()
+							end
+						end
 					end
 
 
@@ -4034,6 +4054,8 @@ if CLIENT then
 							for _, style in pairs (editor.styles) do
 								style:UpdateVisibility()
 							end
+							//Also update backpack icon, in case we're using a visible class model there
+							editor.bp:Refresh()
 						end
 						//make sure user can read the text if it's cut off
 						AddTFStyleTooltip(check.Label, check:GetText())
@@ -4118,7 +4140,7 @@ if CLIENT then
 						entry:SetPlaceholderText("Style " .. tostring(i))
 						entry:Dock(FILL)
 						box.name = entry
-						entry.OnEnter = function()
+						function entry:OnEnter()
 							//update backpack icon style selector
 							editor.bp_style:UpdateVisibility()
 						end
@@ -4149,6 +4171,8 @@ if CLIENT then
 							end
 							//update backpack icon style selector
 							editor.bp_style:UpdateVisibility()
+							//update backpack icon, just in case we removed the style it was using
+							editor.bp:Refresh()
 						end
 
 
@@ -4159,14 +4183,15 @@ if CLIENT then
 						box.model_check = check
 						function check:OnChange(val)
 							box:UpdateVisibility()
+							editor.bp:Refresh()
 						end
 
 						//Base model
 						local entry = AddTextEntry(box, "Item model path")
 						entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 						box.model = entry
-						entry.OnEnter = function()
-							//TODO: update spawnicon preview
+						function entry:OnEnter()
+							editor.bp:Refresh()
 						end
 
 						//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
@@ -4183,8 +4208,8 @@ if CLIENT then
 							local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
 							entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 							check.classes[i] = entry
-							entry.OnEnter = function()
-								//TODO: update spawnicon preview
+							function entry:OnEnter()
+								editor.bp:Refresh()
 							end
 						end
 
@@ -4219,7 +4244,11 @@ if CLIENT then
 							num.FGColor = v.col
 							skins["num" .. k] = num
 							skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
-							//TODO: update spawnicon preview when team is changed
+							if k == 1 then
+								function num:OnValueChanged()
+									editor.bp:Refresh()
+								end
+							end
 						end
 
 
@@ -4243,6 +4272,10 @@ if CLIENT then
 							check:DockMargin(0,betweenitems,0,0)
 							check:SetText(v.label)
 							box.bodygroups.checks[k] = check
+							function check:OnChange(val)
+								//update backpack icon, in case we're using a visible class model there
+								editor.bp:Refresh()
+							end
 							//make sure user can read the text if it's cut off
 							AddTFStyleTooltip(check.Label, check:GetText())
 							local old_IsHovered = check.Label.IsHovered
@@ -4301,7 +4334,10 @@ if CLIENT then
 								end
 							end
 
-							box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked()) 
+							box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked())
+
+							//Refresh the backpack icon modelpanel, just in case the currently used model/skin/etc. was disabled or something
+							editor.bp:Refresh()
 						end
 
 						//update backpack icon style selector
@@ -4393,7 +4429,9 @@ if CLIENT then
 								if style.disable_genteel_smoke:IsVisible() and style.disable_genteel_smoke:GetChecked() then
 									tab2.use_smoke_particle_effect = 0
 								end
-								if table.Count(tab2) > 0 then tab[i2-1] = tab2 end
+								//add the style even if it's empty; players might use one empty "default" style 
+								//and another non-default style to add a selection between both options
+								tab[i2-1] = tab2
 							end
 							if table.Count(tab) > 0 then
 								i.visuals = i.visuals or {}
@@ -4407,20 +4445,119 @@ if CLIENT then
 
 					local bpcontainer = vgui.Create("Panel", box)
 					bpcontainer:Dock(TOP)
-					local mdl = vgui.Create("DPanel", bpcontainer)
+					local mdl = CreateItemIconModelPanel(bpcontainer)
 					editor.bp = mdl
 					mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
+					local old_Paint = mdl.Paint
 					function mdl:Paint(w,h)
 						BackpackItemBorderUnscaled(0,0,w,h)
+						old_Paint(mdl,w,h)
 					end
 					mdl:Dock(LEFT)
 					bpcontainer:SetHeight(mdl:GetTall())
-					//TODO:
-					//- equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
-					//- make various draw and control funcs from the itemicon's dmodelpanel global so that we can reuse them here
+					mdl.models = {}
+					function mdl:Refresh()
+						if !self.HasLoaded then return end
+						//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
+						local _, class = editor.bp_class:GetSelected()
+						if class then
+							class = class_longname_to_id[editor.bp_class.options[class].Value]
+						end
+						local _, style = editor.bp_style:GetSelected()
+						if style then
+							style = editor.styles[editor.bp_style.options[style].Value + 1]
+						end
+						local skin = editor.skins.num1:GetValue()
+						if style and style.skins:GetParent():IsVisible() then
+							skin = style.skins.num1:GetValue()
+						end
+
+						for k, v in ipairs (mdl.models) do
+							if IsValid(v) then v:Remove() end
+						end
+						mdl.models = {}
+						//Class model for preview, if enabled
+						if editor.bp_showclass:GetChecked() and class then
+							local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
+							if IsValid(ent) then
+								table.insert(mdl.models, ent)
+								ent.DontUseBoundsForCamera = true
+								for k, v in ipairs (bodygroups) do
+									if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups.checks[k]:GetChecked()) then
+										local val = 1
+										local bg = v.bgs[classes[class].longname]
+										if istable(bg) then 
+											val = bg.val
+											bg = bg.name
+										end
+										if bg then
+											bg = ent:FindBodygroupByName(bg)
+											ent:SetBodygroup(bg, val)
+										end
+									end
+								end
+							end
+						end
+						//Item model
+						local model
+						if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
+							model = style.class_models.classes[class]:GetText()
+						elseif style and style.model:GetParent():IsVisible() and style.model:GetText() != "" then
+							model = string.Replace(style.model:GetText(), "%s", classes[class].shortname)
+						elseif class and editor.class_models.classes[class]:GetParent():IsVisible() and editor.class_models.classes[class]:GetText() != "" then
+							model = editor.class_models.classes[class]:GetText()
+						elseif editor.model:GetText() != "" then
+							model = string.Replace(editor.model:GetText(), "%s", classes[class].shortname)
+						end
+						if model then
+							local ent = ClientsideModel(model, RENDERGROUP_OTHER)
+							if IsValid(ent) then
+								if IsValid(mdl.models[1]) then
+									ent:SetParent(mdl.models[1])
+									ent:AddEffects(EF_BONEMERGE)
+								else
+									ent:SetAngles(Angle(10,130,0)) //make sure this matches CreateItemModelsAndParticles; model angles from resource\ui\econ\itemmodelpanel.res; produces the most game-accurate lighting 
+								end
+								table.insert(mdl.models, ent)
+								mdl.Entity = ent
+							end
+						end
+						//TODO: attachments, options to show wearables instead
+
+						//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
+						local cam = DoItemModelCamera(mdl.models) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
+						local docamera = mdl.old_cam == nil
+						if mdl.old_cam then
+							for k, v in pairs (cam) do
+								if v != mdl.old_cam[k] then
+									docamera = true
+									break
+								end
+							end
+						end
+						if docamera then
+							mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
+							mdl:SetFOV(cam.fov)
+							mdl:SetLookAng(Angle(cam.ang))
+							mdl.old_cam = cam
+						end
+					end
+					editor.controls[pnl] = {
+						Load = function()
+							//to avoid unnecessary Refresh calls as other elements are loading, try to do this last
+							timer.Simple(FrameTime(), function()
+								mdl.HasLoaded = true
+								mdl:Refresh()
+							end)
+						end
+					}
+					//TODO: pos/ang/fov textboxes docked to right of bp, with load/save funcs for these values
 
 					local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
 					editor.bp_class = drop
+					function drop:OnSelect()
+						editor.bp:Refresh()
+					end
 					function drop:UpdateVisibility()
 						local _, old_sel = drop:GetSelected()
 						if old_sel and drop:GetParent():IsVisible() then
@@ -4451,6 +4588,7 @@ if CLIENT then
 							end
 							if old_sel then drop:ChooseOptionID(1) end
 						end
+						editor.bp:Refresh()
 					end
 					local old_Load = editor.controls[entry].Load
 					editor.controls[drop].Load = function(i)
@@ -4463,6 +4601,9 @@ if CLIENT then
 
 					local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
 					editor.bp_style = drop
+					function drop:OnSelect()
+						editor.bp:Refresh()
+					end
 					function drop:UpdateVisibility()
 						local _, old_sel = drop:GetSelected()
 						if old_sel and drop:GetParent():IsVisible() then
@@ -4494,6 +4635,7 @@ if CLIENT then
 							end
 							if old_sel then drop:ChooseOptionID(1) end
 						end
+						editor.bp:Refresh()
 					end
 					editor.controls[drop].Load = function(i)
 						//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait a frame
@@ -4508,6 +4650,9 @@ if CLIENT then
 					check:DockMargin(0,betweenitems,0,0)
 					check:Dock(TOP)
 					editor.bp_showclass = check
+					function check:OnChange(val)
+						editor.bp:Refresh()
+					end
 					editor.controls[check] = {
 						Load = function(i)
 							if i._customitem_bp and i._customitem_bp.showclass then check:SetChecked(true) end
@@ -5370,7 +5515,8 @@ if CLIENT then
 		{},
 		{},
 	}
-	function PANEL:DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
+	//This is a global function so that the custom item editor can use it as well
+	DrawItemModels = function(x, y, w, h, models, particles, ang, CamPos, FOV)
 
 		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
 		render.SuppressEngineLighting(true)
@@ -5436,11 +5582,12 @@ if CLIENT then
 
 	end
 
-	function PANEL:DoItemModelCamera(models)
+	//This is a global function so that the custom item editor can use it as well
+	DoItemModelCamera = function(models, icon)
 
 		local attach
 		if models[1] then attach = models[1]:GetAttachment(models[1]:LookupAttachment("icon_camera")) end
-		if attach and !TF2Items.items[self.data.id]._disable_icon_camera and !self.data.models.wearable and !self.data.models.wearable_2 and !self.data.models.taunt_prop then
+		if attach and icon and !isstring(icon.data.id) and !TF2Items.items[icon.data.id]._disable_icon_camera and !icon.data.models.wearable and !icon.data.models.wearable_2 and !icon.data.models.taunt_prop then
 			//attach.Ang.r = 0 //allowing roll messes with the modelpanel controls a bit, but makes the default pos look better
 			return {
 				pos = attach.Pos, 
@@ -5451,6 +5598,7 @@ if CLIENT then
 			//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
 			local mn, mx
 			for k, v in ipairs (models) do
+				if v.DontUseBoundsForCamera then continue end
 				local mn2, mx2 = v:GetRenderBounds()
 				mn2, mx2 = v:GetRotatedAABB(mn2, mx2)
 				mn2 = mn2 + v:GetPos()
@@ -5834,45 +5982,17 @@ if CLIENT then
 
 	end
 
-	function PANEL:CreateSpawnPanel()
+	//This is a global function so that the custom item editor can use it as well
+	CreateItemIconModelPanel = function(par)
 
-		local i = TF2Items.items[self.data.id] or {}
-		local betweenitems = 8
-
-		if IsValid(TF2ItemBrowser.SpawnPanel) then
-			if TF2ItemBrowser.SpawnPanel.Owner == self then
-				return
-			else
-				TF2ItemBrowser.SpawnPanel:Remove()
-			end
-		end
-
-		local pnl = vgui.Create("DPanel", TF2ItemBrowser.Right)
-		TF2ItemBrowser.SpawnPanel = pnl
-		pnl.Owner = self
-
-		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad)
-		local name_container = pnl:Add("DPanel")
-		name_container:Dock(TOP)
-		name_container.Paint = function() end
-		//this will be populated in pnl.Refresh()
-		
-		local mdl_container = pnl:Add("DPanel")
-		mdl_container:SetSize(300,300)
-		side_margins = (popup_w-300-popup_pad-popup_pad)/2 //force this panel to stay a square, and align all the other controls with it
-		mdl_container:DockMargin(side_margins,betweencategories-5,side_margins,betweencategories)
-		mdl_container:Dock(TOP)
-		function mdl_container:Paint(w,h)
-			GrayDialogBorder(0,0,w,h)
-		end
-		local mdl = mdl_container:Add("DAdjustableModelPanel")
-		pnl.ModelPanel = mdl
-		mdl:DockMargin(3,3,3,3) //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
-		mdl:Dock(FILL)
+		local mdl = par:Add("DAdjustableModelPanel")
 		mdl.models = {}
 		mdl.particles = {}
+		mdl.PaintMargin = 0
+
 		//Custom paint func using our DrawItemModels func
-		function mdl.Paint(_, w, h)
+		function mdl:Paint(w, h)
+			
 			if !mdl.models or !mdl.models[1] or !mdl.particles then return end
 			for k, v in ipairs (mdl.particles) do
 				//if a particlesystem becomes invalid (i.e. a conflicting effect was loaded) then bail out and refresh the fx
@@ -5883,12 +6003,13 @@ if CLIENT then
 			local enabled, leftx, topy, rightx, bottomy = surface.GetScissorRect()
 			render.SetScissorRect( leftx, topy, rightx, bottomy, enabled )
 
-			local x, y = mdl:LocalToScreen( 0, 0 )
-			self:DrawItemModels(x, y, w, h, mdl.models, mdl.particles, mdl.aLookAngle, mdl.vCamPos, mdl.fFOV)
+			local x, y = mdl:LocalToScreen(mdl.PaintMargin, mdl.PaintMargin)
+			DrawItemModels(x, y, w-(mdl.PaintMargin*2), h-(mdl.PaintMargin*2), mdl.models, mdl.particles, mdl.aLookAngle, mdl.vCamPos, mdl.fFOV)
 			mdl.LastPaint = RealTime() //this is in DModelPanel's Paint func, i'm not sure this does anything any more
 
 			render.SetScissorRect( 0, 0, 0, 0, false )
 		end
+
 		//Modified OnMousePressed to make the orbit movement account for the rotation of the entity
 		function mdl:OnMousePressed( mousecode )
 			-- input.SetCursorPos does not work while main menu is open
@@ -6003,6 +6124,46 @@ if CLIENT then
 			self.vCamPos = self.vCamPos + Movement * speed * self:GetMovementScale()
 		end
 
+		return mdl
+
+	end
+
+	function PANEL:CreateSpawnPanel()
+
+		local i = TF2Items.items[self.data.id] or {}
+		local betweenitems = 8
+
+		if IsValid(TF2ItemBrowser.SpawnPanel) then
+			if TF2ItemBrowser.SpawnPanel.Owner == self then
+				return
+			else
+				TF2ItemBrowser.SpawnPanel:Remove()
+			end
+		end
+
+		local pnl = vgui.Create("DPanel", TF2ItemBrowser.Right)
+		TF2ItemBrowser.SpawnPanel = pnl
+		pnl.Owner = self
+
+		pnl:DockPadding(popup_pad,popup_pad,popup_pad,popup_pad)
+		local name_container = pnl:Add("DPanel")
+		name_container:Dock(TOP)
+		name_container.Paint = function() end
+		//this will be populated in pnl.Refresh()
+		
+		local mdl = CreateItemIconModelPanel(pnl)
+		pnl.ModelPanel = mdl
+		mdl:SetSize(300,300)
+		mdl.PaintMargin = 3 //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
+		side_margins = (popup_w-300-popup_pad-popup_pad)/2 //force this panel to stay a square, and align all the other controls with it
+		mdl:DockMargin(side_margins,betweencategories-5,side_margins,betweencategories)
+		mdl:Dock(TOP)
+		local old_Paint = mdl.Paint
+		function mdl:Paint(w,h)
+			GrayDialogBorder(0,0,w,h)
+			old_Paint(mdl,w,h)
+		end
+
 		function pnl.Refresh()
 			name_container:Clear()
 			self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", rarity_colors[self.rarity] or quality_colors[self.quality])
@@ -6033,7 +6194,7 @@ if CLIENT then
 			mdl.Entity = mdl.models[1]
 
 			//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
-			local cam = self:DoItemModelCamera(mdl.models)
+			local cam = DoItemModelCamera(mdl.models, self)
 			local docamera = mdl.old_cam == nil
 			if mdl.old_cam then
 				for k, v in pairs (cam) do
@@ -7779,10 +7940,10 @@ if CLIENT then
 
 									//Render the icon texture
 									local models = {ent}
-									local cam = self:DoItemModelCamera(models)
+									local cam = DoItemModelCamera(models, self)
 									render.SetWriteDepthToDestAlpha(false)
 									render.Clear(0, 0, 0, 0, true, true)
-									self:DrawItemModels(0, 0, size, size, models, {}, cam.ang, cam.pos, cam.fov)
+									DrawItemModels(0, 0, size, size, models, {}, cam.ang, cam.pos, cam.fov)
 									local img = render.Capture({format = "png", x = 0, y = 0, w = size, h = size})
 									if !file.IsDir("tf2itembrowser_paintkiticons/", "DATA") then 
 										file.CreateDir("tf2itembrowser_paintkiticons/")
@@ -8108,10 +8269,10 @@ if CLIENT then
 
 					//Render the icon texture
 					render.PushRenderTarget(rt, 0, 0, 128, 128)
-					local cam = self:DoItemModelCamera(models)
+					local cam = DoItemModelCamera(models, self)
 					render.SetWriteDepthToDestAlpha(false)
 					render.Clear(0, 0, 0, 0, true, true)
-					self:DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
+					DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
 					render.PopRenderTarget()
 
 					local mat = CreateMaterial(rtname, "UnlitGeneric", {
