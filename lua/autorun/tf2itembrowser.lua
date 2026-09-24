@@ -1216,7 +1216,7 @@ if CLIENT then
 		_unu_depressed		= Color(117*.75, 107*.75, 94*.75, 255*.75), //dimmer versions of TanDark used for unusual selector
 		_unu_hovered		= Color(117*.2, 107*.2, 94*.2, 255*.2),
 
-		_header			= Color(117*0.535, 107*0.535, 94*0.535, 255) //another darker version of TanDark; used for header and matches item icons
+		_header			= Color(117*0.535, 107*0.535, 94*0.535, 255), //another darker version of TanDark; used for header and matches item icons
 	}
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
@@ -1451,8 +1451,11 @@ if CLIENT then
 					if (str:StartsWith("#")) then str = str:sub(2) end
 					str = language.GetPhrase(str)
 					self:SetText(str)
+					self.FGColor_Placeholder = self.FGColor_Placeholder or Color(self.FGColor.r, self.FGColor.g, self.FGColor.b, 160)
+					self:DrawTextEntryText(self.FGColor_Placeholder, gui_colors.Gray, gui_colors.Gray)
+				else
+					self:DrawTextEntryText(self.FGColor, gui_colors.Gray, gui_colors.Gray)
 				end
-				self:DrawTextEntryText(self.FGColor, gui_colors.Gray, gui_colors.Gray)
 				if !oldtext then self:SetText("") end
 			end
 			//note: can't figure out how to modify the appearance of the right-click menu, it might be hard-coded in C++
@@ -3337,11 +3340,17 @@ if CLIENT then
 						return combo
 					end
 
-					local function AddTextEntry(parent, label, subtable, key_to_set)
-						local entry = TFStyleVGUI("DTextEntry", parent)
-						local _pnl = AddTFLabelToVGUI(entry, label)
+					local function AddTextEntry(parent, label, subtable, key_to_set, alt_style)
+						//dock the textentry into a new panel that only exists to be a container, because otherwise, clicking on a 
+						//textentry docked directly into one of our DSizeToContents boxes moves it to the bottom?? why??
+						local _pnl = vgui.Create("Panel", parent)
 						_pnl:DockMargin(0,betweenitems,0,0)
 						_pnl:Dock(TOP)
+						_pnl:SetHeight(20)
+						local entry = TFStyleVGUI("DTextEntry", _pnl, alt_style)
+						entry:Dock(FILL)
+						entry:SetPlaceholderText(label)
+						AddTFStyleTooltip(entry, label)
 						//most entries won't have an OnEnter func, but include this just in case
 						entry.OnFocusChanged = function(_, b) 
 							if !b then entry:OnEnter() end
@@ -3374,25 +3383,16 @@ if CLIENT then
 					local function AddMultilineTextEntry(parent, label, subtable, key_to_set)
 						local entry = AddTextEntry(parent, label, subtable, key_to_set)
 						entry:SetMultiline(true)
-						//undock the entry from the panel containing it and the text label, so we can display it at full width. 
-						//then, dock it into a new panel that only exists to be a container, because otherwise, clicking on a 
-						//textentry docked directly into one of our DSizeToContents boxes moves it to the bottom?? why??
-						local _pnl = entry:GetParent()
-						local _pnl2 = vgui.Create("Panel", parent)
-						_pnl2:Dock(TOP)
-						_pnl2:SetHeight(20)
-						entry:SetParent(_pnl2)
-						entry:Dock(FILL)
 						//Automatically resize the entry to show all lines
 						function entry:OnTextChanged()
-							_pnl2:SetHeight((19*math.max(1,entry:GetNumLines()))+1)
+							entry:GetParent():SetHeight((19*math.max(1,entry:GetNumLines()))+1)
 						end
 						local old_Load = editor.controls[entry].Load
 						editor.controls[entry].Load = function(i)
 							old_Load(i)
 							timer.Simple(0, function() entry:OnTextChanged() end)
 						end
-						return entry, _pnl, _pnl2
+						return entry
 					end
 
 
@@ -3704,7 +3704,7 @@ if CLIENT then
 					local box = AddBox(holder.columns[2], string.NiceName(language.GetPhrase("#models")) .. ":")
 
 					//Base model
-					local entry = AddTextEntry(box, "Item model path", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
+					local entry = AddTextEntry(box, "Item model", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
 					entry:GetParent():DockMargin(0,0,0,0)
 					editor.model = entry
 					function entry:OnEnter()
@@ -3751,7 +3751,7 @@ if CLIENT then
 						editor.bp:Refresh()
 					end
 					for i = 2, 10 do
-						local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname), "model_player_per_class", classes[i].longname)
+						local entry = AddTextEntry(box, "Item model - " .. (GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname)), "model_player_per_class", classes[i].longname)
 						check.classes[i] = entry
 						function entry:OnEnter()
 							editor.bp:Refresh()
@@ -3791,7 +3791,11 @@ if CLIENT then
 						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
 							pnl:AddEntry()
 						end
-						pnl.entries[1]:GetParent().Label:SetText("Attached model(s)")
+						for k, v in pairs (pnl.entries) do
+							local text = "Attached model " .. tostring(k)
+							v:SetPlaceholderText(text)
+							AddTFStyleTooltip(v, text)
+						end
 					end
 					function pnl:AddEntry()
 						local entry = AddTextEntry(pnl, "")
@@ -3859,9 +3863,11 @@ if CLIENT then
 						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
 							pnl:AddEntry()
 						end
-						pnl.entries[1]:GetParent().Label:SetText("Extra wearable(s)")
-						if pnl.entries[2] then
-							pnl.entries[2]:GetParent().Label:SetText("(max 2)")
+						for k, v in pairs (pnl.entries) do
+							local text = "Extra wearable " .. tostring(k)
+							if k == 2 then text = text .. " (max 2)" end
+							v:SetPlaceholderText(text)
+							AddTFStyleTooltip(v, text)
 						end
 					end
 					function pnl:AddEntry()
@@ -4450,13 +4456,23 @@ if CLIENT then
 					mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
 					local old_Paint = mdl.Paint
 					function mdl:Paint(w,h)
+						if IsValid(editor.bp_pos) and !editor.bp_pos:IsEditing() and !editor.bp_pos:IsHovered() then
+							editor.bp_pos:SetText(tostring(self:GetCamPos()))
+						end
+						if IsValid(editor.bp_ang) and !editor.bp_ang:IsEditing() and !editor.bp_ang:IsHovered() then
+							editor.bp_ang:SetText(tostring(self:GetLookAng()))
+						end
+						if IsValid(editor.bp_fov) and !editor.bp_fov:IsEditing() and !editor.bp_fov:IsHovered() then
+							editor.bp_fov:SetValue(self:GetFOV())
+						end
 						BackpackItemBorderUnscaled(0,0,w,h)
-						old_Paint(mdl,w,h)
+						return old_Paint(mdl,w,h)
 					end
+					mdl:DockMargin(0,0,8,0)
 					mdl:Dock(LEFT)
 					bpcontainer:SetHeight(mdl:GetTall())
 					mdl.models = {}
-					function mdl:Refresh()
+					function mdl:Refresh(cam_override)
 						if !self.HasLoaded then return end
 						//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
 						local _, class = editor.bp_class:GetSelected()
@@ -4541,17 +4557,58 @@ if CLIENT then
 							mdl:SetLookAng(Angle(cam.ang))
 							mdl.old_cam = cam
 						end
+						//Upon first loading, apply the values of the pos/ang/fov settings instead if applicable, without touching the old_cam stuff
+						if cam_override then
+							mdl:SetCamPos(Vector(cam_override.pos))
+							mdl:SetFOV(cam_override.fov)
+							mdl:SetLookAng(Angle(cam_override.ang))
+						end
 					end
-					editor.controls[pnl] = {
-						Load = function()
+					editor.controls[mdl] = {
+						Load = function(i)
 							//to avoid unnecessary Refresh calls as other elements are loading, try to do this last
 							timer.Simple(FrameTime(), function()
 								mdl.HasLoaded = true
-								mdl:Refresh()
+								mdl:Refresh(i._customitem_bp)
 							end)
 						end
 					}
-					//TODO: pos/ang/fov textboxes docked to right of bp, with load/save funcs for these values
+
+					editor.bp_pos = AddTextEntry(bpcontainer, "Camera Position", "_customitem_bp", "pos", true)
+					editor.bp_pos:GetParent():DockMargin(0,0,0,0)
+					function editor.bp_pos:OnChange()
+						editor.bp:SetCamPos(Vector(self:GetText()))
+					end
+
+					editor.bp_ang = AddTextEntry(bpcontainer, "Camera Angles", "_customitem_bp", "ang", true)
+					function editor.bp_ang.OnChange()
+						editor.bp:SetLookAng(Angle(self:GetText()))
+					end
+
+					local num = TFStyleVGUI("DNumberWang", bpcontainer, true) //this space is too small for a slider like in gmod's spawnicon editor
+					editor.bp_fov = num
+					num:DockMargin(0,betweenitems,0,0)
+					num:Dock(TOP)
+					num:SetDecimals(2)
+					num:SetMinMax(0.001, 179)
+					num:SetPlaceholderText("Camera FOV")
+					AddTFStyleTooltip(num, "Camera FOV")
+					editor.controls[num] = {
+						Load = function(i)
+							if i._customitem_bp and i._customitem_bp.fov then
+								num:SetValue(i._customitem_bp.fov)
+							end
+						end,
+						Save = function(i)
+							if num:IsVisible() then
+								i._customitem_bp = i._customitem_bp or {}
+								i._customitem_bp.fov = num:GetValue()
+							end
+						end
+					}
+					function num:OnValueChanged()
+						editor.bp:SetFOV(self:GetValue())
+					end
 
 					local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
 					editor.bp_class = drop
@@ -4692,9 +4749,9 @@ if CLIENT then
 							v:SetVisible(check:GetChecked())
 						end
 					end
-					_, check.entries[1], check.entries[2] = AddMultilineTextEntry(box, "Neutral", "_display_attributes", "neutral")
-					_, check.entries[3], check.entries[4] = AddMultilineTextEntry(box, "Positive", "_display_attributes", "positive")
-					_, check.entries[5], check.entries[6] = AddMultilineTextEntry(box, "Negative", "_display_attributes", "negative")
+					check.entries[1] = AddMultilineTextEntry(box, "Neutral attributes", "_display_attributes", "neutral"):GetParent()
+					check.entries[2] = AddMultilineTextEntry(box, "Positive attributes", "_display_attributes", "positive"):GetParent()
+					check.entries[3] = AddMultilineTextEntry(box, "Negative attributes", "_display_attributes", "negative"):GetParent()
 
 				end
 
