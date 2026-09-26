@@ -964,6 +964,9 @@ if SERVER then
 
 		local tab = util.JSONToTable(i)
 		if !tab or !tab.name then return end //this shouldn't happen
+		if !file.IsDir("tf2itembrowser_customitems/", "DATA") then 
+			file.CreateDir("tf2itembrowser_customitems/")
+		end
 		file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
 
 		//Rebuild custom items table with the new item, and make players retrieve it
