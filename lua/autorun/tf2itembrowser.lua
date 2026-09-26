@@ -887,30 +887,39 @@ TF2Items = s
 //Load custom items - items saved by the player will be in the data/ folder, while addons can include their own in their data_static/ folder.
 //These are determined by the server, not clients, because they need to be consistent between all users - if we want this feature to be useful in 
 //multiplayer, then we want to have item defs for models that the server has available, not for whatever players happen to have saved on their end.
-if SERVER or game.SinglePlayer() then //LocalPlayer():IsListenServerHost() doesn't work here because the player entity is null at this point
-	//in singleplayer, the client has access to the same data folder as the server, so it can just read the files on its own without networking.
-	local function ReadCustomItems(dir, path)
-		local files, _ = file.Find(dir .. "*.txt", path)
-		if !istable(files) then return end
-		for _, v in pairs (files) do
-			local f = file.Read(dir .. v, path)
-			if isstring(f) then
-				local name = string.StripExtension(v)
-				f = util.JSONToTable(f)
-				if !istable(f) then continue end
-				f.name = name
-				TF2Items.items[name] = f
+local function LoadCustomItems()
+	if SERVER or game.SinglePlayer() then //in singleplayer, the client has access to the same data folder as the server, so it can just read the files on its own without networking; LocalPlayer():IsListenServerHost() doesn't work here because the player entity is null when we run this on startup
+		//Clear any old custom items and repopulate them; it's possible that the change we made was removing one of them
+		for k, v in pairs (TF2Items.items) do
+			if isstring(k) then tab[k] = nil end
+		end
+
+		local function ReadCustomItems(dir, path)
+			local files, _ = file.Find(dir .. "*.txt", path)
+			if !istable(files) then return end
+			for _, v in pairs (files) do
+				local f = file.Read(dir .. v, path)
+				if isstring(f) then
+					local name = string.StripExtension(v)
+					f = util.JSONToTable(f)
+					if !istable(f) then continue end
+					f.name = name
+					TF2Items.items[name] = f
+				end
 			end
 		end
+		ReadCustomItems("data_static/tf2itembrowser_customitems/", "GAME")
+		//in case of a name conflict, saved items in data folder take priority over addons
+		ReadCustomItems("tf2itembrowser_customitems/", "DATA")
+
+		if CLIENT and IsValid(TF2ItemBrowser) then TF2ItemBrowser:RebuildIconList() end
+	else
+		//in multiplayer, connecting clients won't have access to the server's data folder, so tell 
+		//them to request the table of custom items from the server once they open the browser.
+		TF2ItemBrowser_RequestCustomItems = true
 	end
-	ReadCustomItems("data_static/tf2itembrowser_customitems/", "GAME")
-	//in case of a name conflict, saved items in data folder take priority over addons
-	ReadCustomItems("tf2itembrowser_customitems/", "DATA")
-else
-	//in multiplayer, connecting clients won't have access to the server's data folder, so tell 
-	//them to request the table of custom items from the server once they open the browser.
-	TF2ItemBrowser_RequestCustomItems = true
 end
+LoadCustomItems()
 
 if SERVER then
 	util.AddNetworkString("TF2ItemBrowser_CustomItems_GetFromSv")
@@ -923,20 +932,15 @@ if SERVER then
 		end
 
 		net.Start("TF2ItemBrowser_CustomItems_SendToCl", true)
-			//do this a little more efficiently than net.WriteTable
-			net.WriteUInt(table.Count(tab), 12) //4095 custom items is totally overkill
-			for k, v in pairs (tab) do
-				net.WriteString(k)
-				net.WriteType(v)
-			end
+			net.WriteData(util.Compress(util.TableToJSON(tab)))
 		net.Send(ply)
 	end)
 else
-	net.Receive("TF2ItemBrowser_CustomItems_SendToCl", function()
-		local tab = {}
-		for i = 1, net.ReadUInt(12) do
-			tab[net.ReadString()] = net.ReadType()
-		end
+	net.Receive("TF2ItemBrowser_CustomItems_SendToCl", function(len)
+		local tab = util.Decompress(net.ReadData(len/8))
+		if !tab then return end
+		tab = util.JSONToTable(tab)
+		if !tab then return end
 
 		if TF2ItemBrowser_RequestCustomItems then
 			for k, v in pairs (tab) do
@@ -945,6 +949,31 @@ else
 			TF2ItemBrowser_RequestCustomItems = nil
 			if IsValid(TF2ItemBrowser) then TF2ItemBrowser:RebuildIconList() end
 		end
+	end)
+end
+
+if SERVER then
+	util.AddNetworkString("TF2ItemBrowser_NewCustomItem_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+
+	net.Receive("TF2ItemBrowser_NewCustomItem_SendToSv", function(len, ply)
+		local i = util.Decompress(net.ReadData(len/8), 8000) //max 8kb; these are small text files and definitely shouldn't be this large
+		if !i then return end
+
+		//TODO: permissions; only let certain players create new custom items in multiplayer
+
+		local tab = util.JSONToTable(i)
+		if !tab or !tab.name then return end //this shouldn't happen
+		file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
+
+		//Rebuild custom items table with the new item, and make players retrieve it
+		LoadCustomItems()
+		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+		net.Broadcast()
+	end)
+else
+	net.Receive("TF2ItemBrowser_CustomItemsUpdate_SendToCl", function()
+		LoadCustomItems()
 	end)
 end
 
@@ -3192,521 +3221,1026 @@ if CLIENT then
 
 			function window:OpenCustomItemEditor(id)
 
-				if !IsValid(TF2ItemBrowser_Editor) then
+				if IsValid(TF2ItemBrowser_Editor) then TF2ItemBrowser_Editor:Close() end
 
-					local editor = g_ContextMenu:Add("DFrame")
-					editor:SetSize(920,750) //TODO: finalize later
-					editor:SetTitle("Custom Item Editor")
-					editor:Center()
-					AddTFStyleToVGUI(editor)
-					TF2ItemBrowser_Editor = editor
-					editor:SetSizable(true)
-					editor.controls = {}
+				local editor = g_ContextMenu:Add("DFrame")
+				editor:SetSize(920,750) //TODO: finalize later
+				editor:SetTitle("Custom Item Editor")
+				editor:Center()
+				AddTFStyleToVGUI(editor)
+				TF2ItemBrowser_Editor = editor
+				editor:SetSizable(true)
+				editor.controls = {}
 
 
-					//Dock save and cancel buttons to bottom of panel
-					local button_holder = vgui.Create("Panel", editor)
-					local button_1 = TFStyleVGUI("DButton", button_holder)
-					button_1:SetText(GetTFLanguageString("#TF_CancelSavePreset") or "CANCEL")
-					button_1:SizeToContentsX(20)
-					button_1.DoClick = function()
-						editor:Close()
+				//Dock save and cancel buttons to bottom of panel
+				local button_holder = vgui.Create("Panel", editor)
+				local button_1 = TFStyleVGUI("DButton", button_holder)
+				button_1:SetText(GetTFLanguageString("#TF_CancelSavePreset") or "CANCEL")
+				button_1:SizeToContentsX(20)
+				button_1.DoClick = function()
+					editor:Close()
+				end
+				local button_2 = TFStyleVGUI("DButton", button_holder)
+				button_2:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
+				button_2:SizeToContentsX(20)
+				button_2.DoClick = function()
+					//TODO: make nicer gui for this later
+					Derma_StringRequest(
+						"Crappy Placeholder Save Dialog", 
+						"Enter file name to save the item to\n(name only, no file extension)",
+						editor.SavedName,
+						function(name)
+							local i = {}
+							for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
+								if funcs.Save then funcs.Save(i) end
+							end
+							i.name = name
+							editor.SavedName = name //show this same filename in the save window if we open it again
+							MsgN("\n\n\n")
+							PrintTable(i)
+
+							net.Start("TF2ItemBrowser_NewCustomItem_SendToSv")
+								net.WriteData(util.Compress(util.TableToJSON(i)))
+							net.SendToServer()
+						end,
+						nil,
+						GetTFLanguageString("#TF_SavePreset") or "SAVE"
+					)
+				end
+				button_holder:Dock(BOTTOM)
+				button_holder:DockMargin(0,8,0,0)
+				local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+				function button_holder:PerformLayout(w, h)
+					button_1:SetWide(button_w)
+					button_1:SetPos((w/2)-4-button_w, 0)
+					button_2:SetWide(button_w)
+					button_2:SetPos((w/2)+4, 0)
+					button_holder:SizeToChildren(false, true)
+				end
+
+
+				local function AddColumnHolder(parent, column_count, column_space)
+					local holder = vgui.Create("Panel", parent)
+					local columns = {}
+					for i = 1, column_count do
+						columns[i] = vgui.Create("Panel", holder)
+						columns[i]:Dock(LEFT)
+						local left_margin = 0
+						if i > 1 then left_margin = column_space/2 end
+						local right_margin = 0
+						if i < column_count then right_margin = column_space/2 end
+						columns[i]:DockMargin(left_margin, 0, right_margin, 0)
 					end
-					local button_2 = TFStyleVGUI("DButton", button_holder)
-					button_2:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
-					button_2:SizeToContentsX(20)
-					button_2.DoClick = function()
-						//TODO: for now, just use this button to preview the table created by the save funcs to 
-						//make sure they're working right. we'll make this button actually save the table later.
-						local i = {}
-						for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
-							if funcs.Save then funcs.Save(i) end
-						end
-						MsgN("\n\n\n")
-						PrintTable(i)
-					end
-					button_holder:Dock(BOTTOM)
-					button_holder:DockMargin(0,8,0,0)
-					local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
-					function button_holder:PerformLayout(w, h)
-						button_1:SetWide(button_w)
-						button_1:SetPos((w/2)-4-button_w, 0)
-						button_2:SetWide(button_w)
-						button_2:SetPos((w/2)+4, 0)
-						button_holder:SizeToChildren(false, true)
-					end
-
-
-					local function AddColumnHolder(parent, column_count, column_space)
-						local holder = vgui.Create("Panel", parent)
-						local columns = {}
+					function holder:PerformLayout(w, h)
+						local holder_w = (w-(column_space*(column_count-1)))/column_count
 						for i = 1, column_count do
-							columns[i] = vgui.Create("Panel", holder)
-							columns[i]:Dock(LEFT)
-							local left_margin = 0
-							if i > 1 then left_margin = column_space/2 end
-							local right_margin = 0
-							if i < column_count then right_margin = column_space/2 end
-							columns[i]:DockMargin(left_margin, 0, right_margin, 0)
+							columns[i]:SetWide(holder_w)
+							columns[i]:InvalidateChildren(true)
+							columns[i]:SizeToChildren(false, true)
 						end
-						function holder:PerformLayout(w, h)
-							local holder_w = (w-(column_space*(column_count-1)))/column_count
-							for i = 1, column_count do
-								columns[i]:SetWide(holder_w)
-								columns[i]:InvalidateChildren(true)
-								columns[i]:SizeToChildren(false, true)
-							end
-							holder:SizeToChildren(false, true)
-							parent:InvalidateLayout(true)
-						end
-						holder.columns = columns
-						return holder
+						holder:SizeToChildren(false, true)
+						parent:InvalidateLayout(true)
+					end
+					holder.columns = columns
+					return holder
+				end
+
+				local function AddBox(parent, label)
+					local box = vgui.Create("DSizeToContents")
+					if parent:HasChildren() then
+						box:DockMargin(0,8,0,0)
+					end
+					box:SetParent(parent)
+					box:Dock(TOP)
+					box:DockPadding(16,16,16,16)
+					function box:Paint(w,h)
+						draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
 					end
 
-					local function AddBox(parent, label)
-						local box = vgui.Create("DSizeToContents")
-						if parent:HasChildren() then
-							box:DockMargin(0,8,0,0)
-						end
-						box:SetParent(parent)
-						box:Dock(TOP)
-						box:DockPadding(16,16,16,16)
-						function box:Paint(w,h)
-							draw.RoundedBox(12, 0,0,w,h, gui_colors._options)
-						end
-
-						if label then
-							local text = vgui.Create("DLabel", box)
-							text:SetContentAlignment(7) //top left
-							text:SetAutoStretchVertical(true)
-							text:SetFont("TF2ItemBrowser_ItemName")
-							text:SetColor(gui_colors.TanLight)
-							text:SetText(label)
-							text:Dock(TOP)
-							text:DockMargin(-8,-8,0,betweenitems)
-						end
-
-						return box
+					if label then
+						local text = vgui.Create("DLabel", box)
+						text:SetContentAlignment(7) //top left
+						text:SetAutoStretchVertical(true)
+						text:SetFont("TF2ItemBrowser_ItemName")
+						text:SetColor(gui_colors.TanLight)
+						text:SetText(label)
+						text:Dock(TOP)
+						text:DockMargin(-8,-8,0,betweenitems)
 					end
 
-					local function AddDropdown(parent, label, subtable, key_to_set, options, default_option_id)
-						local combo = TFStyleVGUI("DComboBox", parent)
-						local _pnl = AddTFLabelToVGUI(combo, label)
-						_pnl:DockMargin(0,betweenitems,0,0)
-						_pnl:Dock(TOP)
-						combo:SetSortItems(false)
-						function combo:PopulateOptions(options)
-							combo:Clear()
-							combo.options = options
-							for k, v in ipairs (combo.options) do
-								if combo.options[k].PrependSpacer then combo:AddSpacer() end
-								combo.options[k].id = combo:AddChoice(v.Label, k)
-							end
+					return box
+				end
+
+				local function AddDropdown(parent, label, subtable, key_to_set, options, default_option_id)
+					local combo = TFStyleVGUI("DComboBox", parent)
+					local _pnl = AddTFLabelToVGUI(combo, label)
+					_pnl:DockMargin(0,betweenitems,0,0)
+					_pnl:Dock(TOP)
+					combo:SetSortItems(false)
+					function combo:PopulateOptions(options)
+						combo:Clear()
+						combo.options = options
+						for k, v in ipairs (combo.options) do
+							if combo.options[k].PrependSpacer then combo:AddSpacer() end
+							combo.options[k].id = combo:AddChoice(v.Label, k)
 						end
-						combo:PopulateOptions(options)
-						editor.controls[combo] = {
+					end
+					combo:PopulateOptions(options)
+					editor.controls[combo] = {
+						Load = function(i)
+							if table.Count(combo.options) == 0 then return end
+							local sel
+							if subtable then
+								i = i[subtable]
+							end
+							if i then
+								for k, v in ipairs (combo.options) do
+									if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
+										sel = v.id
+										//don't break, multiple options can return true and we want to choose the lowermost one
+									end
+								end
+							end
+							if sel == nil then sel = (default_option_id or 1) end
+							combo:ChooseOptionID(sel)
+						end,
+						Save = function(i)
+							if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
+							local _, opt = combo:GetSelected()
+							if combo.options[opt].Value then
+								if subtable then
+									i[subtable] = i[subtable] or {}
+									i[subtable][key_to_set] = combo.options[opt].Value
+								else
+									i[key_to_set] = combo.options[opt].Value
+								end
+							elseif combo.options[opt].Save then 
+								combo.options[opt].Save(i)
+							end
+						end,
+					}
+					return combo
+				end
+
+				local function AddTextEntry(parent, label, subtable, key_to_set, alt_style)
+					//dock the textentry into a new panel that only exists to be a container, because otherwise, clicking on a 
+					//textentry docked directly into one of our DSizeToContents boxes moves it to the bottom?? why??
+					local _pnl = vgui.Create("Panel", parent)
+					_pnl:DockMargin(0,betweenitems,0,0)
+					_pnl:Dock(TOP)
+					_pnl:SetHeight(20)
+					local entry = TFStyleVGUI("DTextEntry", _pnl, alt_style)
+					entry:Dock(FILL)
+					entry:SetPlaceholderText(label)
+					AddTFStyleTooltip(entry, label)
+					//most entries won't have an OnEnter func, but include this just in case
+					entry.OnFocusChanged = function(_, b) 
+						if !b then entry:OnEnter() end
+					end
+					if key_to_set then
+						editor.controls[entry] = {
 							Load = function(i)
-								if table.Count(combo.options) == 0 then return end
 								local sel
 								if subtable then
 									i = i[subtable]
 								end
-								if i then
-									for k, v in ipairs (combo.options) do
-										if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
-											sel = v.id
-											//don't break, multiple options can return true and we want to choose the lowermost one
-										end
-									end
+								if i and i[key_to_set] then
+									entry:SetText(i[key_to_set])
 								end
-								if sel == nil then sel = (default_option_id or 1) end
-								combo:ChooseOptionID(sel)
 							end,
 							Save = function(i)
-								if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
-								local _, opt = combo:GetSelected()
-								if combo.options[opt].Value then
-									if subtable then
-										i[subtable] = i[subtable] or {}
-										i[subtable][key_to_set] = combo.options[opt].Value
-									else
-										i[key_to_set] = combo.options[opt].Value
-									end
-								elseif combo.options[opt].Save then 
-									combo.options[opt].Save(i)
+								if !_pnl:IsVisible() or entry:GetText() == "" then return end
+								if subtable then
+									i[subtable] = i[subtable] or {}
+									i[subtable][key_to_set] = entry:GetText()
+								else
+									i[key_to_set] = entry:GetText()
 								end
 							end,
 						}
-						return combo
 					end
+					return entry
+				end
 
-					local function AddTextEntry(parent, label, subtable, key_to_set, alt_style)
-						//dock the textentry into a new panel that only exists to be a container, because otherwise, clicking on a 
-						//textentry docked directly into one of our DSizeToContents boxes moves it to the bottom?? why??
-						local _pnl = vgui.Create("Panel", parent)
-						_pnl:DockMargin(0,betweenitems,0,0)
-						_pnl:Dock(TOP)
-						_pnl:SetHeight(20)
-						local entry = TFStyleVGUI("DTextEntry", _pnl, alt_style)
-						entry:Dock(FILL)
-						entry:SetPlaceholderText(label)
-						AddTFStyleTooltip(entry, label)
-						//most entries won't have an OnEnter func, but include this just in case
-						entry.OnFocusChanged = function(_, b) 
-							if !b then entry:OnEnter() end
+				local function AddMultilineTextEntry(parent, label, subtable, key_to_set)
+					local entry = AddTextEntry(parent, label, subtable, key_to_set)
+					entry:SetMultiline(true)
+					//Automatically resize the entry to show all lines
+					function entry:OnTextChanged()
+						entry:GetParent():SetHeight((19*math.max(1,entry:GetNumLines()))+1)
+					end
+					local old_Load = editor.controls[entry].Load
+					editor.controls[entry].Load = function(i)
+						old_Load(i)
+						timer.Simple(0, function() entry:OnTextChanged() end)
+					end
+					return entry
+				end
+
+
+				//Place all other controls in 3 side-by-side columns of equal width
+				local scroll = TFStyleVGUI("DScrollPanel", editor)
+				scroll:Dock(FILL)
+				local holder = AddColumnHolder(scroll, 3, 8)
+				holder:Dock(FILL)
+				//fix: make sure that scrolling to change the icon's fov doesn't mistakenly scroll this panel
+				local old_OnMouseWheeled = scroll.VBar.OnMouseWheeled
+				function scroll.VBar:OnMouseWheeled(dlta)
+					if editor.bp.Capturing or editor.bp:IsHovered() then return end
+					return old_OnMouseWheeled(self, dlta)
+				end
+
+
+				//Unlabeled box for item type and type-specific controls
+				local box = AddBox(holder.columns[1])
+
+				//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
+				local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", nil, "item_slot", {
+					{
+						Label = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",
+						Value = "misc",
+					},
+					{
+						Label = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",
+						Value = "_custom_weapon", //assign custom weapons to a generic "slot" instead of primary/etc to declutter these options just a bit
+					},
+				})
+				combo:GetParent():DockMargin(0,0,0,0)
+				function combo:OnSelect(index, value, data)
+					local val = combo.options[index].Value
+					editor.paintable:SetVisible(val == "misc")
+					editor.genteel_smoke:SetVisible(val == "misc")
+					editor.anim:GetParent():SetVisible(val == "_custom_weapon")
+					holder:InvalidateLayout(true)
+				end
+
+				//Paintable toggle
+				local check = TFStyleVGUI("DCheckBoxLabel", box)
+				editor.paintable = check
+				check:Dock(TOP)
+				check:DockMargin(0,betweenitems,0,0)
+				check:SetText("Paintable")
+				editor.controls[check] = {
+					Load = function(i)
+						if i.capabilities and i.capabilities.paintable then check:SetChecked(true) end
+					end,
+					Save = function(i)
+						if check:IsVisible() and check:GetChecked() then
+							i.capabilities = i.capabilities or {}
+							i.capabilities.paintable = 1
 						end
-						if key_to_set then
-							editor.controls[entry] = {
-								Load = function(i)
-									local sel
-									if subtable then
-										i = i[subtable]
-									end
-									if i and i[key_to_set] then
-										entry:SetText(i[key_to_set])
-									end
-								end,
-								Save = function(i)
-									if !_pnl:IsVisible() or entry:GetText() == "" then return end
-									if subtable then
-										i[subtable] = i[subtable] or {}
-										i[subtable][key_to_set] = entry:GetText()
-									else
-										i[key_to_set] = entry:GetText()
-									end
-								end,
+					end
+				}
+
+				//Genteel smoke toggle
+				local check = TFStyleVGUI("DCheckBoxLabel", box)
+				editor.genteel_smoke = check
+				check:Dock(TOP)
+				check:DockMargin(0,betweenitems,0,0)
+				check:SetText("Add " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect\n(requires \"cig_drg_smoke\" attachment)")
+				function check:OnChange(val)
+					//Toggle visibility of "disable genteel smoke" checkboxes in styles
+					for _, style in pairs (editor.styles) do
+						style:UpdateVisibility()
+					end
+					holder:InvalidateLayout(true)
+				end
+				editor.controls[check] = {
+					Load = function(i)
+						if i.attributes and i.attributes["attach particle effect static"] and 
+						i.attributes["attach particle effect static"].value == 28 then check:SetChecked(true) end
+					end,
+					Save = function(i)
+						if check:IsVisible() and check:GetChecked() then
+							i.attributes = i.attributes or {}
+							i.attributes["attach particle effect static"] = {
+								attribute_class = "set_attached_particle_static",
+								value = 28
 							}
 						end
-						return entry
 					end
+				}
 
-					local function AddMultilineTextEntry(parent, label, subtable, key_to_set)
-						local entry = AddTextEntry(parent, label, subtable, key_to_set)
-						entry:SetMultiline(true)
-						//Automatically resize the entry to show all lines
-						function entry:OnTextChanged()
-							entry:GetParent():SetHeight((19*math.max(1,entry:GetNumLines()))+1)
-						end
-						local old_Load = editor.controls[entry].Load
-						editor.controls[entry].Load = function(i)
-							old_Load(i)
-							timer.Simple(0, function() entry:OnTextChanged() end)
-						end
-						return entry
-					end
-
-
-					//Place all other controls in 3 side-by-side columns of equal width
-					local scroll = TFStyleVGUI("DScrollPanel", editor)
-					scroll:Dock(FILL)
-					local holder = AddColumnHolder(scroll, 3, 8)
-					holder:Dock(FILL)
-					//fix: make sure that scrolling to change the icon's fov doesn't mistakenly scroll this panel
-					local old_OnMouseWheeled = scroll.VBar.OnMouseWheeled
-					function scroll.VBar:OnMouseWheeled(dlta)
-						if editor.bp.Capturing or editor.bp:IsHovered() then return end
-						return old_OnMouseWheeled(self, dlta)
-					end
-
-
-					//Unlabeled box for item type and type-specific controls
-					local box = AddBox(holder.columns[1])
-
-					//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
-					local combo = AddDropdown(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", nil, "item_slot", {
-						{
-							Label = GetTFLanguageString("#LoadoutSlot_Misc") or "Cosmetic",
-							Value = "misc",
-						},
-						{
-							Label = GetTFLanguageString("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",
-							Value = "_custom_weapon", //assign custom weapons to a generic "slot" instead of primary/etc to declutter these options just a bit
-						},
-					})
-					combo:GetParent():DockMargin(0,0,0,0)
-					function combo:OnSelect(index, value, data)
-						local val = combo.options[index].Value
-						editor.paintable:SetVisible(val == "misc")
-						editor.genteel_smoke:SetVisible(val == "misc")
-						editor.anim:GetParent():SetVisible(val == "_custom_weapon")
-						holder:InvalidateLayout(true)
-					end
-
-					//Paintable toggle
-					local check = TFStyleVGUI("DCheckBoxLabel", box)
-					editor.paintable = check
-					check:Dock(TOP)
-					check:DockMargin(0,betweenitems,0,0)
-					check:SetText("Paintable")
-					editor.controls[check] = {
+				//Selector for weapon anim_slot as well as some relevant pose parameters
+				editor.anim = AddDropdown(box, "Animation slot", nil, "anim_slot", {
+					{
+						Label = str_none,
+						Value = "FORCE_NOT_USED"
+					},
+					{
+						PrependSpacer = true,
+						Label = GetTFLanguageString("#TR_Primary") or "Primary",
+						Value = "primary"
+					},
+					{
+						Label = GetTFLanguageString("#TR_Secondary") or "Secondary",
+						Value = "secondary"
+					},
+					{
+						Label = GetTFLanguageString("#TR_Melee") or "Melee",
+						Value = "melee"
+					},
+					{
+						Label = GetTFLanguageString("#TF_Weapon_PDA_Engineer") or "PDA",
+						Value = "pda"
+					},
+					{
+						Label = (GetTFLanguageString("#LoadoutSlot_Building") or "Building") .. " (toolbox, " .. string.lower(GetTFLanguageString("#TF_Weapon_Spy_Sapper") or "Sapper") .. ")",
+						Value = "building"
+					},
+					{
+						PrependSpacer = true,
+						Label = (GetTFLanguageString("#Item") or "Item") .. " 1 (" .. string.lower(GetTFLanguageString("#TF_Weapon_FlareGun") or "Flare Gun") .. ", " .. string.lower(GetTFLanguageString("#TF_Weapon_Sword") or "Sword") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_LunchBox") or "Sandvich") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Laser_Pointer") or "Wrangler") .. ", " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ", " .. string.lower(GetTFLanguageString("#TF_SharpDresser") or "Sharp Dresser") .. ")",
+						Value = "item1"
+					},
+					{ //item1 for scout drink, applies hand_grip poseparam
+						Label = (GetTFLanguageString("#Item") or "Item") .. " 1 (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout")  .. " " .. string.lower(GetTFLanguageString("#TF_EnergyDrink") or "Drink") .. ")",
 						Load = function(i)
-							if i.capabilities and i.capabilities.paintable then check:SetChecked(true) end
+							if i.anim_slot == "item1" and i.visuals and i.visuals.player_poseparam 
+							and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
 						end,
 						Save = function(i)
-							if check:IsVisible() and check:GetChecked() then
-								i.capabilities = i.capabilities or {}
-								i.capabilities.paintable = 1
-							end
+							i.anim_slot = "item1"
+							i.visuals = i.visuals or {}
+							i.visuals.player_poseparam = {r_hand_grip = 16}
 						end
+					},
+					{
+						Label = (GetTFLanguageString("#Item") or "Item") .. " 2 (" .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Scattergun_Double") or "Force-a-Nature") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Robot_Arm") or "Gunslinger") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_CompoundBow") or "Huntsman") .. ")",
+						Value = "item2"
+					},
+					{
+						Label = (GetTFLanguageString("#Item") or "Item") .. " 4 (" .. string.lower(GetTFLanguageString("#TF_ThermalThruster") or "Thermal Thruster") .. ")",
+						Value = "item4"
+					},
+					//TODO: cow mangler has anim_slot "primary2" but this only has fire/reload anims and i'm not even sure if tf2 uses them; revisit later when we do anim functionality
+					{
+						Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " 2 (" ..  string.lower(GetTFLanguageString("#TF_BISON") or "BISON")  .. ")",
+						Value = "secondary2"
+					},
+					{
+						Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes"),
+						Value = "melee_allclass"
+					},
+					{ //melee_allclass for bread jars, applies hand_grip poseparam
+						Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_Wearable_Bread") or "Bread")  .. " " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ")",
+						Load = function(i)
+							if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
+							and i.visuals.player_poseparam.r_hand_grip == 13 then return true end
+						end,
+						Save = function(i)
+							i.anim_slot = "melee_allclass"
+							i.visuals = i.visuals or {}
+							i.visuals.player_poseparam = {r_hand_grip = 13}
+						end
+					},
+					{ //melee_allclass for gas passer, applies a different hand_grip poseparam
+						Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_GasPasser") or "Gas Passer") .. ")",
+						Load = function(i)
+							if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
+							and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
+						end,
+						Save = function(i)
+							i.anim_slot = "melee_allclass"
+							i.visuals = i.visuals or {}
+							i.visuals.player_poseparam = {r_hand_grip = 16}
+						end
+					},
+					{ //melee_allclass for hot hand, applies yet another different hand_grip poseparam as well as arm poseparm
+						Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_Weapon_HotHand") or "Hot Hand") .. ")",
+						Load = function(i)
+							if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
+							and i.visuals.player_poseparam.r_arm == 3 and i.visuals.player_poseparam.r_hand_grip == 15 
+							then return true end
+						end,
+						Save = function(i)
+							i.anim_slot = "melee_allclass"
+							i.visuals = i.visuals or {}
+							i.visuals.player_poseparam = {r_arm = 3, r_hand_grip = 15}
+						end
+					},
+					{
+						Label = (GetTFLanguageString("#GameType_Passtime") or "PASS Time") .. " JACK",
+						Value = "passtime_ball"
 					}
+					//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
+				}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
 
-					//Genteel smoke toggle
-					local check = TFStyleVGUI("DCheckBoxLabel", box)
-					editor.genteel_smoke = check
+
+				//Checkboxes to select classes in any combination
+				local box = AddBox(holder.columns[1], GetTFLanguageString("#Store_ClassFilterLabel") or "Classes:")
+				editor.classes = AddColumnHolder(box, 3, 0)
+				editor.classes:Dock(TOP)
+				editor.classes.checks = {}
+				for i = 2, 10 do
+					local check = TFStyleVGUI("DCheckBoxLabel", editor.classes.columns[math.fmod(i-2, 3)+1])
 					check:Dock(TOP)
-					check:DockMargin(0,betweenitems,0,0)
-					check:SetText("Add " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect\n(requires \"cig_drg_smoke\" attachment)")
-					function check:OnChange(val)
-						//Toggle visibility of "disable genteel smoke" checkboxes in styles
+					if i > 4 then
+						check:DockMargin(0,betweenitems,0,0)
+					end
+					check:SetText(GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
+					editor.classes.checks[classes[i].longname] = check
+					//make sure user can read the text if it's cut off
+					AddTFStyleTooltip(check.Label, check:GetText())
+					local old_IsHovered = check.Label.IsHovered
+					function check.Label:IsHovered(...)
+						return old_IsHovered(self, ...) or check:IsHovered(...)
+					end
+					function check:OnChange(val) //Update all controls that are dependent on class selection
+						//Only show equip regions for the currently selected class
+						for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
+							pnl:SetVisible(val)
+						end
+						//Update visibility of class-specific model fields
+						editor.class_models:UpdateVisibility()
+						//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+						editor.bodygroups:UpdateVisibility()
+						//Also update visibility of class-specific model fields and bodygroups in styles
 						for _, style in pairs (editor.styles) do
 							style:UpdateVisibility()
 						end
+						//Update classes listed in backpack icon class dropdown
+						editor.bp_class:UpdateVisibility()
 						holder:InvalidateLayout(true)
 					end
-					editor.controls[check] = {
-						Load = function(i)
-							if i.attributes and i.attributes["attach particle effect static"] and 
-							i.attributes["attach particle effect static"].value == 28 then check:SetChecked(true) end
-						end,
-						Save = function(i)
-							if check:IsVisible() and check:GetChecked() then
-								i.attributes = i.attributes or {}
-								i.attributes["attach particle effect static"] = {
-									attribute_class = "set_attached_particle_static",
-									value = 28
-								}
+				end
+				editor.controls[editor.classes] = {
+					Load = function(i)
+						if !i.used_by_classes then return end
+						for class, _ in pairs (i.used_by_classes) do
+							if editor.classes.checks[class] then
+								editor.classes.checks[class]:SetValue(true)
 							end
 						end
-					}
-
-					//Selector for weapon anim_slot as well as some relevant pose parameters
-					editor.anim = AddDropdown(box, "Animation slot", nil, "anim_slot", {
-						{
-							Label = str_none,
-							Value = "FORCE_NOT_USED"
-						},
-						{
-							PrependSpacer = true,
-							Label = GetTFLanguageString("#TR_Primary") or "Primary",
-							Value = "primary"
-						},
-						{
-							Label = GetTFLanguageString("#TR_Secondary") or "Secondary",
-							Value = "secondary"
-						},
-						{
-							Label = GetTFLanguageString("#TR_Melee") or "Melee",
-							Value = "melee"
-						},
-						{
-							Label = GetTFLanguageString("#TF_Weapon_PDA_Engineer") or "PDA",
-							Value = "pda"
-						},
-						{
-							Label = (GetTFLanguageString("#LoadoutSlot_Building") or "Building") .. " (toolbox, " .. string.lower(GetTFLanguageString("#TF_Weapon_Spy_Sapper") or "Sapper") .. ")",
-							Value = "building"
-						},
-						{
-							PrependSpacer = true,
-							Label = (GetTFLanguageString("#Item") or "Item") .. " 1 (" .. string.lower(GetTFLanguageString("#TF_Weapon_FlareGun") or "Flare Gun") .. ", " .. string.lower(GetTFLanguageString("#TF_Weapon_Sword") or "Sword") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_LunchBox") or "Sandvich") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Laser_Pointer") or "Wrangler") .. ", " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ", " .. string.lower(GetTFLanguageString("#TF_SharpDresser") or "Sharp Dresser") .. ")",
-							Value = "item1"
-						},
-						{ //item1 for scout drink, applies hand_grip poseparam
-							Label = (GetTFLanguageString("#Item") or "Item") .. " 1 (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout")  .. " " .. string.lower(GetTFLanguageString("#TF_EnergyDrink") or "Drink") .. ")",
-							Load = function(i)
-								if i.anim_slot == "item1" and i.visuals and i.visuals.player_poseparam 
-								and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
-							end,
-							Save = function(i)
-								i.anim_slot = "item1"
-								i.visuals = i.visuals or {}
-								i.visuals.player_poseparam = {r_hand_grip = 16}
+					end,
+					Save = function(i)
+						local tab = {}
+						for class, check in pairs (editor.classes.checks) do
+							if check:GetChecked() then
+								tab[class] = 1
 							end
-						},
-						{
-							Label = (GetTFLanguageString("#Item") or "Item") .. " 2 (" .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_Scattergun_Double") or "Force-a-Nature") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Robot_Arm") or "Gunslinger") .. ", " .. string.lower(GetTFLanguageString("#TF_Unique_Achievement_CompoundBow") or "Huntsman") .. ")",
-							Value = "item2"
-						},
-						{
-							Label = (GetTFLanguageString("#Item") or "Item") .. " 4 (" .. string.lower(GetTFLanguageString("#TF_ThermalThruster") or "Thermal Thruster") .. ")",
-							Value = "item4"
-						},
-						//TODO: cow mangler has anim_slot "primary2" but this only has fire/reload anims and i'm not even sure if tf2 uses them; revisit later when we do anim functionality
-						{
-							Label = (GetTFLanguageString("#TR_Secondary") or "Secondary") .. " 2 (" ..  string.lower(GetTFLanguageString("#TF_BISON") or "BISON")  .. ")",
-							Value = "secondary2"
-						},
-						{
-							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes"),
-							Value = "melee_allclass"
-						},
-						{ //melee_allclass for bread jars, applies hand_grip poseparam
-							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_Wearable_Bread") or "Bread")  .. " " .. string.lower(GetTFLanguageString("#TF_Jar") or "JAR") .. ")",
-							Load = function(i)
-								if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
-								and i.visuals.player_poseparam.r_hand_grip == 13 then return true end
-							end,
-							Save = function(i)
-								i.anim_slot = "melee_allclass"
-								i.visuals = i.visuals or {}
-								i.visuals.player_poseparam = {r_hand_grip = 13}
-							end
-						},
-						{ //melee_allclass for gas passer, applies a different hand_grip poseparam
-							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_GasPasser") or "Gas Passer") .. ")",
-							Load = function(i)
-								if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
-								and i.visuals.player_poseparam.r_hand_grip == 16 then return true end
-							end,
-							Save = function(i)
-								i.anim_slot = "melee_allclass"
-								i.visuals = i.visuals or {}
-								i.visuals.player_poseparam = {r_hand_grip = 16}
-							end
-						},
-						{ //melee_allclass for hot hand, applies yet another different hand_grip poseparam as well as arm poseparm
-							Label = (GetTFLanguageString("#TR_Melee") or "Melee") .. " - " .. string.lower(GetTFLanguageString("#Store_ItemDesc_AllClasses") or "All Classes") .. " (" .. string.lower(GetTFLanguageString("#TF_Weapon_HotHand") or "Hot Hand") .. ")",
-							Load = function(i)
-								if i.anim_slot == "melee_allclass" and i.visuals and i.visuals.player_poseparam 
-								and i.visuals.player_poseparam.r_arm == 3 and i.visuals.player_poseparam.r_hand_grip == 15 
-								then return true end
-							end,
-							Save = function(i)
-								i.anim_slot = "melee_allclass"
-								i.visuals = i.visuals or {}
-								i.visuals.player_poseparam = {r_arm = 3, r_hand_grip = 15}
-							end
-						},
-						{
-							Label = (GetTFLanguageString("#GameType_Passtime") or "PASS Time") .. " JACK",
-							Value = "passtime_ball"
-						}
-						//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
-					}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
+						end
+						if table.Count(tab) == 0 then tab = {none = 1} end
+						i.used_by_classes = tab
+					end
+				}
 
 
-					//Checkboxes to select classes in any combination
-					local box = AddBox(holder.columns[1], GetTFLanguageString("#Store_ClassFilterLabel") or "Classes:")
-					editor.classes = AddColumnHolder(box, 3, 0)
-					editor.classes:Dock(TOP)
-					editor.classes.checks = {}
-					for i = 2, 10 do
-						local check = TFStyleVGUI("DCheckBoxLabel", editor.classes.columns[math.fmod(i-2, 3)+1])
+				//Checkboxes to set equip region, again in any combination
+				local box = AddBox(holder.columns[1], (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ":" ) //no localization string for "equip regions" plural, oh well
+				editor.equip_regions = AddColumnHolder(box, 2, 0)
+				editor.equip_regions:Dock(TOP)
+				editor.equip_regions.checks_by_class = {}
+				editor.equip_regions.all_checks = {}
+				for classid, class in ipairs (classes) do //add class-based equip regions in class order
+					local checkbox_height
+					for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
+						local check = TFStyleVGUI("DCheckBoxLabel", editor.equip_regions.columns[math.fmod(k-1, 2)+1])
 						check:Dock(TOP)
-						if i > 4 then
+						if k > 2 then
 							check:DockMargin(0,betweenitems,0,0)
+						elseif classid > 1 then
+							check:DockMargin(0,betweencategories,0,0) //add space between different classes' equip regions
 						end
-						check:SetText(GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
-						editor.classes.checks[classes[i].longname] = check
+						check:SetText(string.NiceName(v))
+						editor.equip_regions.checks_by_class[classid] = editor.equip_regions.checks_by_class[classid] or {}
+						editor.equip_regions.checks_by_class[classid][v] = check
+						editor.equip_regions.all_checks[v] = check
+						checkbox_height = checkbox_height or check:GetTall()
 						//make sure user can read the text if it's cut off
 						AddTFStyleTooltip(check.Label, check:GetText())
 						local old_IsHovered = check.Label.IsHovered
 						function check.Label:IsHovered(...)
 							return old_IsHovered(self, ...) or check:IsHovered(...)
 						end
-						function check:OnChange(val) //Update all controls that are dependent on class selection
-							//Only show equip regions for the currently selected class
-							for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
-								pnl:SetVisible(val)
+					end
+					//if number of entries is odd, then add another to prevent spacing issues with the next class
+					if editor.equip_regions.checks_by_class[classid] and table.Count(editor.equip_regions.checks_by_class[classid]) % 2 != 0 then
+						local pnl = vgui.Create("Panel", editor.equip_regions.columns[2])
+						pnl:SetHeight(checkbox_height)
+						pnl:Dock(TOP)
+						pnl:DockMargin(0,betweenitems,0,0)
+						editor.equip_regions.checks_by_class[classid]["_FILLER"] = pnl
+					end
+				end
+				editor.controls[editor.equip_regions] = {
+					Load = function(i)
+						for classid, tab in pairs (editor.equip_regions.checks_by_class) do
+							for k, check in pairs (tab) do
+								if check.SetValue then check:SetValue(i.equip_regions and i.equip_regions[k]) end
+								check:SetVisible(classid == 1 or (i.used_by_classes and i.used_by_classes[classes[classid].longname]))
 							end
-							//Update visibility of class-specific model fields
-							editor.class_models:UpdateVisibility()
-							//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
-							editor.bodygroups:UpdateVisibility()
-							//Also update visibility of class-specific model fields and bodygroups in styles
-							for _, style in pairs (editor.styles) do
-								style:UpdateVisibility()
+						end
+					end,
+					Save = function(i)
+						local tab
+						for k, check in pairs (editor.equip_regions.all_checks) do
+							if check:IsVisible() and check:GetChecked() then
+								tab = tab or {}
+								tab[k] = 1
 							end
-							//Update classes listed in backpack icon class dropdown
-							editor.bp_class:UpdateVisibility()
-							holder:InvalidateLayout(true)
+						end
+						if tab then i.equip_regions = tab end
+					end
+				}
+
+
+				local box = AddBox(holder.columns[2], string.NiceName(language.GetPhrase("#models")) .. ":")
+
+				//Base model
+				local entry = AddTextEntry(box, "Item model", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
+				entry:GetParent():DockMargin(0,0,0,0)
+				editor.model = entry
+				function entry:OnEnter()
+					editor.bp:Refresh()
+				end
+
+				//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
+				local check = TFStyleVGUI("DCheckBoxLabel", box)
+				check:SetText("Class-specific model paths?")
+				check:DockMargin(0,betweenitems,0,0)
+				check:Dock(TOP)
+				editor.class_models = check
+				check.classes = {}
+				editor.controls[check] = {
+					Load = function(i)
+						//Only start off checked if there are already per-class models in the table
+						for classid = 2, 10 do
+							if i.model_player_per_class and i.model_player_per_class[classes[classid].longname] then
+								check:SetChecked(true)
+								break
+							end
+						end
+						timer.Simple(0, function() check.HasLoaded = true check:UpdateVisibility() end)
+					end
+				}
+				function check:OnChange(val)
+					check:UpdateVisibility()
+				end
+				function check:UpdateVisibility()
+					if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
+					local selected_class_count = 0
+					for _, pnl in pairs (editor.classes.checks) do
+						if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
+					end
+					//Only show the checkbox if multiple classes are selected
+					check:SetVisible(selected_class_count > 1)
+					//Only show the entry box for each class if the checkbox is selected, the corresponding class is selected, AND multiple classes are selected
+					for i = 2, 10 do
+						editor.class_models.classes[i]:GetParent():SetVisible(check:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
+					end
+					//Only show the help text if we're showing the class-specific entries
+					check.help:SetVisible(selected_class_count > 1 and check:GetChecked())
+					//Refresh the backpack icon modelpanel, just in case the currently used model was disabled or something
+					editor.bp:Refresh()
+				end
+				for i = 2, 10 do
+					local entry = AddTextEntry(box, "Item model - " .. (GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname)), "model_player_per_class", classes[i].longname)
+					check.classes[i] = entry
+					function entry:OnEnter()
+						editor.bp:Refresh()
+					end
+				end
+				local help = vgui.Create("DLabel", box)
+				help:SetWrap(true)
+				help:SetAutoStretchVertical(true)
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(gui_colors.TanLight)
+				help:SetText("Tip: As an alternative, \"%s\" (percent sign s) in the main model path will be read as the class the item is spawned for - \"hat_%s\" will become \"hat_demo\", \"hat_engineer\", and so on.")
+				help:Dock(TOP)
+				help:DockMargin(0,betweenitems,0,0)
+				check.help = help
+
+				//Text entries for attached models - this creates as many entries as needed, 
+				//adding an empty one to the list when the existing ones are all filled
+				local pnl = vgui.Create("DSizeToContents", box)
+				pnl:Dock(TOP)
+				pnl:DockMargin(0,betweencategories-betweenitems,0,0)
+				editor.attached_models = pnl
+				pnl.entries = {}
+				function pnl:UpdateEntries()
+					//Clear out blank entries except the last one
+					local entries_to_remove = {}
+					for k, v in ipairs (pnl.entries) do
+						if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
+					end
+					for k, v in pairs (entries_to_remove) do
+						v:GetParent():Remove()
+						table.remove(pnl.entries, k)
+					end
+					for k, v in ipairs (pnl.entries) do
+						v:Dock(TOP)
+					end
+					//Make sure we always have a blank entry at the end of the list
+					if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
+						pnl:AddEntry()
+					end
+					for k, v in pairs (pnl.entries) do
+						local text = "Attached model " .. tostring(k)
+						v:SetPlaceholderText(text)
+						AddTFStyleTooltip(v, text)
+					end
+				end
+				function pnl:AddEntry()
+					local entry = AddTextEntry(pnl, "")
+					table.insert(pnl.entries, entry)
+					local old_OnLoseFocus = entry.OnLoseFocus
+					function entry:OnLoseFocus(...)
+						pnl:UpdateEntries()
+						old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
+					end
+					function entry:OnEnter()
+						editor.bp:Refresh()
+					end
+					return entry
+				end
+				editor.controls[pnl] = {
+					Load = function(i)
+						if i.visuals and i.visuals.attached_models then
+							for k, v in pairs (i.visuals.attached_models) do
+								local entry = pnl:AddEntry()
+								entry:SetText(i.visuals.attached_models[k].model)
+							end
+						end
+						pnl:UpdateEntries()
+					end,
+					Save = function(i)
+						for k, v in ipairs (pnl.entries) do
+							if v:GetText() != "" then
+								i.visuals = i.visuals or {}
+								i.visuals.attached_models = i.visuals.attached_models or {}
+								//put these into a sequential table starting with 0, to match the formatting of tf2 items
+								table.insert(i.visuals.attached_models, table.Count(i.visuals.attached_models), {model = v:GetText()})
+							end
 						end
 					end
-					editor.controls[editor.classes] = {
+				}
+				local help = vgui.Create("DLabel", box)
+				help:SetWrap(true)
+				help:SetAutoStretchVertical(true)
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(gui_colors.TanLight)
+				help:SetText("Extra models attached to the item, i.e. festive lights, botkillers, flamethrower pilot lights")
+				help:Dock(TOP)
+				help:DockMargin(0,betweenitems,0,0)
+
+				//Text entries for extra wearables - this works like the above but with a max of 2
+				local pnl = vgui.Create("DSizeToContents", box)
+				pnl:Dock(TOP)
+				pnl:DockMargin(0,betweencategories-betweenitems,0,0)
+				editor.extra_wearables = pnl
+				pnl.entries = {}
+				function pnl:UpdateEntries()
+					//Clear out blank entries except the last one
+					local entries_to_remove = {}
+					for k, v in ipairs (pnl.entries) do
+						if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
+					end
+					for k, v in pairs (entries_to_remove) do
+						v:GetParent():Remove()
+						table.remove(pnl.entries, k)
+					end
+					for k, v in ipairs (pnl.entries) do
+						v:Dock(TOP)
+					end
+					//Make sure we always have a blank entry at the end of the list
+					if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
+						pnl:AddEntry()
+					end
+					for k, v in pairs (pnl.entries) do
+						local text = "Extra wearable " .. tostring(k)
+						if k == 2 then text = text .. " (max 2)" end
+						v:SetPlaceholderText(text)
+						AddTFStyleTooltip(v, text)
+					end
+				end
+				function pnl:AddEntry()
+					//number of extra wearables has to be capped at 2 due to technical limitations -
+					//every spawned item needs to track and network whether each extra_wearable slot 
+					//is enabled, whether the item actually uses it or not
+					if #pnl.entries > 1 then return end
+					local entry = AddTextEntry(pnl, "")
+					table.insert(pnl.entries, entry)
+					local old_OnLoseFocus = entry.OnLoseFocus
+					function entry:OnLoseFocus(...)
+						pnl:UpdateEntries()
+						old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
+					end
+					function entry:OnEnter()
+						editor.bp:Refresh()
+					end
+					return entry
+				end
+				local tab = {"extra_wearable", "extra_wearable_2"}
+				editor.controls[pnl] = {
+					Load = function(i)
+						for k, v in ipairs (tab) do
+							if i[v] then
+								local entry = pnl:AddEntry()
+								if entry then entry:SetText(i[v]) end
+							end
+						end
+						pnl:UpdateEntries()
+					end,
+					Save = function(i)
+						for k, v in ipairs (pnl.entries) do
+							if v:GetText() != "" then
+								i[tab[k]] = v:GetText()
+							end
+						end
+					end
+				}
+				local help = vgui.Create("DLabel", box)
+				help:SetWrap(true)
+				help:SetAutoStretchVertical(true)
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(gui_colors.TanLight)
+				help:SetText("Extra models attached to the player model, i.e. medigun/banner backpacks, banner flags")
+				help:Dock(TOP)
+				help:DockMargin(0,betweenitems,0,0)
+
+				//Skin id pickers
+				local skins = vgui.Create("Panel", box)
+				local _pnl = AddTFLabelToVGUI(skins, "#skin")
+				_pnl:DockMargin(0,betweencategories,0,0)
+				_pnl:Dock(TOP)
+				editor.skins = skins
+				function skins:PerformLayout(w, h)
+					w = (w - 8) / 2
+					self.label1:SetWide(w)
+					self.label2:SetWide(w)
+					self.label1:SetPos(0,0)
+					self.label2:SetPos(w+8,0)
+				end
+				local _skins = {
+					[1] = {label = GetTFLanguageString("#TF_RedTeam_Name") or "RED", subtable = "visuals_red", col = desc_colors.negative},
+					[2] = {label = GetTFLanguageString("#TF_BlueTeam_Name") or "BLU", subtable = "visuals_blu", col = desc_colors.positive},
+				}
+				for k, v in ipairs (_skins) do
+					local num = TFStyleVGUI("DNumberWang", skins, true)
+					num:SetDecimals(0)
+					num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
+					num:SetValue(k-1)
+					num.FGColor = v.col
+					skins["num" .. k] = num
+					skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
+					editor.controls[num] = {
 						Load = function(i)
-							if !i.used_by_classes then return end
-							for class, _ in pairs (i.used_by_classes) do
-								editor.classes.checks[class]:SetValue(true)
+							if i[v.subtable] and i[v.subtable].skin != nil then
+								num:SetValue(i[v.subtable].skin)
 							end
 						end,
 						Save = function(i)
-							local tab = {}
-							for class, check in pairs (editor.classes.checks) do
-								if check:GetChecked() then
-									tab[class] = 1
-								end
-							end
-							if table.Count(tab) == 0 then tab = {none = 1} end
-							i.used_by_classes = tab
-						end
-					}
-
-
-					//Checkboxes to set equip region, again in any combination
-					local box = AddBox(holder.columns[1], (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ":" ) //no localization string for "equip regions" plural, oh well
-					editor.equip_regions = AddColumnHolder(box, 2, 0)
-					editor.equip_regions:Dock(TOP)
-					editor.equip_regions.checks_by_class = {}
-					editor.equip_regions.all_checks = {}
-					for classid, class in ipairs (classes) do //add class-based equip regions in class order
-						local checkbox_height
-						for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
-							local check = TFStyleVGUI("DCheckBoxLabel", editor.equip_regions.columns[math.fmod(k-1, 2)+1])
-							check:Dock(TOP)
-							if k > 2 then
-								check:DockMargin(0,betweenitems,0,0)
-							elseif classid > 1 then
-								check:DockMargin(0,betweencategories,0,0) //add space between different classes' equip regions
-							end
-							check:SetText(string.NiceName(v))
-							editor.equip_regions.checks_by_class[classid] = editor.equip_regions.checks_by_class[classid] or {}
-							editor.equip_regions.checks_by_class[classid][v] = check
-							editor.equip_regions.all_checks[v] = check
-							checkbox_height = checkbox_height or check:GetTall()
-							//make sure user can read the text if it's cut off
-							AddTFStyleTooltip(check.Label, check:GetText())
-							local old_IsHovered = check.Label.IsHovered
-							function check.Label:IsHovered(...)
-								return old_IsHovered(self, ...) or check:IsHovered(...)
-							end
-						end
-						//if number of entries is odd, then add another to prevent spacing issues with the next class
-						if editor.equip_regions.checks_by_class[classid] and table.Count(editor.equip_regions.checks_by_class[classid]) % 2 != 0 then
-							local pnl = vgui.Create("Panel", editor.equip_regions.columns[2])
-							pnl:SetHeight(checkbox_height)
-							pnl:Dock(TOP)
-							pnl:DockMargin(0,betweenitems,0,0)
-							editor.equip_regions.checks_by_class[classid]["_FILLER"] = pnl
-						end
-					end
-					editor.controls[editor.equip_regions] = {
-						Load = function(i)
-							for classid, tab in pairs (editor.equip_regions.checks_by_class) do
-								for k, check in pairs (tab) do
-									if check.SetValue then check:SetValue(i.equip_regions and i.equip_regions[k]) end
-									check:SetVisible(classid == 1 or (i.used_by_classes and i.used_by_classes[classes[classid].longname]))
-								end
+							local val = num:GetValue()
+							if val != k-1 then //don't save default values
+								i[v.subtable] = i[v.subtable] or {}
+								i[v.subtable].skin = val
 							end
 						end,
-						Save = function(i)
-							local tab
-							for k, check in pairs (editor.equip_regions.all_checks) do
-								if check:IsVisible() and check:GetChecked() then
-									tab = tab or {}
-									tab[k] = 1
+					}
+					if k == 1 then
+						function num:OnValueChanged()
+							editor.bp:Refresh()
+						end
+					end
+				end
+
+
+				//Checkboxes to set player bodygroups
+				local box = AddBox(holder.columns[2], GetTFLanguageString("#TF_ImportFile_Bodygroups") or "Bodygroup:")
+				editor.bodygroups = AddColumnHolder(box, 2, 0)
+				editor.bodygroups:Dock(TOP)
+				editor.bodygroups.checks = {}
+				local bodygroups = {
+					{
+						label = "Hat",
+						bgs = {
+							scout = "hat",
+							soldier = "hat",
+							engineer = "hat",
+							sniper = "hat"
+						}
+					},
+					{
+						label = "Headphones", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
+						bgs = {
+							scout = "headphones"
+						}
+					},
+					{
+						label = "Head", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ")",
+						bgs = {
+							pyro = "head"
+						}
+					},
+					{
+						label = "Dogtags", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
+						bgs = {
+							scout = "dogtags"
+						}
+					},
+					{
+						label = "Grenades",
+						bgs = {
+							soldier = "grenades",
+							pyro = "grenades",
+							demoman = "grenades"
+						}
+					},
+					{
+						label = "Bullets", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
+						bgs = {
+							heavy = "bullets"
+							//sniper has a bullets bodygroup but it's not useful here, it just enables sydney sleeper darts
+						}
+					},
+					{
+						label = "Backpack", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Medic") or "Medic") .. ")",
+						bgs = {
+							pyro = "backpack",
+							medic = "medic_backpack"
+						}
+					},
+					{
+						label = "Hands", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
+						bgs = {
+							heavy = "hands"
+						}
+					},
+					{
+						label = "Right hand", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Engineer") or "Engineer") ..  ")",
+						bgs = {
+							pyro = "righthand",
+							engineer = {name = "rightarm", val = 2} //rightarm 1 is gunslinger
+						}
+					},
+					{
+						label = "Shoes", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Demoman") or "Demo") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") ..  ")",
+						bgs = {
+							scout = "shoes_socks",
+							demoman = "shoes",
+						}
+					},
+				}
+				local keys_by_bg = {}
+				for k, v in ipairs (bodygroups) do
+					for class, bg in pairs (v.bgs) do
+						local val = 1
+						if istable(bg) then 
+							val = bg.val
+							bg = bg.name
+						end
+						keys_by_bg[bg] = {val = val, k = k}
+					end
+					local check = TFStyleVGUI("DCheckBoxLabel", editor.bodygroups.columns[math.fmod(k-1, 2)+1])
+					check:Dock(TOP)
+					if k > 2 then
+						check:DockMargin(0,betweenitems,0,0)
+					end
+					check:SetText(v.label)
+					editor.bodygroups.checks[k] = check
+					function check:OnChange(val)
+						//Update bodygroups in styles - bodygroups that are already enabled here should be checked and grayed out in styles
+						for _, style in pairs (editor.styles) do
+							style:UpdateVisibility()
+						end
+						//Also update backpack icon, in case we're using a visible class model there
+						editor.bp:Refresh()
+					end
+					//make sure user can read the text if it's cut off
+					AddTFStyleTooltip(check.Label, check:GetText())
+					local old_IsHovered = check.Label.IsHovered
+					function check.Label:IsHovered(...)
+						return old_IsHovered(self, ...) or check:IsHovered(...)
+					end
+				end
+				function editor.bodygroups:UpdateVisibility()
+					if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
+					//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+					for k, v in ipairs (editor.bodygroups.checks) do
+						local selected_classes = 0
+						for class, bg in pairs (bodygroups[k].bgs) do
+							if editor.classes.checks[class]:GetChecked() then
+								selected_classes = selected_classes + 1
+							end
+						end
+						v:SetEnabled(selected_classes > 0)
+						v:SetChecked(selected_classes > 0 and v:GetChecked())
+					end
+				end
+				editor.controls[editor.bodygroups] = {
+					Load = function(i)
+						if i.visuals and i.visuals.player_bodygroups then
+							for k, v in pairs (i.visuals.player_bodygroups) do
+								if keys_by_bg[k] and v == keys_by_bg[k].val then
+									editor.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
 								end
 							end
-							if tab then i.equip_regions = tab end
 						end
-					}
+						timer.Simple(0, function() editor.bodygroups.HasLoaded = true editor.bodygroups:UpdateVisibility() end)
+					end,
+					Save = function(i)
+						for k, v in ipairs (editor.bodygroups.checks) do
+							if !v:GetChecked() then continue end
+							for class, bg in pairs (bodygroups[k].bgs) do
+								if !editor.classes.checks[class]:GetChecked() then continue end
+								i.visuals = i.visuals or {}
+								i.visuals.player_bodygroups = i.visuals.player_bodygroups or {}
+								local val = 1
+								if istable(bg) then
+									val = bg.val
+									bg = bg.name
+								end
+								i.visuals.player_bodygroups[bg] = val
+							end
+						end
+					end
+				}
 
 
-					local box = AddBox(holder.columns[2], string.NiceName(language.GetPhrase("#models")) .. ":")
+				local button = TFStyleVGUI("DButton", holder.columns[2])
+				button:SetText("Add Style")
+				button:Dock(TOP)
+				button:DockMargin(0,8,0,0)
+				button:SetZPos(1) //keep this below all the styles we create
+				function button:DoClick()
+					local style = self:AddStyle()
+					style.HasLoaded = true
+					style:UpdateVisibility()
+				end
+				editor.styles = {}
+				function button:AddStyle()
+
+					local box = AddBox(holder.columns[2])
+					local i = table.insert(editor.styles, box)
+					//for most of these boxes, we have a thick dockpadding on all sides to make the controls fit inside nicely, while the label at the top
+					//uses negative dockmargins to appear closer to the edges at the controls. unfortunately, DSizeToContents doesn't like items within it
+					//using negative dockmargins on the right side specifically, which we'd have to do to make the "remove style" button match the label.
+					//guess we have to apply the padding to all the controls manually, bah!
+					local _a, _b, side_margin, _c = box:GetDockPadding()
+					box:DockPadding(_a, _b, 0, _c)
+					
+
+					local text_holder = vgui.Create("Panel", box)
+					text_holder:SetHeight(22)
+					text_holder:Dock(TOP)
+					text_holder:DockMargin(-8-3,-8-3,0,betweenitems)
+					local entry = TFStyleVGUI("DTextEntry", text_holder)
+					entry:SetFont("TF2ItemBrowser_ItemName")
+					entry:SetPlaceholderText("Style " .. tostring(i))
+					entry:Dock(FILL)
+					box.name = entry
+					function entry:OnEnter()
+						//update backpack icon style selector
+						editor.bp_style:UpdateVisibility()
+					end
+
+					local close = vgui.Create("DButton", text_holder)
+					close:SetText("")
+					close:SetSize(22,22)
+					close:Dock(RIGHT)
+					close:DockMargin(5,0,5,0)
+					function close:Paint(w,h)
+						if self.Depressed then
+							surface.SetDrawColor(color_white)
+						elseif self.Hovered then
+							surface.SetDrawColor(gui_colors.LightRed)
+						else
+							surface.SetDrawColor(gui_colors.TanDark)
+						end
+						surface.SetMaterial(close_button)
+						surface.DrawTexturedRect(0,0,w,h)
+					end
+					AddTFButtonSounds(close)
+					function close:DoClick()
+						table.remove(editor.styles, table.KeyFromValue(editor.styles, box))
+						close:Remove()
+						box:Remove()
+						for i, style in ipairs (editor.styles) do
+							style.name:SetPlaceholderText("Style " .. tostring(i))
+						end
+						//update backpack icon style selector
+						editor.bp_style:UpdateVisibility()
+						//update backpack icon, just in case we removed the style it was using
+						editor.bp:Refresh()
+					end
+
+
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Change models?")
+					check:DockMargin(0,betweenitems,side_margin,0)
+					check:Dock(TOP)
+					box.model_check = check
+					function check:OnChange(val)
+						box:UpdateVisibility()
+						editor.bp:Refresh()
+					end
 
 					//Base model
-					local entry = AddTextEntry(box, "Item model", "model_player_per_class", "basename") //nil, "model_player") //model_player_per_class.basename accepts the %s token, while model_player doesn't. don't overthink it, just use the former for everything, even single-class items.
-					entry:GetParent():DockMargin(0,0,0,0)
-					editor.model = entry
+					local entry = AddTextEntry(box, "Item model path")
+					entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
+					box.model = entry
 					function entry:OnEnter()
 						editor.bp:Refresh()
 					end
@@ -3714,213 +4248,38 @@ if CLIENT then
 					//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
 					local check = TFStyleVGUI("DCheckBoxLabel", box)
 					check:SetText("Class-specific model paths?")
-					check:DockMargin(0,betweenitems,0,0)
+					check:DockMargin(0,betweenitems,side_margin,0)
 					check:Dock(TOP)
-					editor.class_models = check
+					box.class_models = check
 					check.classes = {}
-					editor.controls[check] = {
-						Load = function(i)
-							//Only start off checked if there are already per-class models in the table
-							for classid = 2, 10 do
-								if i.model_player_per_class and i.model_player_per_class[classes[classid].longname] then
-									check:SetChecked(true)
-									break
-								end
-							end
-							timer.Simple(0, function() check.HasLoaded = true check:UpdateVisibility() end)
-						end
-					}
 					function check:OnChange(val)
-						check:UpdateVisibility()
-					end
-					function check:UpdateVisibility()
-						if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
-						local selected_class_count = 0
-						for _, pnl in pairs (editor.classes.checks) do
-							if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
-						end
-						//Only show the checkbox if multiple classes are selected
-						check:SetVisible(selected_class_count > 1)
-						//Only show the entry box for each class if the checkbox is selected, the corresponding class is selected, AND multiple classes are selected
-						for i = 2, 10 do
-							editor.class_models.classes[i]:GetParent():SetVisible(check:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
-						end
-						//Only show the help text if we're showing the class-specific entries
-						check.help:SetVisible(selected_class_count > 1 and check:GetChecked())
-						//Refresh the backpack icon modelpanel, just in case the currently used model was disabled or something
-						editor.bp:Refresh()
+						box:UpdateVisibility()
 					end
 					for i = 2, 10 do
-						local entry = AddTextEntry(box, "Item model - " .. (GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname)), "model_player_per_class", classes[i].longname)
+						local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
+						entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 						check.classes[i] = entry
 						function entry:OnEnter()
 							editor.bp:Refresh()
 						end
 					end
-					local help = vgui.Create("DLabel", box)
-					help:SetWrap(true)
-					help:SetAutoStretchVertical(true)
-					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-					help:SetColor(gui_colors.TanLight)
-					help:SetText("Tip: As an alternative, \"%s\" (percent sign s) in the main model path will be read as the class the item is spawned for - \"hat_%s\" will become \"hat_demo\", \"hat_engineer\", and so on.")
-					help:Dock(TOP)
-					help:DockMargin(0,betweenitems,0,0)
-					check.help = help
 
-					//Text entries for attached models - this creates as many entries as needed, 
-					//adding an empty one to the list when the existing ones are all filled
-					local pnl = vgui.Create("DSizeToContents", box)
-					pnl:Dock(TOP)
-					pnl:DockMargin(0,betweencategories-betweenitems,0,0)
-					editor.attached_models = pnl
-					pnl.entries = {}
-					function pnl:UpdateEntries()
-						//Clear out blank entries except the last one
-						local entries_to_remove = {}
-						for k, v in ipairs (pnl.entries) do
-							if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
-						end
-						for k, v in pairs (entries_to_remove) do
-							v:GetParent():Remove()
-							table.remove(pnl.entries, k)
-						end
-						for k, v in ipairs (pnl.entries) do
-							v:Dock(TOP)
-						end
-						//Make sure we always have a blank entry at the end of the list
-						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
-							pnl:AddEntry()
-						end
-						for k, v in pairs (pnl.entries) do
-							local text = "Attached model " .. tostring(k)
-							v:SetPlaceholderText(text)
-							AddTFStyleTooltip(v, text)
-						end
-					end
-					function pnl:AddEntry()
-						local entry = AddTextEntry(pnl, "")
-						table.insert(pnl.entries, entry)
-						local old_OnLoseFocus = entry.OnLoseFocus
-						function entry:OnLoseFocus(...)
-							pnl:UpdateEntries()
-							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
-						end
-						function entry:OnEnter()
-							editor.bp:Refresh()
-						end
-						return entry
-					end
-					editor.controls[pnl] = {
-						Load = function(i)
-							if i.visuals and i.visuals.attached_models then
-								for k, v in pairs (i.visuals.attached_models) do
-									local entry = pnl:AddEntry()
-									entry:SetText(i.visuals.attached_models[k].model)
-								end
-							end
-							pnl:UpdateEntries()
-						end,
-						Save = function(i)
-							for k, v in ipairs (pnl.entries) do
-								if v:GetText() != "" then
-									i.visuals = i.visuals or {}
-									i.visuals.attached_models = i.visuals.attached_models or {}
-									//put these into a sequential table starting with 0, to match the formatting of tf2 items
-									table.insert(i.visuals.attached_models, table.Count(i.visuals.attached_models), {model = v:GetText()})
-								end
-							end
-						end
-					}
-					local help = vgui.Create("DLabel", box)
-					help:SetWrap(true)
-					help:SetAutoStretchVertical(true)
-					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-					help:SetColor(gui_colors.TanLight)
-					help:SetText("Extra models attached to the item, i.e. festive lights, botkillers, flamethrower pilot lights")
-					help:Dock(TOP)
-					help:DockMargin(0,betweenitems,0,0)
 
-					//Text entries for extra wearables - this works like the above but with a max of 2
-					local pnl = vgui.Create("DSizeToContents", box)
-					pnl:Dock(TOP)
-					pnl:DockMargin(0,betweencategories-betweenitems,0,0)
-					editor.extra_wearables = pnl
-					pnl.entries = {}
-					function pnl:UpdateEntries()
-						//Clear out blank entries except the last one
-						local entries_to_remove = {}
-						for k, v in ipairs (pnl.entries) do
-							if v:GetText() == "" and k != #pnl.entries then entries_to_remove[k] = v end
-						end
-						for k, v in pairs (entries_to_remove) do
-							v:GetParent():Remove()
-							table.remove(pnl.entries, k)
-						end
-						for k, v in ipairs (pnl.entries) do
-							v:Dock(TOP)
-						end
-						//Make sure we always have a blank entry at the end of the list
-						if #pnl.entries == 0 or pnl.entries[#pnl.entries]:GetText() != "" then
-							pnl:AddEntry()
-						end
-						for k, v in pairs (pnl.entries) do
-							local text = "Extra wearable " .. tostring(k)
-							if k == 2 then text = text .. " (max 2)" end
-							v:SetPlaceholderText(text)
-							AddTFStyleTooltip(v, text)
-						end
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Change skins?")
+					check:DockMargin(0,betweencategories,side_margin,0)
+					check:Dock(TOP)
+					box.skins_check = check
+					function check:OnChange(val)
+						box:UpdateVisibility()
 					end
-					function pnl:AddEntry()
-						//number of extra wearables has to be capped at 2 due to technical limitations -
-						//every spawned item needs to track and network whether each extra_wearable slot 
-						//is enabled, whether the item actually uses it or not
-						if #pnl.entries > 1 then return end
-						local entry = AddTextEntry(pnl, "")
-						table.insert(pnl.entries, entry)
-						local old_OnLoseFocus = entry.OnLoseFocus
-						function entry:OnLoseFocus(...)
-							pnl:UpdateEntries()
-							old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
-						end
-						function entry:OnEnter()
-							editor.bp:Refresh()
-						end
-						return entry
-					end
-					local tab = {"extra_wearable", "extra_wearable_2"}
-					editor.controls[pnl] = {
-						Load = function(i)
-							for k, v in ipairs (tab) do
-								if i[v] then
-									local entry = pnl:AddEntry()
-									if entry then entry:SetText(i[v]) end
-								end
-							end
-							pnl:UpdateEntries()
-						end,
-						Save = function(i)
-							for k, v in ipairs (pnl.entries) do
-								if v:GetText() != "" then
-									i[tab[k]] = v:GetText()
-								end
-							end
-						end
-					}
-					local help = vgui.Create("DLabel", box)
-					help:SetWrap(true)
-					help:SetAutoStretchVertical(true)
-					help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-					help:SetColor(gui_colors.TanLight)
-					help:SetText("Extra models attached to the player model, i.e. medigun/banner backpacks, banner flags")
-					help:Dock(TOP)
-					help:DockMargin(0,betweenitems,0,0)
 
 					//Skin id pickers
 					local skins = vgui.Create("Panel", box)
 					local _pnl = AddTFLabelToVGUI(skins, "#skin")
-					_pnl:DockMargin(0,betweencategories,0,0)
+					_pnl:DockMargin(0,betweenitems,side_margin,0)
 					_pnl:Dock(TOP)
-					editor.skins = skins
+					box.skins = skins
 					function skins:PerformLayout(w, h)
 						w = (w - 8) / 2
 						self.label1:SetWide(w)
@@ -3928,10 +4287,6 @@ if CLIENT then
 						self.label1:SetPos(0,0)
 						self.label2:SetPos(w+8,0)
 					end
-					local _skins = {
-						[1] = {label = GetTFLanguageString("#TF_RedTeam_Name") or "RED", subtable = "visuals_red", col = desc_colors.negative},
-						[2] = {label = GetTFLanguageString("#TF_BlueTeam_Name") or "BLU", subtable = "visuals_blu", col = desc_colors.positive},
-					}
 					for k, v in ipairs (_skins) do
 						local num = TFStyleVGUI("DNumberWang", skins, true)
 						num:SetDecimals(0)
@@ -3940,20 +4295,6 @@ if CLIENT then
 						num.FGColor = v.col
 						skins["num" .. k] = num
 						skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
-						editor.controls[num] = {
-							Load = function(i)
-								if i[v.subtable] and i[v.subtable].skin != nil then
-									num:SetValue(i[v.subtable].skin)
-								end
-							end,
-							Save = function(i)
-								local val = num:GetValue()
-								if val != k-1 then //don't save default values
-									i[v.subtable] = i[v.subtable] or {}
-									i[v.subtable].skin = val
-								end
-							end,
-						}
 						if k == 1 then
 							function num:OnValueChanged()
 								editor.bp:Refresh()
@@ -3962,105 +4303,28 @@ if CLIENT then
 					end
 
 
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Set additional bodygroups?")
+					check:DockMargin(0,betweencategories,side_margin,0)
+					check:Dock(TOP)
+					box.bodygroups_check = check
+					function check:OnChange(val)
+						box:UpdateVisibility()
+					end
+
 					//Checkboxes to set player bodygroups
-					local box = AddBox(holder.columns[2], GetTFLanguageString("#TF_ImportFile_Bodygroups") or "Bodygroup:")
-					editor.bodygroups = AddColumnHolder(box, 2, 0)
-					editor.bodygroups:Dock(TOP)
-					editor.bodygroups.checks = {}
-					local bodygroups = {
-						{
-							label = "Hat",
-							bgs = {
-								scout = "hat",
-								soldier = "hat",
-								engineer = "hat",
-								sniper = "hat"
-							}
-						},
-						{
-							label = "Headphones", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
-							bgs = {
-								scout = "headphones"
-							}
-						},
-						{
-							label = "Head", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ")",
-							bgs = {
-								pyro = "head"
-							}
-						},
-						{
-							label = "Dogtags", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") .. ")",
-							bgs = {
-								scout = "dogtags"
-							}
-						},
-						{
-							label = "Grenades",
-							bgs = {
-								soldier = "grenades",
-								pyro = "grenades",
-								demoman = "grenades"
-							}
-						},
-						{
-							label = "Bullets", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
-							bgs = {
-								heavy = "bullets"
-								//sniper has a bullets bodygroup but it's not useful here, it just enables sydney sleeper darts
-							}
-						},
-						{
-							label = "Backpack", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Medic") or "Medic") .. ")",
-							bgs = {
-								pyro = "backpack",
-								medic = "medic_backpack"
-							}
-						},
-						{
-							label = "Hands", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
-							bgs = {
-								heavy = "hands"
-							}
-						},
-						{
-							label = "Right hand", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Pyro") or "Pyro") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Engineer") or "Engineer") ..  ")",
-							bgs = {
-								pyro = "righthand",
-								engineer = {name = "rightarm", val = 2} //rightarm 1 is gunslinger
-							}
-						},
-						{
-							label = "Shoes", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_Demoman") or "Demo") .. ", " .. string.lower(GetTFLanguageString("#TF_Class_Name_Scout") or "Scout") ..  ")",
-							bgs = {
-								scout = "shoes_socks",
-								demoman = "shoes",
-							}
-						},
-					}
-					local keys_by_bg = {}
+					box.bodygroups = AddColumnHolder(box, 2, 0)
+					box.bodygroups:Dock(TOP)
+					box.bodygroups:DockMargin(0,0,side_margin,0)
+					box.bodygroups.checks = {}
 					for k, v in ipairs (bodygroups) do
-						for class, bg in pairs (v.bgs) do
-							local val = 1
-							if istable(bg) then 
-								val = bg.val
-								bg = bg.name
-							end
-							keys_by_bg[bg] = {val = val, k = k}
-						end
-						local check = TFStyleVGUI("DCheckBoxLabel", editor.bodygroups.columns[math.fmod(k-1, 2)+1])
+						local check = TFStyleVGUI("DCheckBoxLabel", box.bodygroups.columns[math.fmod(k-1, 2)+1])
 						check:Dock(TOP)
-						if k > 2 then
-							check:DockMargin(0,betweenitems,0,0)
-						end
+						check:DockMargin(0,betweenitems,0,0)
 						check:SetText(v.label)
-						editor.bodygroups.checks[k] = check
+						box.bodygroups.checks[k] = check
 						function check:OnChange(val)
-							//Update bodygroups in styles - bodygroups that are already enabled here should be checked and grayed out in styles
-							for _, style in pairs (editor.styles) do
-								style:UpdateVisibility()
-							end
-							//Also update backpack icon, in case we're using a visible class model there
+							//update backpack icon, in case we're using a visible class model there
 							editor.bp:Refresh()
 						end
 						//make sure user can read the text if it's cut off
@@ -4070,697 +4334,477 @@ if CLIENT then
 							return old_IsHovered(self, ...) or check:IsHovered(...)
 						end
 					end
-					function editor.bodygroups:UpdateVisibility()
+
+
+					//Toggle to disable genteel smoke effect
+					local check = TFStyleVGUI("DCheckBoxLabel", box)
+					check:SetText("Disable " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect")
+					check:DockMargin(0,betweencategories,side_margin,0)
+					check:Dock(TOP)
+					box.disable_genteel_smoke = check
+
+
+					function box:UpdateVisibility()
 						if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
-						//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
-						for k, v in ipairs (editor.bodygroups.checks) do
-							local selected_classes = 0
-							for class, bg in pairs (bodygroups[k].bgs) do
-								if editor.classes.checks[class]:GetChecked() then
-									selected_classes = selected_classes + 1
-								end
-							end
-							v:SetEnabled(selected_classes > 0)
-							v:SetChecked(selected_classes > 0 and v:GetChecked())
+						local selected_class_count = 0
+						for _, pnl in pairs (editor.classes.checks) do
+							if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
 						end
-					end
-					editor.controls[editor.bodygroups] = {
-						Load = function(i)
-							if i.visuals and i.visuals.player_bodygroups then
-								for k, v in pairs (i.visuals.player_bodygroups) do
-									if keys_by_bg[k] and v == keys_by_bg[k].val then
-										editor.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
-									end
-								end
-							end
-							timer.Simple(0, function() editor.bodygroups.HasLoaded = true editor.bodygroups:UpdateVisibility() end)
-						end,
-						Save = function(i)
-							for k, v in ipairs (editor.bodygroups.checks) do
-								if !v:GetChecked() then continue end
-								for class, bg in pairs (bodygroups[k].bgs) do
-									if !editor.classes.checks[class]:GetChecked() then continue end
-									i.visuals = i.visuals or {}
-									i.visuals.player_bodygroups = i.visuals.player_bodygroups or {}
-									local val = 1
-									if istable(bg) then
-										val = bg.val
-										bg = bg.name
-									end
-									i.visuals.player_bodygroups[bg] = val
-								end
-							end
-						end
-					}
-
-
-					local button = TFStyleVGUI("DButton", holder.columns[2])
-					button:SetText("Add Style")
-					button:Dock(TOP)
-					button:DockMargin(0,8,0,0)
-					button:SetZPos(1) //keep this below all the styles we create
-					function button:DoClick()
-						local style = self:AddStyle()
-						style.HasLoaded = true
-						style:UpdateVisibility()
-					end
-					editor.styles = {}
-					function button:AddStyle()
-
-						local box = AddBox(holder.columns[2])
-						local i = table.insert(editor.styles, box)
-						//for most of these boxes, we have a thick dockpadding on all sides to make the controls fit inside nicely, while the label at the top
-						//uses negative dockmargins to appear closer to the edges at the controls. unfortunately, DSizeToContents doesn't like items within it
-						//using negative dockmargins on the right side specifically, which we'd have to do to make the "remove style" button match the label.
-						//guess we have to apply the padding to all the controls manually, bah!
-						local _a, _b, side_margin, _c = box:GetDockPadding()
-						box:DockPadding(_a, _b, 0, _c)
-						
-
-						local text_holder = vgui.Create("Panel", box)
-						text_holder:SetHeight(22)
-						text_holder:Dock(TOP)
-						text_holder:DockMargin(-8-3,-8-3,0,betweenitems)
-						local entry = TFStyleVGUI("DTextEntry", text_holder)
-						entry:SetFont("TF2ItemBrowser_ItemName")
-						entry:SetPlaceholderText("Style " .. tostring(i))
-						entry:Dock(FILL)
-						box.name = entry
-						function entry:OnEnter()
-							//update backpack icon style selector
-							editor.bp_style:UpdateVisibility()
-						end
-
-						local close = vgui.Create("DButton", text_holder)
-						close:SetText("")
-						close:SetSize(22,22)
-						close:Dock(RIGHT)
-						close:DockMargin(5,0,5,0)
-						function close:Paint(w,h)
-							if self.Depressed then
-								surface.SetDrawColor(color_white)
-							elseif self.Hovered then
-								surface.SetDrawColor(gui_colors.LightRed)
-							else
-								surface.SetDrawColor(gui_colors.TanDark)
-							end
-							surface.SetMaterial(close_button)
-							surface.DrawTexturedRect(0,0,w,h)
-						end
-						AddTFButtonSounds(close)
-						function close:DoClick()
-							table.remove(editor.styles, table.KeyFromValue(editor.styles, box))
-							close:Remove()
-							box:Remove()
-							for i, style in ipairs (editor.styles) do
-								style.name:SetPlaceholderText("Style " .. tostring(i))
-							end
-							//update backpack icon style selector
-							editor.bp_style:UpdateVisibility()
-							//update backpack icon, just in case we removed the style it was using
-							editor.bp:Refresh()
-						end
-
-
-						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Change models?")
-						check:DockMargin(0,betweenitems,side_margin,0)
-						check:Dock(TOP)
-						box.model_check = check
-						function check:OnChange(val)
-							box:UpdateVisibility()
-							editor.bp:Refresh()
-						end
-
-						//Base model
-						local entry = AddTextEntry(box, "Item model path")
-						entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
-						box.model = entry
-						function entry:OnEnter()
-							editor.bp:Refresh()
-						end
-
-						//Per-class models - gate these behind a checkbox that also only appears if multiple classes are selected
-						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Class-specific model paths?")
-						check:DockMargin(0,betweenitems,side_margin,0)
-						check:Dock(TOP)
-						box.class_models = check
-						check.classes = {}
-						function check:OnChange(val)
-							box:UpdateVisibility()
-						end
+						//Only show the model entry box (or anything else below) if the model checkbox is selected
+						box.model:GetParent():SetVisible(box.model_check:GetChecked())
+						//Only show the multi-class checkbox if multiple classes are selected
+						box.class_models:SetVisible(box.model_check:GetChecked() and selected_class_count > 1)
+						//Only show the entry box for each class if the multi-class checkbox is selected, the corresponding class is selected, AND multiple classes are selected
 						for i = 2, 10 do
-							local entry = AddTextEntry(box, GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname))
-							entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
-							check.classes[i] = entry
-							function entry:OnEnter()
-								editor.bp:Refresh()
-							end
+							box.class_models.classes[i]:GetParent():SetVisible(box.model_check:GetChecked() and box.class_models:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
 						end
 
+						skins:GetParent():SetVisible(box.skins_check:GetChecked())
 
-						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Change skins?")
-						check:DockMargin(0,betweencategories,side_margin,0)
-						check:Dock(TOP)
-						box.skins_check = check
-						function check:OnChange(val)
-							box:UpdateVisibility()
-						end
-
-						//Skin id pickers
-						local skins = vgui.Create("Panel", box)
-						local _pnl = AddTFLabelToVGUI(skins, "#skin")
-						_pnl:DockMargin(0,betweenitems,side_margin,0)
-						_pnl:Dock(TOP)
-						box.skins = skins
-						function skins:PerformLayout(w, h)
-							w = (w - 8) / 2
-							self.label1:SetWide(w)
-							self.label2:SetWide(w)
-							self.label1:SetPos(0,0)
-							self.label2:SetPos(w+8,0)
-						end
-						for k, v in ipairs (_skins) do
-							local num = TFStyleVGUI("DNumberWang", skins, true)
-							num:SetDecimals(0)
-							num:SetMinMax(0, 255) //just assuming this is the max skin count, idk, this is what advbonemerge went with
-							num:SetValue(k-1)
-							num.FGColor = v.col
-							skins["num" .. k] = num
-							skins["label" .. k] = AddTFLabelToVGUI(num, v.label)
-							if k == 1 then
-								function num:OnValueChanged()
-									editor.bp:Refresh()
-								end
-							end
-						end
-
-
-						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Set additional bodygroups?")
-						check:DockMargin(0,betweencategories,side_margin,0)
-						check:Dock(TOP)
-						box.bodygroups_check = check
-						function check:OnChange(val)
-							box:UpdateVisibility()
-						end
-
-						//Checkboxes to set player bodygroups
-						box.bodygroups = AddColumnHolder(box, 2, 0)
-						box.bodygroups:Dock(TOP)
-						box.bodygroups:DockMargin(0,0,side_margin,0)
-						box.bodygroups.checks = {}
-						for k, v in ipairs (bodygroups) do
-							local check = TFStyleVGUI("DCheckBoxLabel", box.bodygroups.columns[math.fmod(k-1, 2)+1])
-							check:Dock(TOP)
-							check:DockMargin(0,betweenitems,0,0)
-							check:SetText(v.label)
-							box.bodygroups.checks[k] = check
-							function check:OnChange(val)
-								//update backpack icon, in case we're using a visible class model there
-								editor.bp:Refresh()
-							end
-							//make sure user can read the text if it's cut off
-							AddTFStyleTooltip(check.Label, check:GetText())
-							local old_IsHovered = check.Label.IsHovered
-							function check.Label:IsHovered(...)
-								return old_IsHovered(self, ...) or check:IsHovered(...)
-							end
-						end
-
-
-						//Toggle to disable genteel smoke effect
-						local check = TFStyleVGUI("DCheckBoxLabel", box)
-						check:SetText("Disable " .. (GetTFLanguageString("#Attrib_Particle28") or "Genteel Smoke") .. " effect")
-						check:DockMargin(0,betweencategories,side_margin,0)
-						check:Dock(TOP)
-						box.disable_genteel_smoke = check
-
-
-						function box:UpdateVisibility()
-							if !self.HasLoaded then return end //make sure the class selector doesn't mistakenly disable stuff during its loading process
-							local selected_class_count = 0
-							for _, pnl in pairs (editor.classes.checks) do
-								if pnl:GetChecked() then selected_class_count = selected_class_count + 1 end
-							end
-							//Only show the model entry box (or anything else below) if the model checkbox is selected
-							box.model:GetParent():SetVisible(box.model_check:GetChecked())
-							//Only show the multi-class checkbox if multiple classes are selected
-							box.class_models:SetVisible(box.model_check:GetChecked() and selected_class_count > 1)
-							//Only show the entry box for each class if the multi-class checkbox is selected, the corresponding class is selected, AND multiple classes are selected
-							for i = 2, 10 do
-								box.class_models.classes[i]:GetParent():SetVisible(box.model_check:GetChecked() and box.class_models:GetChecked() and editor.classes.checks[classes[i].longname]:GetChecked() and selected_class_count > 1)
-							end
-
-							skins:GetParent():SetVisible(box.skins_check:GetChecked())
-
-							box.bodygroups:SetVisible(box.bodygroups_check:GetChecked())
-							for k, v in ipairs (box.bodygroups.checks) do
-								if editor.bodygroups.checks[k]:GetChecked() then
-									//Bodygroups that are already enabled in the base settings should be checked and grayed out here
-									v:SetEnabled(false)
-									v:SetChecked(true)
-									v.ForceCheckedByBase = true
-								else
-									//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
-									local selected_classes = 0
-									for class, bg in pairs (bodygroups[k].bgs) do
-										if editor.classes.checks[class]:GetChecked() then
-											selected_classes = selected_classes + 1
-										end
+						box.bodygroups:SetVisible(box.bodygroups_check:GetChecked())
+						for k, v in ipairs (box.bodygroups.checks) do
+							if editor.bodygroups.checks[k]:GetChecked() then
+								//Bodygroups that are already enabled in the base settings should be checked and grayed out here
+								v:SetEnabled(false)
+								v:SetChecked(true)
+								v.ForceCheckedByBase = true
+							else
+								//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
+								local selected_classes = 0
+								for class, bg in pairs (bodygroups[k].bgs) do
+									if editor.classes.checks[class]:GetChecked() then
+										selected_classes = selected_classes + 1
 									end
-									v:SetEnabled(selected_classes > 0)
-									if v.ForceCheckedByBase then
-										v:SetChecked(false)
-										v.ForceCheckedByBase = nil
-									end
-									v:SetChecked(selected_classes > 0 and v:GetChecked())
 								end
+								v:SetEnabled(selected_classes > 0)
+								if v.ForceCheckedByBase then
+									v:SetChecked(false)
+									v.ForceCheckedByBase = nil
+								end
+								v:SetChecked(selected_classes > 0 and v:GetChecked())
 							end
-
-							box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked())
-
-							//Refresh the backpack icon modelpanel, just in case the currently used model/skin/etc. was disabled or something
-							editor.bp:Refresh()
 						end
 
-						//update backpack icon style selector
-						editor.bp_style:UpdateVisibility()
+						box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked())
 
-						return box
-
+						//Refresh the backpack icon modelpanel, just in case the currently used model/skin/etc. was disabled or something
+						editor.bp:Refresh()
 					end
-					editor.controls[button] = {
-						Load = function(i)
-							if i.visuals and i.visuals.styles then
-								for k, v in pairs (i.visuals.styles) do
-									local style = button:AddStyle()
-									if v.name then style.name:SetText(v.name) end
-									if v.model_player_per_class then
-										style.model_check:SetChecked(true)
-										if v.model_player_per_class.basename then
-											style.model:SetText(v.model_player_per_class.basename)
-										end
-										for i2 = 2, 10 do
-											if v.model_player_per_class[classes[i2].longname] then
-												style.class_models:SetChecked(true)
-												style.class_models.classes[i2]:SetText(v.model_player_per_class[classes[i2].longname])
-											end
-										end
+
+					//update backpack icon style selector
+					editor.bp_style:UpdateVisibility()
+
+					return box
+
+				end
+				editor.controls[button] = {
+					Load = function(i)
+						if i.visuals and i.visuals.styles then
+							for k, v in pairs (i.visuals.styles) do
+								local style = button:AddStyle()
+								if v.name then style.name:SetText(v.name) end
+								if v.model_player_per_class then
+									style.model_check:SetChecked(true)
+									if v.model_player_per_class.basename then
+										style.model:SetText(v.model_player_per_class.basename)
 									end
-									if v.skin_red then
-										style.skins_check:SetChecked(true)
-										style.skins.num1:SetValue(v.skin_red)
-									end
-									if v.skin_blu then
-										style.skins_check:SetChecked(true)
-										style.skins.num2:SetValue(v.skin_blu)
-									end
-									if v.additional_hidden_bodygroups then
-										for k, v in pairs (v.additional_hidden_bodygroups) do
-											if keys_by_bg[k] and v == keys_by_bg[k].val then
-												style.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
-											end
+									for i2 = 2, 10 do
+										if v.model_player_per_class[classes[i2].longname] then
+											style.class_models:SetChecked(true)
+											style.class_models.classes[i2]:SetText(v.model_player_per_class[classes[i2].longname])
 										end
 									end
-									if v.use_smoke_particle_effect and v.use_smoke_particle_effect == 0 then
-										style.disable_genteel_smoke:SetChecked(true)
-									end
-									timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
 								end
+								if v.skin_red then
+									style.skins_check:SetChecked(true)
+									style.skins.num1:SetValue(v.skin_red)
+								end
+								if v.skin_blu then
+									style.skins_check:SetChecked(true)
+									style.skins.num2:SetValue(v.skin_blu)
+								end
+								if v.additional_hidden_bodygroups then
+									for k, v in pairs (v.additional_hidden_bodygroups) do
+										if keys_by_bg[k] and v == keys_by_bg[k].val then
+											style.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
+										end
+									end
+								end
+								if v.use_smoke_particle_effect and v.use_smoke_particle_effect == 0 then
+									style.disable_genteel_smoke:SetChecked(true)
+								end
+								timer.Simple(0, function() style.HasLoaded = true style:UpdateVisibility() end)
 							end
-						end,
-						Save = function(i)
-							local tab = {}
-							for i2, style in pairs (editor.styles) do
-								local tab2 = {}
-								if style.name:GetText() != "" then
-									tab2.name = style.name:GetText()
-								end
-								if style.model:GetParent():IsVisible() and style.model:GetText() != "" then
+						end
+					end,
+					Save = function(i)
+						local tab = {}
+						for i2, style in pairs (editor.styles) do
+							local tab2 = {}
+							if style.name:GetText() != "" then
+								tab2.name = style.name:GetText()
+							end
+							if style.model:GetParent():IsVisible() and style.model:GetText() != "" then
+								tab2.model_player_per_class = tab2.model_player_per_class or {}
+								tab2.model_player_per_class.basename = style.model:GetText()
+							end
+							for k, v in pairs (style.class_models.classes) do
+								if v:GetParent():IsVisible() and v:GetText() != "" then
 									tab2.model_player_per_class = tab2.model_player_per_class or {}
-									tab2.model_player_per_class.basename = style.model:GetText()
+									tab2.model_player_per_class[classes[k].longname] = v:GetText()
 								end
-								for k, v in pairs (style.class_models.classes) do
-									if v:GetParent():IsVisible() and v:GetText() != "" then
-										tab2.model_player_per_class = tab2.model_player_per_class or {}
-										tab2.model_player_per_class[classes[k].longname] = v:GetText()
-									end
-								end
-								if style.skins:GetParent():IsVisible() then
-									if style.skins.num1:GetValue() != editor.skins.num1:GetValue() then 
-										tab2.skin_red = style.skins.num1:GetValue()
-									end
-									if style.skins.num2:GetValue() != editor.skins.num2:GetValue() then 
-										tab2.skin_blu = style.skins.num2:GetValue()
-									end
-								end
-								if style.bodygroups:IsVisible() then
-									for k, v in ipairs (style.bodygroups.checks) do
-										if !v:GetChecked() or v.ForceCheckedByBase then continue end
-										for class, bg in pairs (bodygroups[k].bgs) do
-											if !editor.classes.checks[class]:GetChecked() then continue end
-											tab2.additional_hidden_bodygroups = tab2.additional_hidden_bodygroups or {}
-											local val = 1
-											if istable(bg) then
-												val = bg.val
-												bg = bg.name
-											end
-											tab2.additional_hidden_bodygroups[bg] = val
-										end
-									end
-								end
-								if style.disable_genteel_smoke:IsVisible() and style.disable_genteel_smoke:GetChecked() then
-									tab2.use_smoke_particle_effect = 0
-								end
-								//add the style even if it's empty; players might use one empty "default" style 
-								//and another non-default style to add a selection between both options
-								tab[i2-1] = tab2
 							end
-							if table.Count(tab) > 0 then
-								i.visuals = i.visuals or {}
-								i.visuals.styles = tab
+							if style.skins:GetParent():IsVisible() then
+								if style.skins.num1:GetValue() != editor.skins.num1:GetValue() then 
+									tab2.skin_red = style.skins.num1:GetValue()
+								end
+								if style.skins.num2:GetValue() != editor.skins.num2:GetValue() then 
+									tab2.skin_blu = style.skins.num2:GetValue()
+								end
 							end
-						end,
-					}
-
-
-					local box = AddBox(holder.columns[3], (GetTFLanguageString("#TF_ImportFile_IconLabel") or "Backpack Icon") .. ":")
-
-					local bpcontainer = vgui.Create("Panel", box)
-					bpcontainer:Dock(TOP)
-					local mdl = CreateItemIconModelPanel(bpcontainer)
-					editor.bp = mdl
-					mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
-					local old_Paint = mdl.Paint
-					function mdl:Paint(w,h)
-						if IsValid(editor.bp_pos) and !editor.bp_pos:IsEditing() and !editor.bp_pos:IsHovered() then
-							editor.bp_pos:SetText(tostring(self:GetCamPos()))
-						end
-						if IsValid(editor.bp_ang) and !editor.bp_ang:IsEditing() and !editor.bp_ang:IsHovered() then
-							editor.bp_ang:SetText(tostring(self:GetLookAng()))
-						end
-						if IsValid(editor.bp_fov) and !editor.bp_fov:IsEditing() and !editor.bp_fov:IsHovered() then
-							editor.bp_fov:SetValue(self:GetFOV())
-						end
-						BackpackItemBorderUnscaled(0,0,w,h)
-						return old_Paint(mdl,w,h)
-					end
-					mdl:DockMargin(0,0,8,0)
-					mdl:Dock(LEFT)
-					bpcontainer:SetHeight(mdl:GetTall())
-					mdl.models = {}
-					function mdl:Refresh(cam_override)
-						if !self.HasLoaded then return end
-						//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
-						local _, class = editor.bp_class:GetSelected()
-						if class then
-							class = class_longname_to_id[editor.bp_class.options[class].Value]
-						end
-						local _, style = editor.bp_style:GetSelected()
-						if style then
-							style = editor.styles[editor.bp_style.options[style].Value + 1]
-						end
-						local skin = editor.skins.num1:GetValue()
-						if style and style.skins:GetParent():IsVisible() then
-							skin = style.skins.num1:GetValue()
-						end
-
-						for k, v in ipairs (mdl.models) do
-							if IsValid(v) then v:Remove() end
-						end
-						mdl.models = {}
-						//Class model for preview, if enabled
-						if editor.bp_showclass:GetChecked() and class then
-							local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
-							if IsValid(ent) then
-								table.insert(mdl.models, ent)
-								ent.DontUseBoundsForCamera = true
-								for k, v in ipairs (bodygroups) do
-									if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups.checks[k]:GetChecked()) then
+							if style.bodygroups:IsVisible() then
+								for k, v in ipairs (style.bodygroups.checks) do
+									if !v:GetChecked() or v.ForceCheckedByBase then continue end
+									for class, bg in pairs (bodygroups[k].bgs) do
+										if !editor.classes.checks[class]:GetChecked() then continue end
+										tab2.additional_hidden_bodygroups = tab2.additional_hidden_bodygroups or {}
 										local val = 1
-										local bg = v.bgs[classes[class].longname]
-										if istable(bg) then 
+										if istable(bg) then
 											val = bg.val
 											bg = bg.name
 										end
-										if bg then
-											bg = ent:FindBodygroupByName(bg)
-											ent:SetBodygroup(bg, val)
-										end
+										tab2.additional_hidden_bodygroups[bg] = val
+									end
+								end
+							end
+							if style.disable_genteel_smoke:IsVisible() and style.disable_genteel_smoke:GetChecked() then
+								tab2.use_smoke_particle_effect = 0
+							end
+							//add the style even if it's empty; players might use one empty "default" style 
+							//and another non-default style to add a selection between both options
+							tab[i2-1] = tab2
+						end
+						if table.Count(tab) > 0 then
+							i.visuals = i.visuals or {}
+							i.visuals.styles = tab
+						end
+					end,
+				}
+
+
+				local box = AddBox(holder.columns[3], (GetTFLanguageString("#TF_ImportFile_IconLabel") or "Backpack Icon") .. ":")
+
+				local bpcontainer = vgui.Create("Panel", box)
+				bpcontainer:Dock(TOP)
+				local mdl = CreateItemIconModelPanel(bpcontainer)
+				editor.bp = mdl
+				mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
+				local old_Paint = mdl.Paint
+				function mdl:Paint(w,h)
+					if IsValid(editor.bp_pos) and !editor.bp_pos:IsEditing() and !editor.bp_pos:IsHovered() then
+						editor.bp_pos:SetText(tostring(self:GetCamPos()))
+					end
+					if IsValid(editor.bp_ang) and !editor.bp_ang:IsEditing() and !editor.bp_ang:IsHovered() then
+						editor.bp_ang:SetText(tostring(self:GetLookAng()))
+					end
+					if IsValid(editor.bp_fov) and !editor.bp_fov:IsEditing() and !editor.bp_fov:IsHovered() then
+						editor.bp_fov:SetValue(self:GetFOV())
+					end
+					BackpackItemBorderUnscaled(0,0,w,h)
+					return old_Paint(mdl,w,h)
+				end
+				mdl:DockMargin(0,0,8,0)
+				mdl:Dock(LEFT)
+				bpcontainer:SetHeight(mdl:GetTall())
+				mdl.models = {}
+				function mdl:Refresh(cam_override)
+					if !self.HasLoaded then return end
+					//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
+					local _, class = editor.bp_class:GetSelected()
+					if class then
+						class = class_longname_to_id[editor.bp_class.options[class].Value]
+					end
+					local _, style = editor.bp_style:GetSelected()
+					if style then
+						style = editor.styles[editor.bp_style.options[style].Value + 1]
+					end
+					local skin = editor.skins.num1:GetValue()
+					if style and style.skins:GetParent():IsVisible() then
+						skin = style.skins.num1:GetValue()
+					end
+
+					for k, v in ipairs (mdl.models) do
+						if IsValid(v) then v:Remove() end
+					end
+					mdl.models = {}
+					//Class model for preview, if enabled
+					if editor.bp_showclass:GetChecked() and class then
+						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
+						if IsValid(ent) then
+							table.insert(mdl.models, ent)
+							ent.DontUseBoundsForCamera = true
+							for k, v in ipairs (bodygroups) do
+								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups.checks[k]:GetChecked()) then
+									local val = 1
+									local bg = v.bgs[classes[class].longname]
+									if istable(bg) then 
+										val = bg.val
+										bg = bg.name
+									end
+									if bg then
+										bg = ent:FindBodygroupByName(bg)
+										ent:SetBodygroup(bg, val)
 									end
 								end
 							end
 						end
-						//Item model
-						local model
-						if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
-							model = style.class_models.classes[class]:GetText()
-						elseif style and style.model:GetParent():IsVisible() and style.model:GetText() != "" then
-							model = string.Replace(style.model:GetText(), "%s", classes[class].shortname)
-						elseif class and editor.class_models.classes[class]:GetParent():IsVisible() and editor.class_models.classes[class]:GetText() != "" then
-							model = editor.class_models.classes[class]:GetText()
-						elseif editor.model:GetText() != "" then
-							model = string.Replace(editor.model:GetText(), "%s", classes[class].shortname)
-						end
-						if model then
-							local ent = ClientsideModel(model, RENDERGROUP_OTHER)
-							if IsValid(ent) then
-								if IsValid(mdl.models[1]) then
-									ent:SetParent(mdl.models[1])
-									ent:AddEffects(EF_BONEMERGE)
-								else
-									ent:SetAngles(Angle(10,130,0)) //make sure this matches CreateItemModelsAndParticles; model angles from resource\ui\econ\itemmodelpanel.res; produces the most game-accurate lighting 
-								end
-								table.insert(mdl.models, ent)
-								mdl.Entity = ent
+					end
+					//Item model
+					local model
+					if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
+						model = style.class_models.classes[class]:GetText()
+					elseif style and style.model:GetParent():IsVisible() and style.model:GetText() != "" then
+						model = string.Replace(style.model:GetText(), "%s", classes[class].shortname)
+					elseif class and editor.class_models.classes[class]:GetParent():IsVisible() and editor.class_models.classes[class]:GetText() != "" then
+						model = editor.class_models.classes[class]:GetText()
+					elseif editor.model:GetText() != "" then
+						model = string.Replace(editor.model:GetText(), "%s", classes[class].shortname)
+					end
+					if model then
+						local ent = ClientsideModel(model, RENDERGROUP_OTHER)
+						if IsValid(ent) then
+							if IsValid(mdl.models[1]) then
+								ent:SetParent(mdl.models[1])
+								ent:AddEffects(EF_BONEMERGE)
+							else
+								ent:SetAngles(Angle(10,130,0)) //make sure this matches CreateItemModelsAndParticles; model angles from resource\ui\econ\itemmodelpanel.res; produces the most game-accurate lighting 
 							end
+							table.insert(mdl.models, ent)
+							mdl.Entity = ent
 						end
-						//TODO: attachments, options to show wearables instead
+					end
+					//TODO: attachments, options to show wearables instead
 
-						//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
-						local cam = DoItemModelCamera(mdl.models) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
-						local docamera = mdl.old_cam == nil
-						if mdl.old_cam then
-							for k, v in pairs (cam) do
-								if v != mdl.old_cam[k] then
-									docamera = true
-									break
-								end
+					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
+					local cam = DoItemModelCamera(mdl.models) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
+					local docamera = mdl.old_cam == nil
+					if mdl.old_cam then
+						for k, v in pairs (cam) do
+							if v != mdl.old_cam[k] then
+								docamera = true
+								break
 							end
 						end
-						if docamera then
-							mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
-							mdl:SetFOV(cam.fov)
-							mdl:SetLookAng(Angle(cam.ang))
-							mdl.old_cam = cam
-						end
-						//Upon first loading, apply the values of the pos/ang/fov settings instead if applicable, without touching the old_cam stuff
-						if cam_override then
-							mdl:SetCamPos(Vector(cam_override.pos))
-							mdl:SetFOV(cam_override.fov)
-							mdl:SetLookAng(Angle(cam_override.ang))
-						end
 					end
-					editor.controls[mdl] = {
-						Load = function(i)
-							//to avoid unnecessary Refresh calls as other elements are loading, try to do this last
-							timer.Simple(FrameTime(), function()
-								mdl.HasLoaded = true
-								mdl:Refresh(i._customitem_bp)
-							end)
-						end
-					}
-
-					editor.bp_pos = AddTextEntry(bpcontainer, "Camera Position", "_customitem_bp", "pos", true)
-					editor.bp_pos:GetParent():DockMargin(0,0,0,0)
-					function editor.bp_pos:OnChange()
-						editor.bp:SetCamPos(Vector(self:GetText()))
+					if docamera then
+						mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
+						mdl:SetFOV(cam.fov)
+						mdl:SetLookAng(Angle(cam.ang))
+						mdl.old_cam = cam
 					end
-
-					editor.bp_ang = AddTextEntry(bpcontainer, "Camera Angles", "_customitem_bp", "ang", true)
-					function editor.bp_ang.OnChange()
-						editor.bp:SetLookAng(Angle(self:GetText()))
+					//Upon first loading, apply the values of the pos/ang/fov settings instead if applicable, without touching the old_cam stuff
+					if cam_override then
+						mdl:SetCamPos(Vector(cam_override.pos))
+						mdl:SetFOV(cam_override.fov)
+						mdl:SetLookAng(Angle(cam_override.ang))
 					end
-
-					local num = TFStyleVGUI("DNumberWang", bpcontainer, true) //this space is too small for a slider like in gmod's spawnicon editor
-					editor.bp_fov = num
-					num:DockMargin(0,betweenitems,0,0)
-					num:Dock(TOP)
-					num:SetDecimals(2)
-					num:SetMinMax(0.001, 179)
-					num:SetPlaceholderText("Camera FOV")
-					AddTFStyleTooltip(num, "Camera FOV")
-					editor.controls[num] = {
-						Load = function(i)
-							if i._customitem_bp and i._customitem_bp.fov then
-								num:SetValue(i._customitem_bp.fov)
-							end
-						end,
-						Save = function(i)
-							if num:IsVisible() then
-								i._customitem_bp = i._customitem_bp or {}
-								i._customitem_bp.fov = num:GetValue()
-							end
-						end
-					}
-					function num:OnValueChanged()
-						editor.bp:SetFOV(self:GetValue())
-					end
-
-					local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
-					editor.bp_class = drop
-					function drop:OnSelect()
-						editor.bp:Refresh()
-					end
-					function drop:UpdateVisibility()
-						local _, old_sel = drop:GetSelected()
-						if old_sel and drop:GetParent():IsVisible() then
-							old_sel = drop.options[old_sel].Value
-						else
-							old_sel = ""
-						end
-						local options = {}
-						for i = 2, 10 do
-							if editor.classes.checks[classes[i].longname]:GetChecked() then
-								table.insert(options, {
-									Label = GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname),
-									Value = classes[i].longname
-								})
-							end
-						end
-						drop:GetParent():SetVisible(#options > 1)
-						editor.bp_showclass:SetVisible(#options > 0) //set this here as well
-						drop:PopulateOptions(options)
-						if #options > 0 then
-							//Reselect the previously selected option if it still exists, otherwise select the first one
-							for k, v in ipairs (options) do
-								if v.Value == old_sel then
-									drop:ChooseOptionID(v.id)
-									old_sel = nil
-									break
-								end
-							end
-							if old_sel then drop:ChooseOptionID(1) end
-						end
-						editor.bp:Refresh()
-					end
-					local old_Load = editor.controls[entry].Load
-					editor.controls[drop].Load = function(i)
-						//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait a frame
-						timer.Simple(0, function()
-							drop:UpdateVisibility()
-							old_Load(i)
+				end
+				editor.controls[mdl] = {
+					Load = function(i)
+						//to avoid unnecessary Refresh calls as other elements are loading, try to do this last
+						timer.Simple(FrameTime(), function()
+							mdl.HasLoaded = true
+							mdl:Refresh(i._customitem_bp)
 						end)
 					end
+				}
 
-					local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
-					editor.bp_style = drop
-					function drop:OnSelect()
-						editor.bp:Refresh()
-					end
-					function drop:UpdateVisibility()
-						local _, old_sel = drop:GetSelected()
-						if old_sel and drop:GetParent():IsVisible() then
-							old_sel = drop.options[old_sel].Value
-						else
-							old_sel = ""
+				editor.bp_pos = AddTextEntry(bpcontainer, "Camera Position", "_customitem_bp", "pos", true)
+				editor.bp_pos:GetParent():DockMargin(0,0,0,0)
+				function editor.bp_pos:OnChange()
+					editor.bp:SetCamPos(Vector(self:GetText()))
+				end
+
+				editor.bp_ang = AddTextEntry(bpcontainer, "Camera Angles", "_customitem_bp", "ang", true)
+				function editor.bp_ang.OnChange()
+					editor.bp:SetLookAng(Angle(self:GetText()))
+				end
+
+				local num = TFStyleVGUI("DNumberWang", bpcontainer, true) //this space is too small for a slider like in gmod's spawnicon editor
+				editor.bp_fov = num
+				num:DockMargin(0,betweenitems,0,0)
+				num:Dock(TOP)
+				num:SetDecimals(2)
+				num:SetMinMax(0.001, 179)
+				num:SetPlaceholderText("Camera FOV")
+				AddTFStyleTooltip(num, "Camera FOV")
+				editor.controls[num] = {
+					Load = function(i)
+						if i._customitem_bp and i._customitem_bp.fov then
+							num:SetValue(i._customitem_bp.fov)
 						end
-						local options = {}
-						for i, style in pairs (editor.styles) do
-							local name = style.name:GetText()
-							if name == "" then
-								name = "Style " .. tostring(i)
-							end
+					end,
+					Save = function(i)
+						if num:IsVisible() then
+							i._customitem_bp = i._customitem_bp or {}
+							i._customitem_bp.fov = num:GetValue()
+						end
+					end
+				}
+				function num:OnValueChanged()
+					editor.bp:SetFOV(self:GetValue())
+				end
+
+				local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
+				editor.bp_class = drop
+				function drop:OnSelect()
+					editor.bp:Refresh()
+				end
+				function drop:UpdateVisibility()
+					local _, old_sel = drop:GetSelected()
+					if old_sel and drop:GetParent():IsVisible() then
+						old_sel = drop.options[old_sel].Value
+					else
+						old_sel = ""
+					end
+					local options = {}
+					for i = 2, 10 do
+						if editor.classes.checks[classes[i].longname]:GetChecked() then
 							table.insert(options, {
-								Label = name,
-								Value = i-1
+								Label = GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname),
+								Value = classes[i].longname
 							})
 						end
-						drop:GetParent():SetVisible(#options > 1)
-						drop:PopulateOptions(options)
-						if #options > 0 then
-							//Reselect the previously selected option if it still exists, otherwise select the first one
-							for k, v in ipairs (options) do
-								if v.Value == old_sel then
-									drop:ChooseOptionID(v.id)
-									old_sel = nil
-									break
-								end
-							end
-							if old_sel then drop:ChooseOptionID(1) end
-						end
-						editor.bp:Refresh()
 					end
-					editor.controls[drop].Load = function(i)
-						//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait a frame
-						timer.Simple(0, function()
-							drop:UpdateVisibility()
-							old_Load(i)
-						end)
-					end
-
-					local check = TFStyleVGUI("DCheckBoxLabel", box)
-					check:SetText("Show class model in icon")
-					check:DockMargin(0,betweenitems,0,0)
-					check:Dock(TOP)
-					editor.bp_showclass = check
-					function check:OnChange(val)
-						editor.bp:Refresh()
-					end
-					editor.controls[check] = {
-						Load = function(i)
-							if i._customitem_bp and i._customitem_bp.showclass then check:SetChecked(true) end
-						end,
-						Save = function(i)
-							if check:IsVisible() and check:GetChecked() then
-								i._customitem_bp = i._customitem_bp or {}
-								i._customitem_bp.showclass = 1
+					drop:GetParent():SetVisible(#options > 1)
+					editor.bp_showclass:SetVisible(#options > 0) //set this here as well
+					drop:PopulateOptions(options)
+					if #options > 0 then
+						//Reselect the previously selected option if it still exists, otherwise select the first one
+						for k, v in ipairs (options) do
+							if v.Value == old_sel then
+								drop:ChooseOptionID(v.id)
+								old_sel = nil
+								break
 							end
 						end
-					}
+						if old_sel then drop:ChooseOptionID(1) end
+					end
+					editor.bp:Refresh()
+				end
+				local old_Load = editor.controls[entry].Load
+				editor.controls[drop].Load = function(i)
+					//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait a frame
+					timer.Simple(0, function()
+						drop:UpdateVisibility()
+						old_Load(i)
+					end)
+				end
+
+				local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
+				editor.bp_style = drop
+				function drop:OnSelect()
+					editor.bp:Refresh()
+				end
+				function drop:UpdateVisibility()
+					local _, old_sel = drop:GetSelected()
+					if old_sel and drop:GetParent():IsVisible() then
+						old_sel = drop.options[old_sel].Value
+					else
+						old_sel = ""
+					end
+					local options = {}
+					for i, style in pairs (editor.styles) do
+						local name = style.name:GetText()
+						if name == "" then
+							name = "Style " .. tostring(i)
+						end
+						table.insert(options, {
+							Label = name,
+							Value = i-1
+						})
+					end
+					drop:GetParent():SetVisible(#options > 1)
+					drop:PopulateOptions(options)
+					if #options > 0 then
+						//Reselect the previously selected option if it still exists, otherwise select the first one
+						for k, v in ipairs (options) do
+							if v.Value == old_sel then
+								drop:ChooseOptionID(v.id)
+								old_sel = nil
+								break
+							end
+						end
+						if old_sel then drop:ChooseOptionID(1) end
+					end
+					editor.bp:Refresh()
+				end
+				editor.controls[drop].Load = function(i)
+					//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait a frame
+					timer.Simple(0, function()
+						drop:UpdateVisibility()
+						old_Load(i)
+					end)
+				end
+
+				local check = TFStyleVGUI("DCheckBoxLabel", box)
+				check:SetText("Show class model in icon")
+				check:DockMargin(0,betweenitems,0,0)
+				check:Dock(TOP)
+				editor.bp_showclass = check
+				function check:OnChange(val)
+					editor.bp:Refresh()
+				end
+				editor.controls[check] = {
+					Load = function(i)
+						if i._customitem_bp and i._customitem_bp.showclass then check:SetChecked(true) end
+					end,
+					Save = function(i)
+						if check:IsVisible() and check:GetChecked() then
+							i._customitem_bp = i._customitem_bp or {}
+							i._customitem_bp.showclass = 1
+						end
+					end
+				}
 
 
-					local box = AddBox(holder.columns[3], language.GetPhrase("#information") .. ":")
+				local box = AddBox(holder.columns[3], language.GetPhrase("#information") .. ":")
 
-					local entry = AddTextEntry(box, GetTFLanguageString("#TF_ImportFile_NameLabel" or "Item Name"), nil, "item_name")
-					entry:GetParent():DockMargin(0,0,0,0)
-					
-					local entry = AddMultilineTextEntry(box, string.TrimRight(GetTFLanguageString("#TF_PublishFile_DescLabel") or "Description:", ":"), nil, "item_description")
+				local entry = AddTextEntry(box, GetTFLanguageString("#TF_ImportFile_NameLabel" or "Item Name"), nil, "item_name")
+				entry:GetParent():DockMargin(0,0,0,0)
+				
+				local entry = AddMultilineTextEntry(box, string.TrimRight(GetTFLanguageString("#TF_PublishFile_DescLabel") or "Description:", ":"), nil, "item_description")
 
-					local check = TFStyleVGUI("DCheckBoxLabel", box)
-					check:SetText("Add fake attributes?")
-					check:DockMargin(0,betweencategories,0,0)
-					check:Dock(TOP)
-					check.entries = {}
-					function check:OnChange(val)
+				local check = TFStyleVGUI("DCheckBoxLabel", box)
+				check:SetText("Add fake attributes?")
+				check:DockMargin(0,betweencategories,0,0)
+				check:Dock(TOP)
+				check.entries = {}
+				function check:OnChange(val)
+					check:UpdateVisibility()
+				end
+				editor.controls[check] = {
+					Load = function(i)
+						check:SetChecked(i._display_attributes != nil)
 						check:UpdateVisibility()
 					end
-					editor.controls[check] = {
-						Load = function(i)
-							check:SetChecked(i._display_attributes != nil)
-							check:UpdateVisibility()
-						end
-					}
-					function check:UpdateVisibility()
-						for k, v in ipairs (check.entries) do
-							v:SetVisible(check:GetChecked())
-						end
+				}
+				function check:UpdateVisibility()
+					for k, v in ipairs (check.entries) do
+						v:SetVisible(check:GetChecked())
 					end
-					check.entries[1] = AddMultilineTextEntry(box, "Neutral attributes", "_display_attributes", "neutral"):GetParent()
-					check.entries[2] = AddMultilineTextEntry(box, "Positive attributes", "_display_attributes", "positive"):GetParent()
-					check.entries[3] = AddMultilineTextEntry(box, "Negative attributes", "_display_attributes", "negative"):GetParent()
-
 				end
+				check.entries[1] = AddMultilineTextEntry(box, "Neutral attributes", "_display_attributes", "neutral"):GetParent()
+				check.entries[2] = AddMultilineTextEntry(box, "Positive attributes", "_display_attributes", "positive"):GetParent()
+				check.entries[3] = AddMultilineTextEntry(box, "Negative attributes", "_display_attributes", "negative"):GetParent()
 
 
 				local i = TF2Items.items[id] or {}
 				for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
 					if funcs.Load then funcs.Load(i) end
 				end
-				//TODO: save the id somewhere, so that when user presses the save button, it defaults to saving to the same file that was loaded?
+				//if we're loading an existing file, then pressing the save button should default to saving to the same file that was loaded
+				editor.SavedName = id or ""
 
 			end
 
