@@ -1168,6 +1168,7 @@ if CLIENT then
 	local TFThinLineBorder = GWEN.CreateTextureBorder(0, 0, 128, 128, 24, 24, 24, 24, Material("hud/tournament_panel_brown.vmt"))
 	local OutlinedGreyBox = GWEN.CreateTextureBorder(0, 0, 128, 64, 24, 24, 24, 0, Material("vgui/loadout_round_rect_selected.vmt"))
 	local BackpackItemBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt")) //for custom item editor's preview; the version used by item icons is defined down in the item icon code and scales with the currently selected icon size
+	local BackpackItemMouseOverBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover_vc.vmt")) //^
 	local item_icon_sizes = {
 		--[[{ //attempt at a size that makes the icons 64px like spawnicons; these look good, but it's awkward to switch between this and backpack-sized, because the window never fits both sizes well
 			//name = "Small",
@@ -2177,6 +2178,12 @@ if CLIENT then
 		unusual_butterfly_parent_purple = {Vector(-20,-20,-12), Vector(20,20,30)},
 	}
 	local DrawItemModels, DoItemModelCamera, CreateItemIconModelPanel
+
+	local rtmat = CreateMaterial("TF2ItemBrowser_EditorIconRT", "UnlitGeneric", {
+		["$basetexture"] = "color/white",
+		["$translucent"] = "1",
+		["$vertexcolor"] = "1"
+	})
 
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
@@ -4513,8 +4520,38 @@ if CLIENT then
 					if IsValid(editor.bp_fov) and !editor.bp_fov:IsEditing() and !editor.bp_fov:IsHovered() then
 						editor.bp_fov:SetValue(self:GetFOV())
 					end
-					BackpackItemBorderUnscaled(0,0,w,h)
-					return old_Paint(mdl,w,h)
+					//show mouseover border when hovered, because it's a useful helper for deciding icon size
+					if self.Capturing or self:IsHovered() then
+						BackpackItemMouseOverBorderUnscaled(0,0,w,h)
+					else
+						BackpackItemBorderUnscaled(0,0,w,h)
+					end
+
+					//due to the difference in aspect ratio, the rendertarget icons we generate for itemicons (which are 128x128 
+					//internally) will always render at a different field of view compared to a 121x94 modelpanel like this one,
+					//even if they're using the exact same DrawItemModels function with the exact same pos, ang, and fov values.
+					//i couldn't figure out the math to "translate" the modelpanel's fov value into one that would turn out the 
+					//same as the rendertarget, so instead what we do here is emulate the itemicon's rendertarget code, by drawing 
+					//our models onto an identical rendertarget in real time, and displaying that on this panel like a backpack
+					//icon. this gives results that are 1-to-1 identical to the itemicon's rendertarget.
+					if !mdl.models or !mdl.models[1] then return end
+					local rt = GetRenderTarget("TF2ItemBrowser_EditorIconRT", 128, 128)
+					if rt == nil or rtmat == nil then MsgN("Failed to create render target TF2ItemBrowser_EditorIconRT; out of memory?") return end
+					//Render the icon texture
+					render.PushRenderTarget(rt, 0, 0, 128, 128)
+					render.SetWriteDepthToDestAlpha(false)
+					render.Clear(0, 0, 0, 0, true, true)
+					DrawItemModels(0, 0, 128, 128, mdl.models, {}, mdl.aLookAngle, mdl.vCamPos, mdl.fFOV)
+					render.PopRenderTarget()
+					rtmat:SetTexture("$basetexture", rt)
+					surface.SetMaterial(rtmat)
+					//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
+					local diff = (1-(h/w))/2
+					surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+				end
+				//hover sound only, not click
+				function mdl:OnCursorEntered()
+					surface.PlaySound(snd_hover)
 				end
 				mdl:DockMargin(0,0,8,0)
 				mdl:Dock(LEFT)
