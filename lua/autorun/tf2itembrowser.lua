@@ -4547,7 +4547,7 @@ if CLIENT then
 							table.insert(mdl.models, ent)
 							ent.DontUseBoundsForCamera = true
 							for k, v in ipairs (bodygroups) do
-								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups.checks[k]:GetChecked()) then
+								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups:IsVisible() and style.bodygroups.checks[k]:GetChecked()) then
 									local val = 1
 									local bg = v.bgs[classes[class].longname]
 									if istable(bg) then 
@@ -4567,11 +4567,19 @@ if CLIENT then
 					if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
 						model = style.class_models.classes[class]:GetText()
 					elseif style and style.model:GetParent():IsVisible() and style.model:GetText() != "" then
-						model = string.Replace(style.model:GetText(), "%s", classes[class].shortname)
+						if class then
+							model = string.Replace(style.model:GetText(), "%s", classes[class].shortname)
+						else
+							model = style.model:GetText()
+						end
 					elseif class and editor.class_models.classes[class]:GetParent():IsVisible() and editor.class_models.classes[class]:GetText() != "" then
 						model = editor.class_models.classes[class]:GetText()
 					elseif editor.model:GetText() != "" then
-						model = string.Replace(editor.model:GetText(), "%s", classes[class].shortname)
+						if class then
+							model = string.Replace(editor.model:GetText(), "%s", classes[class].shortname)
+						else
+							model = editor.model:GetText()
+						end
 					end
 					if model then
 						local ent = ClientsideModel(model, RENDERGROUP_OTHER)
@@ -4622,16 +4630,44 @@ if CLIENT then
 					end
 				}
 
-				editor.bp_pos = AddTextEntry(bpcontainer, "Camera Position", "_customitem_bp", "pos", true)
-				editor.bp_pos:GetParent():DockMargin(0,0,0,0)
-				function editor.bp_pos:OnChange()
+				local entry = AddTextEntry(bpcontainer, "Camera Position", nil, nil, true)
+				editor.bp_pos = entry
+				entry:GetParent():DockMargin(0,0,0,0)
+				function entry:OnChange()
 					editor.bp:SetCamPos(Vector(self:GetText()))
 				end
+				editor.controls[entry] = { //make sure to save this as a vector, not a string
+					Load = function(i)
+						if i._customitem_bp and i._customitem_bp.pos then
+							entry:SetText(tostring(i._customitem_bp.pos))
+						end
+					end,
+					Save = function(i)
+						if entry:GetParent():IsVisible() then
+							i._customitem_bp = i._customitem_bp or {}
+							i._customitem_bp.pos = Vector(entry:GetText())
+						end
+					end
+				}
 
-				editor.bp_ang = AddTextEntry(bpcontainer, "Camera Angles", "_customitem_bp", "ang", true)
-				function editor.bp_ang.OnChange()
+				local entry = AddTextEntry(bpcontainer, "Camera Angles", nil, nil, true)
+				editor.bp_ang = entry
+				function entry.OnChange()
 					editor.bp:SetLookAng(Angle(self:GetText()))
 				end
+				editor.controls[entry] = { //make sure to save this as an angle, not a string
+					Load = function(i)
+						if i._customitem_bp and i._customitem_bp.ang then
+							entry:SetText(tostring(i._customitem_bp.ang))
+						end
+					end,
+					Save = function(i)
+						if entry:GetParent():IsVisible() then
+							i._customitem_bp = i._customitem_bp or {}
+							i._customitem_bp.ang = Angle(entry:GetText())
+						end
+					end
+				}
 
 				local num = TFStyleVGUI("DNumberWang", bpcontainer, true) //this space is too small for a slider like in gmod's spawnicon editor
 				editor.bp_fov = num
@@ -4880,7 +4916,7 @@ if CLIENT then
 		//remove self from icon render targets; we'll re-add ourself later if needed
 		local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 		if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
-		if data.wp.enabled or data.models.attached_festive then
+		if data.wp.enabled or data.models.attached_festive or i._customitem_bp then
 			//Tell our paint func to queue rendering a custom rendertarget icon
 			self.mat = nil
 			self.ImageToQueue = nil
@@ -5753,34 +5789,34 @@ if CLIENT then
 		
 	end
 
-	function PANEL:CreateItemModelsAndParticles(bailfunc)
+	function PANEL:CreateItemModelsAndParticles(bailfunc, data) //data is a separate arg here so it can either use self.data or a custom defined data table
 
 		local models = {}
 		local particles = {}
 
-		local i = TF2Items.items[self.data.id] or {}
-		local vis = GetItemModelVisuals(self.data)
+		local i = TF2Items.items[data.id] or {}
+		local vis = GetItemModelVisuals(data)
 		//if this icon is for an invalid item (i.e. a custom item from an outdated save), then show the entity's current model in the panel.
-		if !TF2Items.items[self.data.id] and IsValid(self.entity) then
+		if !TF2Items.items[data.id] and IsValid(self.entity) then
 			vis.models.item = self.entity:GetModel()
-			self.data.models.item = true
+			data.models.item = true
 		end
 		local submodels = {}
-		if self.data.models.item then
+		if data.models.item then
 			table.insert(submodels, {role = "item"})
 			for k, v in ipairs (vis.models.attached or {}) do
 				table.insert(submodels, {role = "attached", attach_num = k})
 			end
-			if self.data.models.attached_festive then
+			if data.models.attached_festive then
 				for k, v in ipairs (vis.models.attached_festive) do
 					table.insert(submodels, {role = "attached_festive", attach_num = k})
 				end
 			end
-			if self.data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
+			if data.models.stat_clock then table.insert(submodels, {role = "stat_clock"}) end
 		end
-		if self.data.models.wearable then table.insert(submodels, {role = "wearable"}) end
-		if self.data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
-		if self.data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
+		if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
+		if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
+		if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
 		if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
 		local offset_height_base, offset_height, docamera
 		for k, v in ipairs (submodels) do
@@ -5792,9 +5828,9 @@ if CLIENT then
 				if IsValid(TF2ItemBrowser:GetEntity()) then
 					model = TF2ItemBrowser:GetEntity():GetModel()
 				else
-					model = "models/player/" .. classes[self.data.class].shortname .. ".mdl"
+					model = "models/player/" .. classes[data.class].shortname .. ".mdl"
 				end
-				if self.data.team then skin = 1 end
+				if data.team then skin = 1 end
 				ent = ClientsideModel(model, RENDERGROUP_OTHER)
 				if !IsValid(ent) then continue end
 
@@ -5847,8 +5883,8 @@ if CLIENT then
 					end
 				end
 
-				if i.visuals and i.visuals.styles and i.visuals.styles[self.data.style] then
-					local anim = i.visuals.styles[self.data.style]._anim
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] then
+					local anim = i.visuals.styles[data.style]._anim
 					if anim and anim[v.role] then
 						//we have to give the engine a nudge here to make it load the sequence info for the model, 
 						//otherwise LookupSequence won't return anything useful until we spawn the model in the world
@@ -5862,15 +5898,15 @@ if CLIENT then
 
 				//material overrides
 				local mat
-				if self.data.fx == EFFECT_UBER then
-					if !self.data.team then
+				if data.fx == EFFECT_UBER then
+					if !data.team then
 						mat = "models/effects/invulnfx_red"
 					else
 						mat = "models/effects/invulnfx_blue"
 					end
-				elseif self.data.fx == EFFECT_GOLD then
+				elseif data.fx == EFFECT_GOLD then
 					mat = "models/player/shared/gold_player"
-				elseif self.data.fx == EFFECT_ICE then
+				elseif data.fx == EFFECT_ICE then
 					mat = "models/player/shared/ice_player"
 				elseif i.visuals and i.visuals.material_override then
 					mat = i.visuals.material_override
@@ -5878,9 +5914,9 @@ if CLIENT then
 				if mat then ent:SetMaterial(mat) end
 
 				//paint matproxy
-				if self.data.paint.enabled then
-					local col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
-					local override = self.data.paint.override[self.data.team] or self.data.paint.override[false]
+				if data.paint.enabled then
+					local col = data.paint.col[data.team] or data.paint.col[false]
+					local override = data.paint.override[data.team] or data.paint.override[false]
 					if override == 0 then override = nil end
 					ent.ProxyentPaintColor = {
 						IsValid = function() return true end, 
@@ -5891,12 +5927,12 @@ if CLIENT then
 
 				//critglow and EFFECT_JARATE matproxy
 				local col
-				if self.data.crit.enabled and (v.role == "item" or v.role == "attached" 
+				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
 				or v.role == "attached_festive" or v.role == "stat_clock") then
-					col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+					col = data.crit.col[data.team] or data.crit.col[false]
 				end
-				if self.data.fx == EFFECT_JARATE then
-					col = (col or Vector(1,1,1)) * jarate[self.data.team]
+				if data.fx == EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * jarate[data.team]
 				end
 				if col then
 					ent.ProxyentCritGlow = {
@@ -5906,20 +5942,20 @@ if CLIENT then
 				end
 
 				//crit spark particles
-				if self.data.crit.enabled and v.role == "item" then
-					if self.data.crit.sparks_rb then
+				if data.crit.enabled and v.role == "item" then
+					if data.crit.sparks_rb then
 						local pname = "critgun_weaponmodel_red"
-						if self.data.team then pname = "critgun_weaponmodel_blu" end
+						if data.team then pname = "critgun_weaponmodel_blu" end
 						local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
 						if IsValid(part) then
 							part:SetShouldDraw(false)
 							table.insert(particles, part)
 						end
 					end
-					if self.data.crit.sparks_c then
+					if data.crit.sparks_c then
 						local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
 						if IsValid(part) then
-							local col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+							local col = data.crit.col[data.team] or data.crit.col[false]
 							col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
 							part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
 							part:SetShouldDraw(false)
@@ -5929,20 +5965,20 @@ if CLIENT then
 				end
 
 				//war paint
-				if self.data.wp.enabled and v.role == "item"  then
+				if data.wp.enabled and v.role == "item"  then
 					local instance
 					local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
 					local _team = 0
-					if self.data.team then _team = 1 end
+					if data.team then _team = 1 end
 
 					//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
 					if weaponType then
 						-- Try to build a full multi-layer instance if we have a warpaint ID
 						instance = WP.WarpaintData.BuildInstance(
-							self.data.wp.id,
+							data.wp.id,
 							weaponType,
-							self.data.wp.seed,
-							self.data.wp.wear,
+							data.wp.seed,
+							data.wp.wear,
 							_team
 						)
 						if instance then
@@ -5956,16 +5992,16 @@ if CLIENT then
 						MsgN(i.name, " using warpaint fallback, not good")
 						local pattern
 						for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
-							if v.id == self.data.wp.id then
+							if v.id == data.wp.id then
 								pattern = v.primaryTexture
 								break
 							end
 						end
 						instance = WP.WarpaintInstance.New({
 							patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
-							seed = self.data.wp.seed,
-							wearLevel = self.data.wp.wear,
-							wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
+							seed = data.wp.seed,
+							wearLevel = data.wp.wear,
+							wear = WP.RNG.GenerateWearFromSeed(data.wp.seed, data.wp.wear),
 							team = _team,
 							weaponType = weaponType,
 							matIndex = WP.Weapons.GetMatIndex(weaponType)
@@ -5985,21 +6021,21 @@ if CLIENT then
 			if v.role == "item" or v.role == "no_model_fallback" then
 				local function AddEffect(tab)
 					local name = tab.system
-					if name:EndsWith("_teamcolor_red") and self.data.team then
+					if name:EndsWith("_teamcolor_red") and data.team then
 						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
 					end
 					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
 					if i.visuals and i.visuals.styles then
-						if (name == "drg_pipe_smoke" and i.visuals.styles[self.data.style].use_smoke_particle_effect == 0)
-						or (name == "coin_spin" and i.visuals.styles[self.data.style].use_coin_particle_effect == 0) then
+						if (name == "drg_pipe_smoke" and i.visuals.styles[data.style].use_smoke_particle_effect == 0)
+						or (name == "coin_spin" and i.visuals.styles[data.style].use_coin_particle_effect == 0) then
 							return
 						end
 					end
 
 					local part
-					if self.data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
+					if data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
 						ent:InvalidateBoneCache()
-						local manip = Vector(0, self.data.pe_unusual_offset or 0, 0)
+						local manip = Vector(0, data.pe_unusual_offset or 0, 0)
 						local bone = ent:LookupBone("bip_head")
 						if bone then
 							manip = -manip
@@ -6056,8 +6092,8 @@ if CLIENT then
 						end
 					end
 				end
-				if self.data.pe_def then
-					for k, v in ipairs (GetItemDefaultParticleEffects(self.data)) do
+				if data.pe_def then
+					for k, v in ipairs (GetItemDefaultParticleEffects(data)) do
 						//if spawning an effect right now could potentially cause a crash, bail out and try again later
 						if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
 							if bailfunc then bailfunc() end
@@ -6066,8 +6102,8 @@ if CLIENT then
 						AddEffect(v)
 					end
 				end
-				if self.data.pe_unusual > 0 then
-					local tab = TF2Items.attribute_controlled_attached_particles_all[self.data.pe_unusual]
+				if data.pe_unusual > 0 then
+					local tab = TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
 					if tab then
 						//if spawning an effect right now could potentially cause a crash, bail out and try again later
 						if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
@@ -6292,7 +6328,7 @@ if CLIENT then
 
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
-			end)
+			end, self.data)
 			mdl.models = models or {}
 			mdl.particles = particles or {}
 			mdl.Entity = mdl.models[1]
@@ -6313,6 +6349,8 @@ if CLIENT then
 				mdl:SetFOV(cam.fov)
 				mdl:SetLookAng(Angle(cam.ang))
 				mdl.old_cam = cam
+				//TODO: use camera values from i._customitem_bp, but only if the displayed model matches the one used by the icon
+				//(item, wearable, or wearable 2) and it doesn't use i._customitem_bp.showclass
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
@@ -8275,8 +8313,8 @@ if CLIENT then
 			end
 			surface.SetMaterial(self.mat)
 			local x, y, w2, h2 = 0, 0, w, h
-			//Draw rendertarget icons at a slightly smaller size to match their appearance in TF2, otherwise they'll butt right up against the edges of the panel
-			if self.mat_isrticon then
+			//Draw weapon skin/festivizer rendertarget icons at a slightly smaller size to match their appearance in TF2, otherwise they'll butt right up against the edges of the panel
+			if self.mat_smallericon then
 				local minusw = item_icon_sizes[icon_size].rticon_minusw
 				local minush = h*(minusw/w)
 				x = x + (minusw/2)
@@ -8294,7 +8332,7 @@ if CLIENT then
 				surface.DrawTexturedRectUV(x,y,w2,h2,0,0+diff,1,1-diff)
 			end
 		elseif self.ImageToQueue then
-			self.mat_isrticon = nil
+			self.mat_smallericon = nil
 			if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
 				self.mat = Material(self.ImageToQueue .. ".vmt")
 			else
@@ -8302,13 +8340,47 @@ if CLIENT then
 			end
 			self.ImageToQueue = nil
 		elseif self.IconRenderToQueue then
+			local i = TF2Items.items[self.data.id] or {}
+			local data = table.Copy(self.data)
+			//spawnicons should always use red team; in tf2 this is a little inconsistent, and uses team colors for warpaints but always red for model skins; we can't really do this without adding special handling to recreate this bug, so instead try to match all prerendered spawnicons
+			data.team = false
+			//don't show any visual changes from fx/paint/critglow/unusuals on the icon either, to match TF2's prerendered icons
+			data.fx = 0
+			data.paint.enabled = false
+			data.crit.enabled = false
+			pe_unusual = 0
+			if i._customitem_bp then
+				if i._customitem_bp.style then
+					data.style = i._customitem_bp.style
+				end
+				if i._customitem_bp.class then
+					data.class = class_longname_to_id[i._customitem_bp.class]
+				end
+				//TODO: set which model to display - item, wearable, or wearable_2
+			end
+
 			self.IconRenderToQueue = nil
-			local oldteam = self.data.team
-			self.data.team = false //spawnicons should always use red team; in tf2 this is a little inconsistent, and uses team colors for warpaints but always red for model skins; we can't really do this without adding special handling to recreate this bug, so instead try to match all prerendered spawnicons
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				self.IconRenderToQueue = true //bail function
-			end)
-			self.data.team = oldteam
+			end, data)
+			//inject class model for i._customitem_bp.showclass
+			if i._customitem_bp and i._customitem_bp.showclass then
+				local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
+				if IsValid(ent) then
+					ent.DontUseBoundsForCamera = true
+					if models[1] then
+						models[1]:SetAngles(Angle(0,0,0))
+						models[1]:SetParent(ent)
+						models[1]:AddEffects(EF_BONEMERGE)
+					end
+					table.insert(models, 1, ent)
+					for k, v in pairs (GetItemModelVisuals(data).ply_bg) do
+						if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+						ent:SetBodygroup(k, v)
+					end
+				end
+			end
+
 			if models then
 				local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 				if !rtkey then
@@ -8373,7 +8445,12 @@ if CLIENT then
 
 					//Render the icon texture
 					render.PushRenderTarget(rt, 0, 0, 128, 128)
-					local cam = DoItemModelCamera(models, self)
+					local cam
+					if i._customitem_bp then 
+						cam = i._customitem_bp
+					else
+						cam = DoItemModelCamera(models, self)
+					end
 					render.SetWriteDepthToDestAlpha(false)
 					render.Clear(0, 0, 0, 0, true, true)
 					DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
@@ -8387,7 +8464,7 @@ if CLIENT then
 					mat:SetTexture("$basetexture", rt)
 					//self:SetMaterial("!" .. rtname)
 					self.mat = mat
-					self.mat_isrticon = true
+					self.mat_smallericon = !isstring(self.data.id) //we only want to use the smaller icons for weapon skins/festives to make them match TF2, not our custom items
 
 					CleanUpModelsAndParticles()
 					return true
