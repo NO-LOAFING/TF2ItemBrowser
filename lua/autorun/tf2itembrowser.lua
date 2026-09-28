@@ -2583,7 +2583,10 @@ if CLIENT then
 					if f then
 						if !v._searchstr then
 							//Search by display name, internal name, item type, set/collection, and more
-							local str = (GetTFLanguageString(v.item_name) or v.item_name):lower() .. " " .. v.name:lower()
+							local str = v.name:lower()
+							if v.item_name then
+								str = str .. " " .. (GetTFLanguageString(v.item_name) or v.item_name):lower()
+							end
 							if v.item_type_name then
 								str = str .. " " .. (GetTFLanguageString(v.item_type_name) or ""):lower()
 							end
@@ -4436,6 +4439,7 @@ if CLIENT then
 								if v.additional_hidden_bodygroups then
 									for k, v in pairs (v.additional_hidden_bodygroups) do
 										if keys_by_bg[k] and v == keys_by_bg[k].val then
+											style.bodygroups_check:SetChecked(true)
 											style.bodygroups.checks[keys_by_bg[k].k]:SetChecked(true)
 										end
 									end
@@ -4509,7 +4513,6 @@ if CLIENT then
 				local mdl = CreateItemIconModelPanel(bpcontainer)
 				editor.bp = mdl
 				mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
-				local old_Paint = mdl.Paint
 				function mdl:Paint(w,h)
 					if IsValid(editor.bp_pos) and !editor.bp_pos:IsEditing() and !editor.bp_pos:IsHovered() then
 						editor.bp_pos:SetText(tostring(self:GetCamPos()))
@@ -4532,7 +4535,7 @@ if CLIENT then
 					//even if they're using the exact same DrawItemModels function with the exact same pos, ang, and fov values.
 					//i couldn't figure out the math to "translate" the modelpanel's fov value into one that would turn out the 
 					//same as the rendertarget, so instead what we do here is emulate the itemicon's rendertarget code, by drawing 
-					//our models onto an identical rendertarget in real time, and displaying that on this panel like a backpack
+					//our models onto an identical rendertarget in real time, and then drawing that onto this panel like a backpack
 					//icon. this gives results that are 1-to-1 identical to the itemicon's rendertarget.
 					if !mdl.models or !mdl.models[1] then return end
 					local rt = GetRenderTarget("TF2ItemBrowser_EditorIconRT", 128, 128)
@@ -4577,28 +4580,6 @@ if CLIENT then
 						if IsValid(v) then v:Remove() end
 					end
 					mdl.models = {}
-					//Class model for preview, if enabled
-					if editor.bp_showclass:GetChecked() and class then
-						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
-						if IsValid(ent) then
-							table.insert(mdl.models, ent)
-							ent.DontUseBoundsForCamera = true
-							for k, v in ipairs (bodygroups) do
-								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups:IsVisible() and style.bodygroups.checks[k]:GetChecked()) then
-									local val = 1
-									local bg = v.bgs[classes[class].longname]
-									if istable(bg) then 
-										val = bg.val
-										bg = bg.name
-									end
-									if bg then
-										bg = ent:FindBodygroupByName(bg)
-										ent:SetBodygroup(bg, val)
-									end
-								end
-							end
-						end
-					end
 					//Item model
 					local model
 					if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
@@ -4632,6 +4613,33 @@ if CLIENT then
 						end
 					end
 					//TODO: attachments, options to show wearables instead
+					//Class model for preview, if enabled
+					if editor.bp_showclass:GetChecked() and class then
+						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
+						if IsValid(ent) then
+							ent.DontUseBoundsForCamera = mdl.models[1] != nil
+							if mdl.models[1] then
+								mdl.models[1]:SetAngles(Angle(0,0,0))
+								mdl.models[1]:SetParent(ent)
+								mdl.models[1]:AddEffects(EF_BONEMERGE)
+							end
+							table.insert(mdl.models, 1, ent)
+							for k, v in ipairs (bodygroups) do
+								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups:IsVisible() and style.bodygroups.checks[k]:GetChecked()) then
+									local val = 1
+									local bg = v.bgs[classes[class].longname]
+									if istable(bg) then 
+										val = bg.val
+										bg = bg.name
+									end
+									if bg then
+										bg = ent:FindBodygroupByName(bg)
+										ent:SetBodygroup(bg, val)
+									end
+								end
+							end
+						end
+					end
 
 					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
 					local cam = DoItemModelCamera(mdl.models) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
@@ -4657,13 +4665,12 @@ if CLIENT then
 						mdl:SetLookAng(Angle(cam_override.ang))
 					end
 				end
+				//to avoid unnecessary Refresh calls as other elements are loading, make sure to do this last
+				mdl.LoadOrder = 2
 				editor.controls[mdl] = {
 					Load = function(i)
-						//to avoid unnecessary Refresh calls as other elements are loading, try to do this last
-						timer.Simple(FrameTime(), function()
-							mdl.HasLoaded = true
-							mdl:Refresh(i._customitem_bp)
-						end)
+						mdl.HasLoaded = true
+						mdl:Refresh(i._customitem_bp)
 					end
 				}
 
@@ -4768,13 +4775,12 @@ if CLIENT then
 					end
 					editor.bp:Refresh()
 				end
-				local old_Load = editor.controls[entry].Load
+				//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait for those to finish loading
+				drop.LoadOrder = 1
+				local old_Load = editor.controls[drop].Load
 				editor.controls[drop].Load = function(i)
-					//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait a frame
-					timer.Simple(0, function()
-						drop:UpdateVisibility()
-						old_Load(i)
-					end)
+					drop:UpdateVisibility()
+					old_Load(i)
 				end
 
 				local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
@@ -4815,12 +4821,12 @@ if CLIENT then
 					end
 					editor.bp:Refresh()
 				end
+				//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait for those to finish loading
+				drop.LoadOrder = 1
+				local old_Load = editor.controls[drop].Load
 				editor.controls[drop].Load = function(i)
-					//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait a frame
-					timer.Simple(0, function()
-						drop:UpdateVisibility()
-						old_Load(i)
-					end)
+					drop:UpdateVisibility()
+					old_Load(i)
 				end
 
 				local check = TFStyleVGUI("DCheckBoxLabel", box)
@@ -4875,9 +4881,26 @@ if CLIENT then
 				check.entries[3] = AddMultilineTextEntry(box, "Negative attributes", "_display_attributes", "negative"):GetParent()
 
 
+				//load each control; controls that need to load in a certain order (i.e. backpack icon preview) 
+				//can include a LoadOrdervalue to ensure that they load after all the controls with a lower value
 				local i = TF2Items.items[id] or {}
+				local queuedloads = {}
+				editor.LoadOrder = 0
 				for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
-					if funcs.Load then funcs.Load(i) end
+					if funcs.Load then
+						queuedloads[pnl] = funcs.Load
+					end
+				end
+				while table.Count(queuedloads) > 0 do
+					if editor.LoadOrder == 10 then MsgN("TF2ItemBrowser_Editor load order screwed up somehow, bailing") break end
+					for pnl, Load in pairs (queuedloads) do
+						if !pnl.LoadOrder or editor.LoadOrder >= pnl.LoadOrder then
+							//MsgN(editor.LoadOrder, " ", pnl.LoadOrder or 0, " loaded ", pnl)
+							Load(i)
+							queuedloads[pnl] = nil
+						end
+					end
+					editor.LoadOrder = editor.LoadOrder + 1
 				end
 				//if we're loading an existing file, then pressing the save button should default to saving to the same file that was loaded
 				editor.SavedName = id or ""
@@ -5826,7 +5849,7 @@ if CLIENT then
 		
 	end
 
-	function PANEL:CreateItemModelsAndParticles(bailfunc, data) //data is a separate arg here so it can either use self.data or a custom defined data table
+	function PANEL:CreateItemModelsAndParticles(bailfunc, data, disable_fallback_model) //data is a separate arg here so it can either use self.data or a custom defined data table
 
 		local models = {}
 		local particles = {}
@@ -5854,7 +5877,9 @@ if CLIENT then
 		if data.models.wearable then table.insert(submodels, {role = "wearable"}) end
 		if data.models.wearable_2 then table.insert(submodels, {role = "wearable_2"}) end
 		if data.models.taunt_prop then table.insert(submodels, {role = "taunt_prop"}) end
-		if #submodels == 0 and table.Count(vis.models) == 0 then table.insert(submodels, {role = "no_model_fallback"}) end
+		if #submodels == 0 and table.Count(vis.models) == 0 and !disable_fallback_model and data.class >= 2 and data.class <= 10 then //don't try to show a fallback model for "any" or "none" classes
+			table.insert(submodels, {role = "no_model_fallback"})
+		end
 		local offset_height_base, offset_height, docamera
 		for k, v in ipairs (submodels) do
 			local ent
@@ -8399,7 +8424,7 @@ if CLIENT then
 			self.IconRenderToQueue = nil
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				self.IconRenderToQueue = true //bail function
-			end, data)
+			end, data, true) //disable fallback model
 			//inject class model for i._customitem_bp.showclass
 			if i._customitem_bp and i._customitem_bp.showclass then
 				local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
@@ -8457,6 +8482,13 @@ if CLIENT then
 				end
 
 				table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
+					//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
+					if table.Count(models) == 0 then
+						self.no_image = true
+						CleanUpModelsAndParticles()
+						return true
+					end
+
 					//if ent is invalid, then remove from the queue
 					if !models or !IsValid(models[1]) then
 						return true
