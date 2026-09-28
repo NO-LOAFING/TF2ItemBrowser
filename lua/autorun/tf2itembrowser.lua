@@ -2185,6 +2185,12 @@ if CLIENT then
 		["$vertexcolor"] = "1"
 	})
 
+	local function GetStyleNameString(i)
+		local str = GetTFLanguageString("#TF_style" .. tostring(i-1))
+		if !str then str = (GetTFLanguageString("#Context_Style") or "Style") .. " " .. tostring(i) end
+		return str
+	end
+
 	
 	CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
 
@@ -3286,10 +3292,10 @@ if CLIENT then
 				editor.controls = {}
 
 
-				//Dock save and cancel buttons to bottom of panel
+				//Dock save and close buttons to bottom of panel
 				local button_holder = vgui.Create("Panel", editor)
 				local button_1 = TFStyleVGUI("DButton", button_holder)
-				button_1:SetText(GetTFLanguageString("#TF_CancelSavePreset") or "CANCEL")
+				button_1:SetText(string.upper(language.GetPhrase("preset.close")))
 				button_1:SizeToContentsX(20)
 				button_1.DoClick = function()
 					editor:Close()
@@ -3380,6 +3386,7 @@ if CLIENT then
 						text:SetText(label)
 						text:Dock(TOP)
 						text:DockMargin(-8,-8,0,betweenitems)
+						box.label = text
 					end
 
 					return box
@@ -4225,7 +4232,7 @@ if CLIENT then
 				editor.styles = {}
 				function button:AddStyle()
 
-					local box = AddBox(holder.columns[2])
+					local box = AddBox(holder.columns[2], GetStyleNameString(1) .. ":")
 					local i = table.insert(editor.styles, box)
 					//for most of these boxes, we have a thick dockpadding on all sides to make the controls fit inside nicely, while the label at the top
 					//uses negative dockmargins to appear closer to the edges at the controls. unfortunately, DSizeToContents doesn't like items within it
@@ -4238,17 +4245,11 @@ if CLIENT then
 					local text_holder = vgui.Create("Panel", box)
 					text_holder:SetHeight(22)
 					text_holder:Dock(TOP)
-					text_holder:DockMargin(-8-3,-8-3,0,betweenitems)
-					local entry = TFStyleVGUI("DTextEntry", text_holder)
-					entry:SetFont("TF2ItemBrowser_ItemName")
-					entry:SetPlaceholderText("Style " .. tostring(i))
-					entry:Dock(FILL)
-					box.name = entry
-					function entry:OnEnter()
-						//update backpack icon style selector
-						editor.bp_style:UpdateVisibility()
-					end
-
+					text_holder:DockMargin(-8,-8,0,box.label:GetTall()-text_holder:GetTall())
+					box.label:SetParent(text_holder)
+					box.label:DockMargin(0,0,0,0)
+					box.label:Dock(FILL)
+					box.label:SetText(GetStyleNameString(i) .. ":")
 					local close = vgui.Create("DButton", text_holder)
 					close:SetText("")
 					close:SetSize(22,22)
@@ -4271,7 +4272,7 @@ if CLIENT then
 						close:Remove()
 						box:Remove()
 						for i, style in ipairs (editor.styles) do
-							style.name:SetPlaceholderText("Style " .. tostring(i))
+							style.label:SetText(GetStyleNameString(i))
 						end
 						//update backpack icon style selector
 						editor.bp_style:UpdateVisibility()
@@ -4280,9 +4281,18 @@ if CLIENT then
 					end
 
 
+					local entry = AddTextEntry(box, "Style name")
+					entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
+					box.name = entry
+					function entry:OnEnter()
+						//update backpack icon style selector
+						editor.bp_style:UpdateVisibility()
+					end
+
+
 					local check = TFStyleVGUI("DCheckBoxLabel", box)
 					check:SetText("Change models?")
-					check:DockMargin(0,betweenitems,side_margin,0)
+					check:DockMargin(0,betweencategories,side_margin,0)
 					check:Dock(TOP)
 					box.model_check = check
 					function check:OnChange(val)
@@ -4865,7 +4875,7 @@ if CLIENT then
 					for i, style in pairs (editor.styles) do
 						local name = style.name:GetText()
 						if name == "" then
-							name = "Style " .. tostring(i)
+							name = style.label:GetText()
 						end
 						table.insert(options, {
 							Label = name,
@@ -5552,7 +5562,9 @@ if CLIENT then
 				for k, v in SortedPairs (i.visuals.styles) do
 					local name = GetTFLanguageString(v.name) or v.name
 					if !name then
-						if v.aus_prefix then
+						if isstring(self.data.id) then
+							name = GetStyleNameString(k+1)
+						elseif v.aus_prefix then
 							name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
 						elseif k == 0 then //assume this is the non-australium style for weapons with australium
 							name = GetTFLanguageString("#TF_style0_normal") or "#TF_style0_normal"
@@ -6635,7 +6647,9 @@ if CLIENT then
 				for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					local name = GetTFLanguageString(v.name, true) or v.name
 					if !name then
-						if v.aus_prefix then
+						if isstring(self.data.id) then
+							name = GetStyleNameString(k+1)
+						elseif v.aus_prefix then
 							name = string.Trim(GetTFLanguageString("#ItemNameAustralium") or "#ItemNameAustralium")
 						elseif k == 0 then //assume this is the non-australium style for weapons with australium
 							name = GetTFLanguageString("#TF_style0_normal") or "#TF_style0_normal"
@@ -8525,7 +8539,7 @@ if CLIENT then
 				end
 				//use model angle specified in table
 				if IsValid(models[1]) then
-					models[1]:SetAngles(i._customitem_bp.mdlang or Angle(0,0,0))
+					models[1]:SetAngles(i._customitem_bp.mdlang)
 				end
 			end
 
