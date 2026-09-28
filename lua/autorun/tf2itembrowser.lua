@@ -4602,6 +4602,7 @@ if CLIENT then
 					if model then
 						local ent = ClientsideModel(model, RENDERGROUP_OTHER)
 						if IsValid(ent) then
+							ent:SetSkin(skin)
 							if IsValid(mdl.models[1]) then
 								ent:SetParent(mdl.models[1])
 								ent:AddEffects(EF_BONEMERGE)
@@ -4639,6 +4640,10 @@ if CLIENT then
 								end
 							end
 						end
+					end
+					for _, ent in pairs (mdl.models) do
+						ent:SetNoDraw(true)
+						ent:SetIK(false)
 					end
 
 					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
@@ -6324,6 +6329,16 @@ if CLIENT then
 			if ( input.IsShiftDown() ) then speed = 4.0 end
 
 			self.vCamPos = self.vCamPos + Movement * speed * self:GetMovementScale()
+		end
+
+		function mdl:OnRemove()
+			//Clean up models and particles
+			for k, v in ipairs (self.models) do
+				if IsValid(v) then v:Remove() end
+			end
+			for k, v in ipairs (self.particles) do
+				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
+			end
 		end
 
 		return mdl
@@ -8244,13 +8259,6 @@ if CLIENT then
 		end
 
 		function pnl.OnRemove()
-			//Clean up models and particles
-			for k, v in ipairs (mdl.models) do
-				if IsValid(v) then v:Remove() end
-			end
-			for k, v in ipairs (mdl.particles) do
-				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
-			end
 			//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
 			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
 		end
