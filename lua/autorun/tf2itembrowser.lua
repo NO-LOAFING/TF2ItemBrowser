@@ -2576,7 +2576,47 @@ if CLIENT then
 						f = string.Explode(" ", f:lower()) //allow searching with multiple search terms
 					end
 				end
-				for k, v in pairs (TF2Items.items) do
+
+				//required local function copied from https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/includes/extensions/table.lua#L539
+				local function getKeys( tbl ) 
+					local keys, i = {}, 0
+
+					for k in pairs( tbl ) do
+						i = i + 1
+						keys[ i ] = k
+					end
+
+					return keys
+				end
+				//modified version of SortedPairs that handles tables with mixed number and string keys;
+				//instead of causing errors, strings are sorted after numbers
+				local function SortedPairsMixed(pTable, Desc)
+
+					local keys = getKeys( pTable )
+
+					--[[if ( Desc ) then
+						table.sort( keys, function( a, b )
+							return a > b
+						end )
+					else]]
+						table.sort( keys, function( a, b )
+							if type(a) != type(b) then
+								return isnumber(a)
+							else
+								return a < b
+							end
+						end )
+					//end
+
+					local i, key = 1, nil
+					return function()
+						key, i = keys[ i ], i + 1
+						return key, pTable[ key ]
+					end
+
+				end
+
+				for k, v in SortedPairsMixed (TF2Items.items) do
 					//this filter is on by default and catches >75% of items, so check this first
 					if DoIncludeExcludeFilter(filters.tm:GetValue(), v._tm) then continue end
 
