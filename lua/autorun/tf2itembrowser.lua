@@ -4551,6 +4551,7 @@ if CLIENT then
 				local bpcontainer = vgui.Create("Panel", box)
 				bpcontainer:Dock(TOP)
 				local mdl = CreateItemIconModelPanel(bpcontainer)
+				mdl.UseTurntableMovement = true
 				editor.bp = mdl
 				mdl:SetSize(item_icon_sizes[2].w, item_icon_sizes[2].h)
 				function mdl:Paint(w,h)
@@ -4643,12 +4644,6 @@ if CLIENT then
 						local ent = ClientsideModel(model, RENDERGROUP_OTHER)
 						if IsValid(ent) then
 							ent:SetSkin(skin)
-							if IsValid(mdl.models[1]) then
-								ent:SetParent(mdl.models[1])
-								ent:AddEffects(EF_BONEMERGE)
-							else
-								ent:SetAngles(Angle(10,130,0)) //make sure this matches CreateItemModelsAndParticles; model angles from resource\ui\econ\itemmodelpanel.res; produces the most game-accurate lighting 
-							end
 							table.insert(mdl.models, ent)
 							mdl.Entity = ent
 						end
@@ -4658,9 +4653,7 @@ if CLIENT then
 					if editor.bp_showclass:GetChecked() and class then
 						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
 						if IsValid(ent) then
-							ent.DontUseBoundsForCamera = mdl.models[1] != nil
 							if mdl.models[1] then
-								mdl.models[1]:SetAngles(Angle(0,0,0))
 								mdl.models[1]:SetParent(ent)
 								mdl.models[1]:AddEffects(EF_BONEMERGE)
 							end
@@ -4685,9 +4678,12 @@ if CLIENT then
 						ent:SetNoDraw(true)
 						ent:SetIK(false)
 					end
+					if mdl.models[1] then
+						mdl.models[1]:SetAngles(Angle(editor.bp_mdlang:GetText()))
+					end
 
 					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
-					local cam = DoItemModelCamera(mdl.models) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
+					local cam = DoItemModelCamera(mdl.models, nil, true) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
 					local docamera = mdl.old_cam == nil
 					if mdl.old_cam then
 						for k, v in pairs (cam) do
@@ -4719,9 +4715,33 @@ if CLIENT then
 					end
 				}
 
+				local entry = AddTextEntry(bpcontainer, "Entity Angles", nil, nil, true)
+				editor.bp_mdlang = entry
+				entry:GetParent():DockMargin(0,1,0,0) //+1 px at top makes the top and bottom of these 4 controls symmetrical, nice
+				function entry:OnChange()
+					if mdl.models[1] then
+						mdl.models[1]:SetAngles(Angle(self:GetText()))
+					end
+				end
+				editor.controls[entry] = { //make sure to save this as an angle, not a string
+					Load = function(i)
+						if i._customitem_bp and i._customitem_bp.mdlang then
+							entry:SetText(tostring(i._customitem_bp.mdlang))
+						else
+							entry:SetText(tostring(Angle()))
+						end
+					end,
+					Save = function(i)
+						if entry:GetParent():IsVisible() then
+							i._customitem_bp = i._customitem_bp or {}
+							i._customitem_bp.mdlang = Angle(entry:GetText())
+						end
+					end
+				}
+
 				local entry = AddTextEntry(bpcontainer, "Camera Position", nil, nil, true)
 				editor.bp_pos = entry
-				entry:GetParent():DockMargin(0,0,0,0)
+				entry:GetParent():DockMargin(0,4,0,0)
 				function entry:OnChange()
 					editor.bp:SetCamPos(Vector(self:GetText()))
 				end
@@ -4741,7 +4761,8 @@ if CLIENT then
 
 				local entry = AddTextEntry(bpcontainer, "Camera Angles", nil, nil, true)
 				editor.bp_ang = entry
-				function entry.OnChange()
+				entry:GetParent():DockMargin(0,4,0,0)
+				function entry:OnChange()
 					editor.bp:SetLookAng(Angle(self:GetText()))
 				end
 				editor.controls[entry] = { //make sure to save this as an angle, not a string
@@ -4760,7 +4781,7 @@ if CLIENT then
 
 				local num = TFStyleVGUI("DNumberWang", bpcontainer, true) //this space is too small for a slider like in gmod's spawnicon editor
 				editor.bp_fov = num
-				num:DockMargin(0,betweenitems,0,0)
+				num:DockMargin(0,4,0,0)
 				num:Dock(TOP)
 				num:SetDecimals(2)
 				num:SetMinMax(0.001, 179)
@@ -5828,7 +5849,7 @@ if CLIENT then
 	end
 
 	//This is a global function so that the custom item editor can use it as well
-	DoItemModelCamera = function(models, icon)
+	DoItemModelCamera = function(models, icon, dont_rotate_viewangle_with_model)
 
 		local attach
 		if models[1] then attach = models[1]:GetAttachment(models[1]:LookupAttachment("icon_camera")) end
@@ -5843,7 +5864,6 @@ if CLIENT then
 			//copy of PositionSpawnIcon from lua\includes\util\client.lua, except we get the combined bounds of all models
 			local mn, mx
 			for k, v in ipairs (models) do
-				if v.DontUseBoundsForCamera then continue end
 				local mn2, mx2 = v:GetRenderBounds()
 				mn2, mx2 = v:GetRotatedAABB(mn2, mx2)
 				mn2 = mn2 + v:GetPos()
@@ -5873,14 +5893,21 @@ if CLIENT then
 
 				size = math.Clamp( size, 5, 1000 )
 
-				//rotate the angle to account for rotated models
-				local _, ViewAngle = LocalToWorld(vector_origin, Angle( 25, 220, 0 ), vector_origin, models[1]:GetAngles())
+				
+				local _, ViewAngle, fov = nil, Angle( 25, 220, 0 ), 4
+				if !dont_rotate_viewangle_with_model then
+					//rotate the angle to account for rotated models
+					_, ViewAngle = LocalToWorld(vector_origin, ViewAngle, vector_origin, models[1]:GetAngles())
+				else
+					//we don't need to add this extra bloat if the camera is rotating with the entity because rotated ents already bloat up their bounds a bit
+					fov = fov + size * 0.04
+				end
 				local ViewPos = models[1]:GetPos() + ViewAngle:Forward() * size * -15
 
 				//Apply the changes to the camera
 				return {
 					pos = ViewPos + middle,
-					fov = 4, // + size * 0.04, //to compensate for GetRotatedAABB bloating up the size a bit, don't add extra fov bloat from size, this isn't necessary for any of these models
+					fov = fov,
 					ang = ViewAngle
 				}
 			end
@@ -6258,7 +6285,10 @@ if CLIENT then
 		end
 
 		//Modified OnMousePressed to make the orbit movement account for the rotation of the entity
+		local old_OnMousePressed = mdl.OnMousePressed
 		function mdl:OnMousePressed( mousecode )
+			if self.UseTurntableMovement then return old_OnMousePressed(self, mousecode) end
+
 			-- input.SetCursorPos does not work while main menu is open
 			if ( !MENU_DLL and gui.IsGameUIVisible() ) then return end
 
@@ -6309,7 +6339,10 @@ if CLIENT then
 			return false
 		end
 		//Modified FirstPersonControls to make camera movement account for the roll rotation of the camera (required by the wacky rotations set by icon_camera)
+		local old_FirstPersonControls = mdl.FirstPersonControls
 		function mdl:FirstPersonControls()
+			if self.UseTurntableMovement then return old_FirstPersonControls(self, mousecode) end
+
 			local x, y = self:CaptureMouse()
 
 			if ( self.MouseKey == MOUSE_LEFT ) then
@@ -8473,21 +8506,26 @@ if CLIENT then
 			local models, particles = self:CreateItemModelsAndParticles(function()
 				self.IconRenderToQueue = true //bail function
 			end, data, true) //disable fallback model
-			//inject class model for i._customitem_bp.showclass
-			if i._customitem_bp and i._customitem_bp.showclass then
-				local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
-				if IsValid(ent) then
-					ent.DontUseBoundsForCamera = true
-					if models[1] then
-						models[1]:SetAngles(Angle(0,0,0))
-						models[1]:SetParent(ent)
-						models[1]:AddEffects(EF_BONEMERGE)
+			
+			if i._customitem_bp then
+				//inject class model for i._customitem_bp.showclass
+				if i._customitem_bp.showclass then
+					local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
+					if IsValid(ent) then
+						if models[1] then
+							models[1]:SetParent(ent)
+							models[1]:AddEffects(EF_BONEMERGE)
+						end
+						table.insert(models, 1, ent)
+						for k, v in pairs (GetItemModelVisuals(data).ply_bg) do
+							if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+							ent:SetBodygroup(k, v)
+						end
 					end
-					table.insert(models, 1, ent)
-					for k, v in pairs (GetItemModelVisuals(data).ply_bg) do
-						if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-						ent:SetBodygroup(k, v)
-					end
+				end
+				//use model angle specified in table
+				if IsValid(models[1]) then
+					models[1]:SetAngles(i._customitem_bp.mdlang or Angle(0,0,0))
 				end
 			end
 
