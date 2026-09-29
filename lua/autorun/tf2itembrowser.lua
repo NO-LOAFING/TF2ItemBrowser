@@ -3824,6 +3824,7 @@ if CLIENT then
 				entry:GetParent():DockMargin(0,0,0,0)
 				editor.model = entry
 				function entry:OnEnter()
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 
@@ -3864,12 +3865,14 @@ if CLIENT then
 					//Only show the help text if we're showing the class-specific entries
 					check.help:SetVisible(selected_class_count > 1 and check:GetChecked())
 					//Refresh the backpack icon modelpanel, just in case the currently used model was disabled or something
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 				for i = 2, 10 do
 					local entry = AddTextEntry(box, "Item model - " .. (GetTFLanguageString(classes[i].langstr) or string.NiceName(classes[i].longname)), "model_player_per_class", classes[i].longname)
 					check.classes[i] = entry
 					function entry:OnEnter()
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 				end
@@ -3999,6 +4002,7 @@ if CLIENT then
 						old_OnLoseFocus(entry, ...) //not running this results in focus getting stuck in such a way that the context menu can't be closed
 					end
 					function entry:OnEnter()
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 					return entry
@@ -4288,6 +4292,7 @@ if CLIENT then
 						//update backpack icon style selector
 						editor.bp_style:UpdateVisibility()
 						//update backpack icon, just in case we removed the style it was using
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 
@@ -4308,6 +4313,7 @@ if CLIENT then
 					box.model_check = check
 					function check:OnChange(val)
 						box:UpdateVisibility()
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 
@@ -4316,6 +4322,7 @@ if CLIENT then
 					entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 					box.model = entry
 					function entry:OnEnter()
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 
@@ -4334,6 +4341,7 @@ if CLIENT then
 						entry:GetParent():DockMargin(0,betweenitems,side_margin,0)
 						check.classes[i] = entry
 						function entry:OnEnter()
+							editor.bp_mdl:UpdateVisibility()
 							editor.bp:Refresh()
 						end
 					end
@@ -4462,6 +4470,7 @@ if CLIENT then
 						box.disable_genteel_smoke:SetVisible(editor.genteel_smoke:GetChecked())
 
 						//Refresh the backpack icon modelpanel, just in case the currently used model/skin/etc. was disabled or something
+						editor.bp_mdl:UpdateVisibility()
 						editor.bp:Refresh()
 					end
 
@@ -4622,9 +4631,8 @@ if CLIENT then
 				mdl:Dock(LEFT)
 				bpcontainer:SetHeight(mdl:GetTall())
 				mdl.models = {}
-				function mdl:Refresh(cam_override)
-					if !self.HasLoaded then return end
-					//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
+				//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
+				function mdl:GetItemModelInfo()	
 					local _, class = editor.bp_class:GetSelected()
 					if class then
 						class = class_longname_to_id[editor.bp_class.options[class].Value]
@@ -4638,12 +4646,7 @@ if CLIENT then
 						skin = style.skins.num1:GetValue()
 					end
 
-					for k, v in ipairs (mdl.models) do
-						if IsValid(v) then v:Remove() end
-					end
-					mdl.models = {}
-					//Item model
-					local model
+					local model, attached, wearable, wearable_2
 					if style and class and style.class_models.classes[class]:GetParent():IsVisible() and style.class_models.classes[class]:GetText() != "" then
 						model = style.class_models.classes[class]:GetText()
 					elseif style and style.model:GetParent():IsVisible() and style.model:GetText() != "" then
@@ -4661,31 +4664,60 @@ if CLIENT then
 							model = editor.model:GetText()
 						end
 					end
-					if model then
-						local ent = ClientsideModel(model, RENDERGROUP_OTHER)
-						if IsValid(ent) then
-							ent:SetSkin(skin)
-							table.insert(mdl.models, ent)
-							mdl.Entity = ent
+					for k, v in ipairs (editor.attached_models.entries) do
+						if v:GetText() != "" then
+							attached = attached or {}
+							table.insert(attached, v:GetText())
+						end
+					end
+					if editor.extra_wearables.entries[1] and editor.extra_wearables.entries[1]:GetText() != "" then
+						wearable = editor.extra_wearables.entries[1]:GetText()
+					end
+					if editor.extra_wearables.entries[2] and editor.extra_wearables.entries[2]:GetText() != "" then
+						wearable_2 = editor.extra_wearables.entries[2]:GetText()
+					end
 
-							//attachment models
-							for k, v in ipairs (editor.attached_models.entries) do
-								if v:GetText() != "" then
-									local ent = ClientsideModel(v:GetText(), RENDERGROUP_OTHER)
-									if IsValid(ent) then
-										ent:SetSkin(skin)
-										ent:SetParent(mdl.Entity)
-										ent:AddEffects(EF_BONEMERGE)
-										table.insert(mdl.models, ent)
+					return {class = class, style = style, skin = skin, item = model, attached = attached, wearable = wearable, wearable_2 = wearable_2}
+				end
+				function mdl:Refresh(cam_override)
+					if !self.HasLoaded then return end
+
+					for k, v in ipairs (mdl.models) do
+						if IsValid(v) then v:Remove() end
+					end
+					mdl.models = {}
+
+					local info = self:GetItemModelInfo()
+					local _, selected_mdl = editor.bp_mdl:GetSelected()
+					if selected_mdl then
+						selected_mdl = editor.bp_mdl.options[selected_mdl].Value
+					end
+					if !info[selected_mdl] then selected_mdl = nil end
+
+					if selected_mdl then
+						local ent = ClientsideModel(info[selected_mdl], RENDERGROUP_OTHER)
+						if IsValid(ent) then
+							ent:SetSkin(info.skin)
+							table.insert(mdl.models, ent)
+							if selected_mdl == "item" then
+								mdl.Entity = ent
+								if info.attached then
+									for k, v in pairs (info.attached) do
+										local ent = ClientsideModel(v, RENDERGROUP_OTHER)
+										if IsValid(ent) then
+											ent:SetSkin(info.skin)
+											ent:SetParent(mdl.Entity)
+											ent:AddEffects(EF_BONEMERGE)
+											table.insert(mdl.models, ent)
+										end
 									end
 								end
 							end
 						end
 					end
-					//TODO: options to show wearables instead
 					//Class model for preview, if enabled
-					if editor.bp_showclass:GetChecked() and class then
-						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
+					if editor.bp_showclass:GetChecked() and info.class then
+						local ent = ClientsideModel("models/player/" .. classes[info.class].shortname .. ".mdl", RENDERGROUP_OTHER)
 						if IsValid(ent) then
 							if mdl.models[1] then
 								mdl.models[1]:SetParent(ent)
@@ -4693,9 +4725,9 @@ if CLIENT then
 							end
 							table.insert(mdl.models, 1, ent)
 							for k, v in ipairs (bodygroups) do
-								if editor.bodygroups.checks[k]:GetChecked() or (style and style.bodygroups:IsVisible() and style.bodygroups.checks[k]:GetChecked()) then
+								if editor.bodygroups.checks[k]:GetChecked() or (info.style and info.style.bodygroups:IsVisible() and info.style.bodygroups.checks[k]:GetChecked()) then
 									local val = 1
-									local bg = v.bgs[classes[class].longname]
+									local bg = v.bgs[classes[info.class].longname]
 									if istable(bg) then 
 										val = bg.val
 										bg = bg.name
@@ -4841,6 +4873,7 @@ if CLIENT then
 				local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
 				editor.bp_class = drop
 				function drop:OnSelect()
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 				function drop:UpdateVisibility()
@@ -4873,6 +4906,7 @@ if CLIENT then
 						end
 						if old_sel then drop:ChooseOptionID(1) end
 					end
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 				//make sure to populate the drop's options first before loading, and to do that, we need to load the classes first, so wait for those to finish loading
@@ -4886,6 +4920,7 @@ if CLIENT then
 				local drop = AddDropdown(box, "Style to show", "_customitem_bp", "style", {})
 				editor.bp_style = drop
 				function drop:OnSelect()
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 				function drop:UpdateVisibility()
@@ -4919,9 +4954,55 @@ if CLIENT then
 						end
 						if old_sel then drop:ChooseOptionID(1) end
 					end
+					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
 				//make sure to populate the drop's options first before loading, and to do that, we need to load the styles first, so wait for those to finish loading
+				drop.LoadOrder = 1
+				local old_Load = editor.controls[drop].Load
+				editor.controls[drop].Load = function(i)
+					drop:UpdateVisibility()
+					old_Load(i)
+				end
+
+				local drop = AddDropdown(box, "Model to show", "_customitem_bp", "mdl", {})
+				editor.bp_mdl = drop
+				function drop:OnSelect()
+					editor.bp:Refresh()
+				end
+				function drop:UpdateVisibility()
+					local _, old_sel = drop:GetSelected()
+					if old_sel and drop:GetParent():IsVisible() then
+						old_sel = drop.options[old_sel].Value
+					else
+						old_sel = ""
+					end
+					local options = {}
+					local info = editor.bp:GetItemModelInfo()
+					for k, v in ipairs ({"item", "wearable", "wearable_2"}) do
+						if info[v] then
+							table.insert(options, {
+								Label = string.NiceName(v),
+								Value = v
+							})
+						end
+					end
+					drop:GetParent():SetVisible(#options > 1)
+					drop:PopulateOptions(options)
+					if #options > 0 then
+						//Reselect the previously selected option if it still exists, otherwise select the first one
+						for k, v in ipairs (options) do
+							if v.Value == old_sel then
+								drop:ChooseOptionID(v.id)
+								old_sel = nil
+								break
+							end
+						end
+						if old_sel then drop:ChooseOptionID(1) end
+					end
+					editor.bp:Refresh()
+				end
+				//make sure to populate the drop's options first before loading, and to do that, we need to load the models first, so wait for those to finish loading
 				drop.LoadOrder = 1
 				local old_Load = editor.controls[drop].Load
 				editor.controls[drop].Load = function(i)
@@ -8537,7 +8618,13 @@ if CLIENT then
 				if i._customitem_bp.class then
 					data.class = class_longname_to_id[i._customitem_bp.class]
 				end
-				//TODO: set which model to display - item, wearable, or wearable_2
+				if i._customitem_bp.mdl then
+					for k, v in ipairs ({"item", "wearable", "wearable_2"}) do
+						if data.models[v] != nil then
+							data.models[v] = (i._customitem_bp.mdl == v)
+						end
+					end
+				end
 			end
 
 			self.IconRenderToQueue = nil
@@ -8606,19 +8693,18 @@ if CLIENT then
 				end
 
 				table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
-					//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
-					if table.Count(models) == 0 then
-						self.no_image = true
-						CleanUpModelsAndParticles()
-						return true
-					end
-
 					//if ent is invalid, then remove from the queue
-					if !models or !IsValid(models[1]) then
+					if !models then
 						return true
 					end
 					//if icon no longer exists, then remove from the queue
 					if !IsValid(self) then
+						CleanUpModelsAndParticles()
+						return true
+					end
+					//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
+					if table.Count(models) == 0 then
+						self.no_image = true
 						CleanUpModelsAndParticles()
 						return true
 					end
