@@ -2629,26 +2629,26 @@ if CLIENT then
 					if f then
 						if !v._searchstr then
 							//Search by display name, internal name, item type, set/collection, and more
-							local str = v.name:lower()
+							local str = v.name
 							if v.item_name then
-								str = str .. " " .. (GetTFLanguageString(v.item_name) or v.item_name):lower()
+								str = str .. " " .. (GetTFLanguageString(v.item_name) or v.item_name)
 							end
 							if v.item_type_name then
-								str = str .. " " .. (GetTFLanguageString(v.item_type_name) or ""):lower()
+								str = str .. " " .. (GetTFLanguageString(v.item_type_name) or "")
 							end
 							//if v.item_description then
 							//	//this can add irrelevant nonsense sometimes, but can also catch associated words that aren't in any other text. is this worth it?
-							//	str = str .. " " .. (GetTFLanguageString(v.item_description) or ""):lower()
+							//	str = str .. " " .. (GetTFLanguageString(v.item_description) or "")
 							//end
 							if v._item_set then
-								str = str .. " " .. (GetTFLanguageString(TF2Items.item_sets[v._item_set].name) or v._item_set):lower()
+								str = str .. " " .. (GetTFLanguageString(TF2Items.item_sets[v._item_set].name) or v._item_set)
 							end
 							if v._item_collection then
-								str = str .. " " .. (GetTFLanguageString(TF2Items.item_collections[v._item_collection].name) or v._item_collection):lower()
+								str = str .. " " .. (GetTFLanguageString(TF2Items.item_collections[v._item_collection].name) or v._item_collection)
 							end
 							//Add all model paths to the search string so we can search those too
 							local mdls = {}
-							for class, _ in pairs (v.used_by_classes) do
+							for class, slot in pairs (v.used_by_classes) do
 								str = str .. " " .. class
 								for _, mdl in pairs (GetItemModelVisuals({id = k, class = class_longname_to_id[class], style = 0}).models) do
 									if !istable(mdl) then //the only model subtables are attached_models and attached_models_festive, which don't contain anything useful for searches, so skip those
@@ -2656,17 +2656,28 @@ if CLIENT then
 										//mdls[string.Replace(mdl, class, "")] = true //don't include class names in model paths because that clutters up searches for class names with irrelevant multi-class items; this still doesn't work very well because of class-specific equip regions, some internal names, and class-specific model paths with "demo" instead of "demoman", so give up and let players search for class by typing the name just like they can with equip regions
 									end
 								end
+								//shotgun has wacky class-based item slots stored in these values
+								if !isnumber(slot) and slot != v.item_slot and slot != v.anim_slot then
+									str = str .. " " .. slot
+								end
 							end
 							for mdl, _ in pairs (mdls) do
 								str = str .. " " .. string.StripExtension(string.GetFileFromFilename(mdl))
 							end
-							//And equip regions, so players can search something like "beard" and it works intuitively
+							//Add item slots, so players can search for "heavy primary" and so on
+							if v.item_slot then
+								str = str .. " " .. v.item_slot
+							end
+							if v.anim_slot and v.anim_slot != v.item_slot then
+								str = str .. " " .. v.anim_slot
+							end
+							//Add equip regions, so players can search something like "beard" and it works intuitively
 							if v.equip_regions then
 								for e, _ in pairs (v.equip_regions) do
 									str = str .. " " .. e
 								end
 							end
-							v._searchstr = str
+							v._searchstr = str:lower()
 						end
 
 						local found
@@ -4656,9 +4667,22 @@ if CLIENT then
 							ent:SetSkin(skin)
 							table.insert(mdl.models, ent)
 							mdl.Entity = ent
+
+							//attachment models
+							for k, v in ipairs (editor.attached_models.entries) do
+								if v:GetText() != "" then
+									local ent = ClientsideModel(v:GetText(), RENDERGROUP_OTHER)
+									if IsValid(ent) then
+										ent:SetSkin(skin)
+										ent:SetParent(mdl.Entity)
+										ent:AddEffects(EF_BONEMERGE)
+										table.insert(mdl.models, ent)
+									end
+								end
+							end
 						end
 					end
-					//TODO: attachments, options to show wearables instead
+					//TODO: options to show wearables instead
 					//Class model for preview, if enabled
 					if editor.bp_showclass:GetChecked() and class then
 						local ent = ClientsideModel("models/player/" .. classes[class].shortname .. ".mdl", RENDERGROUP_OTHER)
