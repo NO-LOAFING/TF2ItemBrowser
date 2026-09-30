@@ -4631,8 +4631,8 @@ if CLIENT then
 				mdl:Dock(LEFT)
 				bpcontainer:SetHeight(mdl:GetTall())
 				mdl.models = {}
-				//equivalent of CreateItemModelsAndParticles function that populates models with the ones specified by the editor
-				function mdl:GetItemModelInfo()	
+				//equivalent of GetItemModelVisuals function that populates models with the ones specified by the editor
+				function mdl:GetItemModelVisuals()	
 					local _, class = editor.bp_class:GetSelected()
 					if class then
 						class = class_longname_to_id[editor.bp_class.options[class].Value]
@@ -4687,26 +4687,25 @@ if CLIENT then
 					end
 					mdl.models = {}
 
-					local info = self:GetItemModelInfo()
+					local vis = self:GetItemModelVisuals()
 					local _, selected_mdl = editor.bp_mdl:GetSelected()
 					if selected_mdl then
 						selected_mdl = editor.bp_mdl.options[selected_mdl].Value
 					end
-					if !info[selected_mdl] then selected_mdl = nil end
+					if !vis[selected_mdl] then selected_mdl = nil end
 
 					if selected_mdl then
-						local ent = ClientsideModel(info[selected_mdl], RENDERGROUP_OTHER)
+						local ent = ClientsideModel(vis[selected_mdl], RENDERGROUP_OTHER)
 						if IsValid(ent) then
-							ent:SetSkin(info.skin)
+							ent:SetSkin(vis.skin)
 							table.insert(mdl.models, ent)
 							if selected_mdl == "item" then
-								mdl.Entity = ent
-								if info.attached then
-									for k, v in pairs (info.attached) do
+								if vis.attached then
+									for k, v in pairs (vis.attached) do
 										local ent = ClientsideModel(v, RENDERGROUP_OTHER)
 										if IsValid(ent) then
-											ent:SetSkin(info.skin)
-											ent:SetParent(mdl.Entity)
+											ent:SetSkin(vis.skin)
+											ent:SetParent(mdl.models[1])
 											ent:AddEffects(EF_BONEMERGE)
 											table.insert(mdl.models, ent)
 										end
@@ -4716,8 +4715,8 @@ if CLIENT then
 						end
 					end
 					//Class model for preview, if enabled
-					if editor.bp_showclass:GetChecked() and info.class then
-						local ent = ClientsideModel("models/player/" .. classes[info.class].shortname .. ".mdl", RENDERGROUP_OTHER)
+					if editor.bp_showclass:GetChecked() and vis.class then
+						local ent = ClientsideModel("models/player/" .. classes[vis.class].shortname .. ".mdl", RENDERGROUP_OTHER)
 						if IsValid(ent) then
 							if mdl.models[1] then
 								mdl.models[1]:SetParent(ent)
@@ -4725,9 +4724,9 @@ if CLIENT then
 							end
 							table.insert(mdl.models, 1, ent)
 							for k, v in ipairs (bodygroups) do
-								if editor.bodygroups.checks[k]:GetChecked() or (info.style and info.style.bodygroups:IsVisible() and info.style.bodygroups.checks[k]:GetChecked()) then
+								if editor.bodygroups.checks[k]:GetChecked() or (vis.style and vis.style.bodygroups:IsVisible() and vis.style.bodygroups.checks[k]:GetChecked()) then
 									local val = 1
-									local bg = v.bgs[classes[info.class].longname]
+									local bg = v.bgs[classes[vis.class].longname]
 									if istable(bg) then 
 										val = bg.val
 										bg = bg.name
@@ -4747,6 +4746,7 @@ if CLIENT then
 					if mdl.models[1] then
 						mdl.models[1]:SetAngles(Angle(editor.bp_mdlang:GetText()))
 					end
+					mdl.Entity = mdl.models[1]
 
 					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
 					local cam = DoItemModelCamera(mdl.models, nil, true) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
@@ -4978,9 +4978,9 @@ if CLIENT then
 						old_sel = ""
 					end
 					local options = {}
-					local info = editor.bp:GetItemModelInfo()
+					local vis = editor.bp:GetItemModelVisuals()
 					for k, v in ipairs ({"item", "wearable", "wearable_2"}) do
-						if info[v] then
+						if vis[v] then
 							table.insert(options, {
 								Label = string.NiceName(v),
 								Value = v
@@ -6458,7 +6458,7 @@ if CLIENT then
 		//Modified FirstPersonControls to make camera movement account for the roll rotation of the camera (required by the wacky rotations set by icon_camera)
 		local old_FirstPersonControls = mdl.FirstPersonControls
 		function mdl:FirstPersonControls()
-			if self.UseTurntableMovement then return old_FirstPersonControls(self, mousecode) end
+			if self.UseTurntableMovement then return old_FirstPersonControls(self) end
 
 			local x, y = self:CaptureMouse()
 
@@ -6602,6 +6602,39 @@ if CLIENT then
 
 			//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
 			local cam = DoItemModelCamera(mdl.models, self)
+			//For custom items, use backpack icon camera values, but only if the displayed model matches the one used by the icon
+			if mdl.models[1] and i._customitem_bp and !i._customitem_bp.showclass then
+				local bpmdl = true
+				if i._customitem_bp.mdl then
+					for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+						if self.data.models[v] and i._customitem_bp.mdl != v then
+							bpmdl = false
+							break
+						end
+					end
+				end
+				if bpmdl then
+					local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[i._customitem_bp.class] or self.data.class, team = self.data.team, style = i._customitem_bp.style or self.data.style})
+					if i._customitem_bp.mdl then
+						if vis2.models[i._customitem_bp.mdl] != vis.models[i._customitem_bp.mdl] then 
+							bpmdl = false
+						end
+					else
+						for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+							if vis2.models[v] != vis.models[v] then
+								bpmdl = false
+								break
+							end
+						end
+					end
+					if bpmdl then
+						cam.pos = i._customitem_bp.pos
+						cam.fov = i._customitem_bp.fov
+						cam.ang = i._customitem_bp.ang
+						mdl.models[1]:SetAngles(i._customitem_bp.mdlang)
+					end
+				end
+			end
 			local docamera = mdl.old_cam == nil
 			if mdl.old_cam then
 				for k, v in pairs (cam) do
@@ -6616,8 +6649,6 @@ if CLIENT then
 				mdl:SetFOV(cam.fov)
 				mdl:SetLookAng(Angle(cam.ang))
 				mdl.old_cam = cam
-				//TODO: use camera values from i._customitem_bp, but only if the displayed model matches the one used by the icon
-				//(item, wearable, or wearable 2) and it doesn't use i._customitem_bp.showclass
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
