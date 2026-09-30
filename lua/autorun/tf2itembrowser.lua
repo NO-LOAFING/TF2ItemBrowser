@@ -5080,11 +5080,17 @@ if CLIENT then
 				num:SetMinMax(-math.huge, math.huge) //uncap this, no reason people shouldn't be able to enter level 1337 or other goofy things
 				editor.controls[num] = {
 					Load = function(i)
-						num:SetValue(i.max_ilevel or 1)
+						if i.max_ilevel then 
+							num:SetValue(i.max_ilevel)
+						else
+							num:SetText("")
+						end
 					end,
 					Save = function(i)
-						i.max_ilevel = num:GetValue()
-						i.min_ilevel = num:GetValue()
+						if tonumber(num:GetText()) != nil then //let players leave this blank for random level
+							i.max_ilevel = num:GetValue()
+							i.min_ilevel = num:GetValue()
+						end
 					end
 				}
 				if strs[2] != "" then
@@ -5533,7 +5539,7 @@ if CLIENT then
 			
 			local typeName = GetTFLanguageString(i.item_type_name)
 			if typeName then
-				local level = math.random(i.min_ilevel or 1, i.max_ilevel or 1)
+				local level = math.random(i.min_ilevel or 1, i.max_ilevel or 100)
 
 				//tf2 code has a case here where if an item has no typeName, the attribute "force_level_display" can 
 				//make it use the "ItemTypeDescNoLevel" format (just "Level X") instead of returning nothing (or doing 
