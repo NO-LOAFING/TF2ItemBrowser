@@ -4083,7 +4083,7 @@ if CLIENT then
 
 
 				//Checkboxes to set player bodygroups
-				local box = AddBox(holder.columns[2], GetTFLanguageString("#TF_ImportFile_Bodygroups") or "Bodygroup:")
+				local box = AddBox(holder.columns[2], language.GetPhrase("#bodygroups") .. ":")
 				editor.bodygroups = AddColumnHolder(box, 2, 0)
 				editor.bodygroups:Dock(TOP)
 				editor.bodygroups.checks = {}
@@ -5035,6 +5035,82 @@ if CLIENT then
 
 				local entry = AddTextEntry(box, GetTFLanguageString("#TF_ImportFile_NameLabel" or "Item Name"), nil, "item_name")
 				entry:GetParent():DockMargin(0,0,0,0)
+
+				local lvlstr = GetTFLanguageString("#ItemTypeDesc") or "Level %s1 %s2"
+				local s1 = string.find(lvlstr, "%s1", 1, true)
+				local s2 = string.find(lvlstr, "%s2", 1, true)
+				local lvl_before_type //some languages are formatted as "itemtype level X"
+				if s1 and s2 then lvl_before_type = s1 < s2 end
+				local strs = {}
+				if lvl_before_type then
+					strs = string.Split(lvlstr, "%s1")
+					local _strs2 = string.Split(strs[2], "%s2")
+					strs[2] = nil
+					table.Add(strs, _strs2)
+				else
+					strs = string.Split(lvlstr, "%s2")
+					local _strs2 = string.Split(strs[2], "%s1")
+					strs[2] = nil
+					table.Add(strs, _strs2)
+				end
+				for k, v in ipairs (strs) do
+					strs[k] = string.Trim(v)
+				end
+				local entry = AddTextEntry(box, GetTFLanguageString("#TF_ImportFile_TypeLabel") or "Item Type", nil, "item_type_name")
+				if strs[1] != "" then
+					local label = vgui.Create("DLabel", entry:GetParent())
+					label:SetColor(gui_colors.TanLight)
+					label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					label:SetText(strs[1])
+					label:SizeToContentsX()
+					label:Dock(LEFT)
+					label:DockMargin(0,0,4,0)
+				end
+				local num = TFStyleVGUI("DNumberWang", entry:GetParent(), true)
+				if lvl_before_type then
+					num:Dock(LEFT)
+					num:DockMargin(0,0,4,0)
+				else
+					num:Dock(RIGHT)
+					num:DockMargin(4,0,0,0)
+					num:SetZPos(1)
+				end
+				num:SetWide(50)
+				num:SetDecimals(0)
+				num:SetMinMax(-math.huge, math.huge) //uncap this, no reason people shouldn't be able to enter level 1337 or other goofy things
+				editor.controls[num] = {
+					Load = function(i)
+						num:SetValue(i.max_ilevel or 1)
+					end,
+					Save = function(i)
+						i.max_ilevel = num:GetValue()
+						i.min_ilevel = num:GetValue()
+					end
+				}
+				if strs[2] != "" then
+					local label = vgui.Create("DLabel", entry:GetParent())
+					label:SetColor(gui_colors.TanLight)
+					label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					label:SetText(strs[2])
+					label:SizeToContentsX()
+					if lvl_before_type then
+						label:Dock(LEFT)
+						label:DockMargin(0,0,4,0)
+					else
+						label:Dock(RIGHT)
+						label:DockMargin(4,0,0,0)
+						label:SetZPos(2)
+					end
+				end
+				if strs[3] != "" then
+					local label = vgui.Create("DLabel", entry:GetParent())
+					label:SetColor(gui_colors.TanLight)
+					label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+					label:SetText(strs[3])
+					label:SizeToContentsX()
+					label:Dock(RIGHT)
+					label:DockMargin(4,0,0,0)
+				end
 				
 				local entry = AddMultilineTextEntry(box, string.TrimRight(GetTFLanguageString("#TF_PublishFile_DescLabel") or "Description:", ":"), nil, "item_description")
 
