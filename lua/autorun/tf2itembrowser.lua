@@ -5078,6 +5078,7 @@ if CLIENT then
 				num:SetWide(50)
 				num:SetDecimals(0)
 				num:SetMinMax(-math.huge, math.huge) //uncap this, no reason people shouldn't be able to enter level 1337 or other goofy things
+				AddTFStyleTooltip(num, (GetTFLanguageString("#TF_Duck_Level") or "Level") .. " (leave blank for random level)")
 				editor.controls[num] = {
 					Load = function(i)
 						if i.max_ilevel then 
