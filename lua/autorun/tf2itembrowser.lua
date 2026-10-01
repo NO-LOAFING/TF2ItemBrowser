@@ -4613,9 +4613,11 @@ if CLIENT then
 					if rt == nil or rtmat == nil then MsgN("Failed to create render target TF2ItemBrowser_EditorIconRT; out of memory?") return end
 					//Render the icon texture
 					render.PushRenderTarget(rt, 0, 0, 128, 128)
+					render.OverrideAlphaWriteEnable(true, true)
 					render.SetWriteDepthToDestAlpha(false)
 					render.Clear(0, 0, 0, 0, true, true)
 					DrawItemModels(0, 0, 128, 128, mdl.models, {}, mdl.aLookAngle, mdl.vCamPos, mdl.fFOV)
+					render.OverrideAlphaWriteEnable(false)
 					render.PopRenderTarget()
 					rtmat:SetTexture("$basetexture", rt)
 					surface.SetMaterial(rtmat)
@@ -4743,6 +4745,10 @@ if CLIENT then
 					for _, ent in pairs (mdl.models) do
 						ent:SetNoDraw(true)
 						ent:SetIK(false)
+						//disable jigglebones
+						for i = 0, ent:GetBoneCount() - 1 do
+							ent:ManipulateBoneJiggle(i, 2)
+						end
 					end
 					if mdl.models[1] then
 						mdl.models[1]:SetAngles(Angle(editor.bp_mdlang:GetText()))
@@ -6096,6 +6102,7 @@ if CLIENT then
 				v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(v.ProxyentPaintColor.Override)/255
 			end
 			//Render all models
+			v:SetEyeTarget(CamPos)
 			v:DrawModel()
 			v:FrameAdvance(FrameTime())
 		end
@@ -6511,6 +6518,10 @@ if CLIENT then
 			end
 			ent:SetNoDraw(true)
 			ent:SetIK(false)
+			//disable jigglebones
+			for i = 0, ent:GetBoneCount() - 1 do
+				ent:ManipulateBoneJiggle(i, 2)
+			end
 			table.insert(models, ent)
 		end
 		return models, particles
@@ -8907,6 +8918,7 @@ if CLIENT then
 
 					//Render the icon texture
 					render.PushRenderTarget(rt, 0, 0, 128, 128)
+					render.OverrideAlphaWriteEnable(true, true)
 					local cam
 					if i._customitem_bp then 
 						cam = i._customitem_bp
@@ -8916,6 +8928,7 @@ if CLIENT then
 					render.SetWriteDepthToDestAlpha(false)
 					render.Clear(0, 0, 0, 0, true, true)
 					DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
+					render.OverrideAlphaWriteEnable(false)
 					render.PopRenderTarget()
 
 					local mat = CreateMaterial(rtname, "UnlitGeneric", {
