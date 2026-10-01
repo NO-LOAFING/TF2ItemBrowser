@@ -1438,7 +1438,7 @@ if CLIENT then
 					end
 				end
 			end
-		elseif class == "DButton" then
+		elseif class == "DButton" or class == "DImageButton" then
 			AddTFButtonSounds(pnl)
 			//pnl:SetHeight(30) //backpack page button proportions
 			pnl:SetHeight(36) //standard button proportions
@@ -4682,6 +4682,7 @@ if CLIENT then
 				function mdl:Refresh(cam_override)
 					if !self.HasLoaded then return end
 
+					local previously_had_model = IsValid(mdl.models[1])
 					for k, v in ipairs (mdl.models) do
 						if IsValid(v) then v:Remove() end
 					end
@@ -4748,28 +4749,17 @@ if CLIENT then
 					end
 					mdl.Entity = mdl.models[1]
 
-					//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
-					local cam = DoItemModelCamera(mdl.models, nil, true) //no icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
-					local docamera = mdl.old_cam == nil
-					if mdl.old_cam then
-						for k, v in pairs (cam) do
-							if v != mdl.old_cam[k] then
-								docamera = true
-								break
-							end
-						end
-					end
-					if docamera then
-						mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
-						mdl:SetFOV(cam.fov)
-						mdl:SetLookAng(Angle(cam.ang))
-						mdl.old_cam = cam
-					end
 					//Upon first loading, apply the values of the pos/ang/fov settings instead if applicable, without touching the old_cam stuff
 					if cam_override then
 						mdl:SetCamPos(Vector(cam_override.pos))
 						mdl:SetFOV(cam_override.fov)
 						mdl:SetLookAng(Angle(cam_override.ang))
+					//Otherwise, we only want to reset the camera position when there was previously no model at all -
+					//this means when the player enters a model for the first time, the camera gets moved into a useful position
+					//to show up in the icon, but subsequently changing settings like class model or style won't clobber any
+					//changes they make to the position.
+					elseif !previously_had_model then
+						editor.bp_buttons.buttons[1]:DoClick() //best guess
 					end
 				end
 				//to avoid unnecessary Refresh calls as other elements are loading, make sure to do this last
@@ -4869,6 +4859,77 @@ if CLIENT then
 				function num:OnValueChanged()
 					editor.bp:SetFOV(self:GetValue())
 				end
+
+				local button_container = vgui.Create("Panel", box)
+				editor.bp_buttons = button_container
+				button_container.buttons = {}
+				for k, v in ipairs ({
+					{text = "Best Guess",
+					icon = "icon32/wand.png",
+					func = function()
+						local cam = DoItemModelCamera(editor.bp.models, nil, true) //nil icon panel arg here because there's no item data table to check yet; only consequence of this is that we can't use the item_camera attachment, which we don't want anyway
+						editor.bp:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
+						editor.bp:SetFOV(cam.fov)
+						editor.bp:SetLookAng(Angle(cam.ang))
+					end},
+					{text = "Front",
+					icon = "icon32/hand_point_090.png",
+					func = function()
+						local campos = Vector(-200, 0, 0)
+						editor.bp:SetCamPos(campos)
+						editor.bp:SetFOV(45)
+						editor.bp:SetLookAng((campos * -1):Angle())
+					end},
+					{text = "Above",
+					icon = "icon32/hand_property.png",
+					func = function()
+						local campos = Vector(0, 0, 200)
+						editor.bp:SetCamPos(campos)
+						editor.bp:SetFOV(45)
+						editor.bp:SetLookAng((campos * -1):Angle())
+					end},
+					{text = "Right",
+					icon = "icon32/hand_point_180.png",
+					func = function()
+						local campos = Vector(0, 200, 0)
+						editor.bp:SetCamPos(campos)
+						editor.bp:SetFOV(45)
+						editor.bp:SetLookAng((campos * -1):Angle())
+					end},
+					{text = "Center",
+					icon = "icon32/hand_point_090.png",
+					func = function()
+						editor.bp:SetCamPos(vector_origin)
+						editor.bp:SetFOV(45)
+						editor.bp:SetLookAng(Angle( 0, -180, 0 ))
+					end},
+				}) do
+					local button = TFStyleVGUI("DImageButton", button_container)
+					button_container.buttons[k] = button
+					button:SetImage(v.icon)
+					function button:PerformLayout()
+						local size = math.min(self:GetSize()) - 4
+						self.m_Image:SetSize(size,size)
+						self.m_Image:Center()
+					end
+					function button:DoClick() v.func() end
+					button:Dock(LEFT)
+					if k > 1 then
+						button:DockMargin(8,0,0,0)
+					end
+					AddTFStyleTooltip(button, v.text)
+				end
+				function button_container:PerformLayout(w, h)
+					w = (w - (8*4)) / 5
+					for k, v in ipairs (button_container.buttons) do
+						v:SetWide(w)
+					end
+					//self.label1:SetPos(0,0)
+					//self.label2:SetPos(w+8,0)
+				end
+				button_container:SetTall(24)
+				button_container:Dock(TOP)
+				button_container:DockMargin(0,8,0,0)
 
 				local drop = AddDropdown(box, "Class to show", "_customitem_bp", "class", {})
 				editor.bp_class = drop
@@ -6685,39 +6746,6 @@ if CLIENT then
 
 			//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
 			local cam = DoItemModelCamera(mdl.models, self)
-			//For custom items, use backpack icon camera values, but only if the displayed model matches the one used by the icon
-			if mdl.models[1] and i._customitem_bp and !i._customitem_bp.showclass then
-				local bpmdl = true
-				if i._customitem_bp.mdl then
-					for k, v in pairs ({"item", "wearable", "wearable_2"}) do
-						if self.data.models[v] and i._customitem_bp.mdl != v then
-							bpmdl = false
-							break
-						end
-					end
-				end
-				if bpmdl then
-					local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[i._customitem_bp.class] or self.data.class, team = self.data.team, style = i._customitem_bp.style or self.data.style})
-					if i._customitem_bp.mdl then
-						if vis2.models[i._customitem_bp.mdl] != vis.models[i._customitem_bp.mdl] then 
-							bpmdl = false
-						end
-					else
-						for k, v in pairs ({"item", "wearable", "wearable_2"}) do
-							if vis2.models[v] != vis.models[v] then
-								bpmdl = false
-								break
-							end
-						end
-					end
-					if bpmdl then
-						cam.pos = i._customitem_bp.pos
-						cam.fov = i._customitem_bp.fov
-						cam.ang = i._customitem_bp.ang
-						mdl.models[1]:SetAngles(i._customitem_bp.mdlang)
-					end
-				end
-			end
 			local docamera = mdl.old_cam == nil
 			if mdl.old_cam then
 				for k, v in pairs (cam) do
@@ -6728,10 +6756,51 @@ if CLIENT then
 				end
 			end
 			if docamera then
+				mdl.old_cam = table.Copy(cam)
+				//For custom items, use backpack icon camera values, but only if the displayed model matches the one used by the icon.
+				//This override happens after the old_cam check, so that alternative models which return the same results from
+				//DoItemModelCamera (i.e. styles that only change material) can also use the backpack icon camera values.
+				if mdl.models[1] and i._customitem_bp and !i._customitem_bp.showclass then
+					local bpmdl = true
+					if i._customitem_bp.mdl then
+						for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+							if self.data.models[v] and i._customitem_bp.mdl != v then
+								bpmdl = false
+								break
+							end
+						end
+					end
+					if bpmdl then
+						local vis2 = GetItemModelVisuals({id = self.data.id, class = class_longname_to_id[i._customitem_bp.class] or self.data.class, team = self.data.team, style = i._customitem_bp.style or self.data.style})
+						if i._customitem_bp.mdl then
+							if vis2.models[i._customitem_bp.mdl] != vis.models[i._customitem_bp.mdl] then 
+								bpmdl = false
+							end
+						else
+							for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+								if vis2.models[v] != vis.models[v] then
+									bpmdl = false
+									break
+								end
+							end
+						end
+						if bpmdl then
+							cam = i._customitem_bp
+							mdl.mdlang = i._customitem_bp.mdlang
+						end
+					end
+					if !bpmdl then
+						mdl.mdlang = nil
+					end
+				else
+					mdl.mdlang = nil
+				end
 				mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
 				mdl:SetFOV(cam.fov)
 				mdl:SetLookAng(Angle(cam.ang))
-				mdl.old_cam = cam
+			end
+			if mdl.mdlang and IsValid(mdl.models[1]) then
+				mdl.models[1]:SetAngles(mdl.mdlang)
 			end
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
