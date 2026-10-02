@@ -2830,10 +2830,20 @@ if CLIENT then
 						end
 					end
 				end
-				if self.IconRenderQueue[1] then
-					if self.IconRenderQueue[1]() then
-						table.remove(self.IconRenderQueue, 1)
+				for k, v in ipairs (self.IconRenderQueue) do
+					if IsValid(v.pnl) then
+						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
+						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
+							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
+							table.remove(self.IconRenderQueue, k)
+							v.pnl.IconRenderToQueue = true //requeue it if the icon moves back onscreen
+							continue
+						end
 					end
+					if v.func() then //func will return false if it's not ready to render yet (i.e. waiting for paintkit texture to generate)
+						table.remove(self.IconRenderQueue, k)
+					end
+					break //only render one icon per frame to prevent bad perf
 				end
 				//if our selected entity is deleted, then update the attached item list
 				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
@@ -5314,7 +5324,7 @@ if CLIENT then
 		//remove self from icon render targets; we'll re-add ourself later if needed
 		local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 		if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
-		if data.wp.enabled or data.models.attached_festive or i._customitem_bp then
+		if data.wp.enabled or data.models.attached_festive or (i._customitem_bp and !self.mat) then //paintkits and festivizers might need to re-render if a setting changed, but custom items never need to render more than once
 			//Tell our paint func to queue rendering a custom rendertarget icon
 			self.mat = nil
 			self.ImageToQueue = nil
@@ -8474,7 +8484,7 @@ if CLIENT then
 									ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
 									ent:SetNoDraw(true)
 								end
-								table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
+								table.insert(TF2ItemBrowser.IconRenderQueue, {func = function()
 									//if ent is invalid, then remove from the queue
 									if !IsValid(ent) then
 										return true
@@ -8565,7 +8575,7 @@ if CLIENT then
 									end
 									ent:Remove()
 									return true
-								end)
+								end})
 								icon:SetMaterial(spinner:GetName())
 							end
 							if file.Exists(iconpath, "DATA") then
@@ -8811,7 +8821,8 @@ if CLIENT then
 			data.fx = 0
 			data.paint.enabled = false
 			data.crit.enabled = false
-			pe_unusual = 0
+			data.pe_unusual = 0
+			data.pe_def = false
 			if i._customitem_bp then
 				if i._customitem_bp.style then
 					data.style = i._customitem_bp.style
@@ -8828,37 +8839,65 @@ if CLIENT then
 				end
 			end
 
-			self.IconRenderToQueue = nil
-			local models, particles = self:CreateItemModelsAndParticles(function()
-				self.IconRenderToQueue = true //bail function
-			end, data, true) //disable fallback model
+			local models, particles
+			local function CleanUpModels()
+				if models then
+					for k, v in ipairs (models) do
+						if IsValid(v) then v:Remove() end
+					end
+				end
+			end
 			
-			if i._customitem_bp then
-				//inject class model for i._customitem_bp.showclass
-				if i._customitem_bp.showclass then
-					local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
-					if IsValid(ent) then
-						if models[1] then
-							models[1]:SetParent(ent)
-							models[1]:AddEffects(EF_BONEMERGE)
+			self.IconRenderToQueue = nil
+			table.insert(TF2ItemBrowser.IconRenderQueue, {pnl = self, func = function()
+				//if icon no longer exists, then remove from the queue
+				if !IsValid(self) then
+					CleanUpModels()
+					return true
+				end
+
+				if !models then
+					models, particles = self:CreateItemModelsAndParticles(nil, data, true) //disable fallback model
+					//particles don't play well with rendertargets, so we disabled everything in data that should cause them 
+					//to be added, but make absolutely sure to remove any existing particles just in case we missed one.
+					if particles then
+						for k, v in ipairs (particles) do
+							if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
 						end
-						table.insert(models, 1, ent)
-						for k, v in pairs (GetItemModelVisuals(data).ply_bg) do
-							if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-							ent:SetBodygroup(k, v)
+					end
+					if models and i._customitem_bp then
+						//inject class model for i._customitem_bp.showclass
+						if i._customitem_bp.showclass then
+							local ent = ClientsideModel("models/player/" .. classes[data.class].shortname .. ".mdl", RENDERGROUP_OTHER)
+							if IsValid(ent) then
+								if models[1] then
+									models[1]:SetParent(ent)
+									models[1]:AddEffects(EF_BONEMERGE)
+								end
+								table.insert(models, 1, ent)
+								for k, v in pairs (GetItemModelVisuals(data).ply_bg) do
+									if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+									ent:SetBodygroup(k, v)
+								end
+							end
+						end
+						//use model angle specified in table
+						if IsValid(models[1]) then
+							models[1]:SetAngles(i._customitem_bp.mdlang)
 						end
 					end
 				end
-				//use model angle specified in table
-				if IsValid(models[1]) then
-					models[1]:SetAngles(i._customitem_bp.mdlang)
-				end
-			end
 
-			if models then
+				//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
+				if table.Count(models) == 0 then
+					self.no_image = true
+					CleanUpModels()
+					return true
+				end
+
 				local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 				if !rtkey then
-					for i = 1, 128 do
+					for i = 1, 8192 do //ridiculous max number of simultaneous rt icons; this is just a safeguard to not generate infinite textures in case this really screws up somehow
 						//get first nil key we can find; as icons are removed from this list, they can leave gaps for us to take
 						if TF2ItemBrowser_IconRTs[i] == nil then
 							TF2ItemBrowser_IconRTs[i] = self
@@ -8867,7 +8906,7 @@ if CLIENT then
 						end
 					end
 				end
-				if rtkey == nil then return end
+				if rtkey == nil then return false end
 				local rtname = "TF2ItemBrowser_IconRT_" .. tostring(rtkey)
 				local rt = GetRenderTarget(rtname, 128, 128)
 				--[[local rt = GetRenderTargetEx(rtname, //same texture parameters as all tf2 backpack icon vtfs; commented out because DXT5 keeps generating solid black textures, and using BGRA8888 looks the same as default
@@ -8882,76 +8921,49 @@ if CLIENT then
 					0,
 					IMAGE_FORMAT_BGRA8888//15 //IMAGE_FORMAT_DXT5 	
 				)]]
-				if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return end
+				if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return false end
 
-				local function CleanUpModelsAndParticles()
-					for k, v in ipairs (models) do
-						if IsValid(v) then v:Remove() end
-					end
-					for k, v in ipairs (particles) do
-						if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
+				//Don't render the icon until the paintkit material is no longer a placeholder
+				if self.data.wp.enabled then
+					local wp_state = WP.Materials.GetForEntity(models[1])
+					if wp_state == nil then
+						//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
+						//caused by removing an ent with a WP material), then reinstantiate it and try again
+						WP.Materials.Apply(models[1], models[1].instance)
+						return false
+					elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+						return false
 					end
 				end
 
-				table.insert(TF2ItemBrowser.IconRenderQueue, 1, function()
-					//if ent is invalid, then remove from the queue
-					if !models then
-						return true
-					end
-					//if icon no longer exists, then remove from the queue
-					if !IsValid(self) then
-						CleanUpModelsAndParticles()
-						return true
-					end
-					//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
-					if table.Count(models) == 0 then
-						self.no_image = true
-						CleanUpModelsAndParticles()
-						return true
-					end
+				//Render the icon texture
+				render.PushRenderTarget(rt, 0, 0, 128, 128)
+				render.OverrideAlphaWriteEnable(true, true)
+				local cam
+				if i._customitem_bp then 
+					cam = i._customitem_bp
+				else
+					cam = DoItemModelCamera(models, self)
+				end
+				render.SetWriteDepthToDestAlpha(false)
+				render.Clear(0, 0, 0, 0, true, true)
+				DrawItemModels(0, 0, 128, 128, models, {}, cam.ang, cam.pos, cam.fov)
+				render.OverrideAlphaWriteEnable(false)
+				render.PopRenderTarget()
 
-					//Don't render the icon until the paintkit material is no longer a placeholder
-					if self.data.wp.enabled then
-						local wp_state = WP.Materials.GetForEntity(models[1])
-						if wp_state == nil then
-							//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
-							//caused by removing an ent with a WP material), then reinstantiate it and try again
-							WP.Materials.Apply(models[1], models[1].instance)
-							return false
-						elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
-							return false
-						end
-					end
+				local mat = CreateMaterial(rtname, "UnlitGeneric", {
+					["$basetexture"] = "color/white",
+					["$translucent"] = "1",
+					["$vertexcolor"] = "1"
+				})
+				mat:SetTexture("$basetexture", rt)
+				//self:SetMaterial("!" .. rtname)
+				self.mat = mat
+				self.mat_smallericon = !isstring(self.data.id) //we only want to use the smaller icons for weapon skins/festives to make them match TF2, not our custom items
 
-					//Render the icon texture
-					render.PushRenderTarget(rt, 0, 0, 128, 128)
-					render.OverrideAlphaWriteEnable(true, true)
-					local cam
-					if i._customitem_bp then 
-						cam = i._customitem_bp
-					else
-						cam = DoItemModelCamera(models, self)
-					end
-					render.SetWriteDepthToDestAlpha(false)
-					render.Clear(0, 0, 0, 0, true, true)
-					DrawItemModels(0, 0, 128, 128, models, particles, cam.ang, cam.pos, cam.fov)
-					render.OverrideAlphaWriteEnable(false)
-					render.PopRenderTarget()
-
-					local mat = CreateMaterial(rtname, "UnlitGeneric", {
-						["$basetexture"] = "color/white",
-						["$translucent"] = "1",
-						["$vertexcolor"] = "1"
-					})
-					mat:SetTexture("$basetexture", rt)
-					//self:SetMaterial("!" .. rtname)
-					self.mat = mat
-					self.mat_smallericon = !isstring(self.data.id) //we only want to use the smaller icons for weapon skins/festives to make them match TF2, not our custom items
-
-					CleanUpModelsAndParticles()
-					return true
-				end)
-			end
+				CleanUpModels()
+				return true
+			end})
 		elseif !self.no_image then
 			//show loading icon
 			surface.SetMaterial(spinner)
