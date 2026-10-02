@@ -351,6 +351,13 @@ local function InheritPrefabValues(k, v, ptab, ptabname)
 	end
 end
 for k, v in pairs (s.items) do
+	if !istable(v) then
+		//check for bad non-table entries in items table, because some doofus at valve put the sounds for 31651 Grenadier's Goggles outside the item
+		if GetConVarNumber("developer") >= 1 then
+			MsgN("TF2ItemBrowser: items table contains bad non-table entry '", v, "', rejecting")
+		end
+		continue
+	end
 	tab[k] = {}
 	InheritPrefabValues(k, v, v, "")
 end
