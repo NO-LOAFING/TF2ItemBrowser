@@ -5114,6 +5114,330 @@ if CLIENT then
 					end
 				}
 
+				local drop = AddDropdown(box, "Select sound", nil, "mouse_pressed_sound", {
+					{
+						Label = "Alien",
+						Value = "ui/item_as_parasite_pickup.wav",
+					},
+					{
+						Label = "Bag",
+						Value = "ui/item_bag_pickup.wav",
+					},
+					{
+						Label = "Bald head",
+						Value = "ui/item_bald_head_pickup.wav",
+					},
+					{
+						Label = "Bottle",
+						Value = "ui/item_bottle_pickup.wav",
+					},
+					{
+						Label = "Boxing gloves",
+						Value = "ui/item_boxing_gloves_pickup.wav",
+					},
+					{
+						Label = "Cardboard",
+						Value = "ui/item_cardboard_pickup.wav",
+					},
+					{
+						Label = "ConTracker",
+						Value = "ui/item_contract_tracker_pickup.wav",
+					},
+					{
+						Label = "Crate",
+						Value = "ui/item_crate_pickup.wav",
+					},
+					{
+						Label = "Default",
+						Value = nil, //"ui/item_default_pickup.wav",
+					},
+					{
+						Label = "Dueling Mini-Game",
+						Value = "ui/item_dueling_pistols_pickup.wav",
+					},
+					{
+						Label = "Gooey",
+						Value = "ui/item_gooey_pickup.wav",
+					},
+					{
+						Label = "Gun, heavy",
+						Value = "ui/item_heavy_gun_pickup.wav",
+					},
+					{
+						Label = "Gun, light",
+						Value = "ui/item_light_gun_pickup.wav",
+					},
+					{
+						Label = "Hat",
+						Value = "ui/item_hat_pickup.wav",
+					},
+					{
+						Label = "Helmet",
+						Value = "ui/item_helmet_pickup.wav",
+					},
+					{
+						Label = "Knife, large",
+						Value = "ui/item_knife_large_pickup.wav",
+					},
+					{
+						Label = "Knife, small",
+						Value = "ui/item_knife_small_pickup.wav",
+					},
+					{
+						Label = "Leather",
+						Value = "ui/item_leather_pickup.wav",
+					},
+					{
+						Label = "Medal",
+						Value = "ui/item_medal_pickup.wav",
+					},
+					{
+						Label = "Metal pot",
+						Value = "ui/item_metal_pot_pickup.wav",
+					},
+					{
+						Label = "Metal scrap",
+						Value = "ui/item_metal_scrap_pickup.wav",
+					},
+					{
+						Label = "Metal, tiny",
+						Value = "ui/item_metal_tiny_pickup.wav",
+					},
+					{
+						Label = "Metal weapon",
+						Value = "ui/item_metal_weapon_pickup.wav",
+					},
+					{
+						Label = "Night vision goggles",
+						Value = "ui/item_nvg_pickup.wav",
+					},
+					{
+						Label = "Pack",
+						Value = "ui/item_pack_pickup.wav",
+					},
+					{
+						Label = "Paint can",
+						Value = "ui/item_paint_can_pickup.wav",
+					},
+					{
+						Label = "Paper",
+						Value = "ui/item_paper_pickup.wav",
+					},
+					{
+						Label = "Pyroland",
+						Value = "ui/item_mtp_pickup.wav",
+					},
+					{
+						Label = "Robot arm",
+						Value = "ui/item_robot_arm_pickup.wav",
+					},
+					{
+						Label = "Rubber",
+						Value = "ui/item_rubber_pickup.wav",
+					},
+					{
+						Label = "Sandwich",
+						Value = "ui/item_sandwich_drop.wav", //yes, pickup and drop are swapped for this one
+					},
+					{
+						Label = "Shovel",
+						Value = "ui/item_shovel_pickup.wav",
+					},
+					{
+						Label = "Soda can",
+						Value = "ui/item_soda_can_pickup.wav",
+					},
+					{
+						Label = "Umbrella",
+						Value = "ui/item_umbrella_pickup.wav",
+					},
+					{
+						Label = "Watch",
+						Value = "ui/item_watch_pickup.wav",
+					},
+					{
+						Label = "Wooden pole",
+						Value = "ui/item_wood_pole_pickup.wav",
+					},
+					{
+						Label = "Wooden weapon",
+						Value = "ui/item_wood_weapon_pickup.wav",
+					},
+				}, 9) //"default" by default
+				drop:GetParent():DockMargin(0,betweencategories,0,0)
+				function drop:OnSelect()
+					if drop.PlaySounds then
+						local _, sel = drop:GetSelected()
+						if sel then
+							surface.PlaySound(drop.options[sel].Value or "ui/item_default_pickup.wav")
+						end
+					end
+				end
+				local old_OnMenuOpened = drop.OnMenuOpened
+				function drop:OnMenuOpened(menu)
+					drop:OnSelect()
+					old_OnMenuOpened(self, menu)
+				end
+				local old_Load = editor.controls[drop].Load
+				editor.controls[drop].Load = function(i)
+					old_Load(i)
+					drop.PlaySounds = true //don't play sound when selecting a value for the first time
+				end
+
+				local drop = AddDropdown(box, "Drop sound", nil, "drop_sound", {
+					{
+						Label = "Alien",
+						Value = "ui/item_as_parasite_drop.wav",
+					},
+					{
+						Label = "Bag",
+						Value = "ui/item_bag_drop.wav",
+					},
+					{
+						Label = "Bald head",
+						Value = "ui/item_bald_head_pickup.wav",
+					},
+					{
+						Label = "Bottle",
+						Value = "ui/item_bottle_drop.wav",
+					},
+					{
+						Label = "Boxing gloves",
+						Value = "ui/item_boxing_gloves_drop.wav",
+					},
+					{
+						Label = "Cardboard",
+						Value = "ui/item_cardboard_drop.wav",
+					},
+					{
+						Label = "ConTracker",
+						Value = "ui/item_contract_tracker_drop.wav",
+					},
+					{
+						Label = "Crate",
+						Value = "ui/item_crate_drop.wav",
+					},
+					{
+						Label = "Default",
+						Value = nil, //"ui/item_default_drop.wav",
+					},
+					{
+						Label = "Gooey",
+						Value = "ui/item_gooey_pickup.wav",
+					},
+					{
+						Label = "Gun, heavy",
+						Value = "ui/item_heavy_gun_drop.wav",
+					},
+					{
+						Label = "Gun, light",
+						Value = "ui/item_light_gun_drop.wav",
+					},
+					{
+						Label = "Hat",
+						Value = "ui/item_hat_drop.wav",
+					},
+					{
+						Label = "Helmet",
+						Value = "ui/item_helmet_drop.wav",
+					},
+					{
+						Label = "Leather",
+						Value = "ui/item_leather_pickup.wav",
+					},
+					{
+						Label = "Medal",
+						Value = "ui/item_medal_pickup.wav",
+					},
+					{
+						Label = "Metal pot",
+						Value = "ui/item_metal_pot_drop.wav",
+					},
+					//"ui/item_metal_pot_pickup.wav", //only used as drop sound by 31035 The Dumb Bell because it's sort of bell-like
+					{
+						Label = "Metal scrap",
+						Value = "ui/item_metal_scrap_drop.wav",
+					},
+					{
+						Label = "Metal, tiny",
+						Value = "ui/item_metal_tiny_drop.wav",
+					},
+					{
+						Label = "Metal weapon",
+						Value = "ui/item_metal_weapon_drop.wav",
+					},
+					{
+						Label = "Pack",
+						Value = "ui/item_pack_drop.wav",
+					},
+					//"ui/item_pack_pickup.wav", //only used as drop sound by 5611 Voodoo-Cursed Bag Of Quicklime, might be a mistake
+					{
+						Label = "Paint can",
+						Value = "ui/item_paint_can_pickup.wav",
+					},
+					{
+						Label = "Paper",
+						Value = "ui/item_paper_pickup.wav",
+					},
+					{
+						Label = "Pyroland",
+						Value = "ui/item_mtp_drop.wav",
+					},
+					{
+						Label = "Robot arm",
+						Value = "ui/item_robot_arm_drop.wav",
+					},
+					{
+						Label = "Rubber",
+						Value = "ui/item_rubber_pickup.wav",
+					},
+					{
+						Label = "Sandwich",
+						Value = "ui/item_sandwich_pickup.wav", //yes, pickup and drop are swapped for this one
+					},
+					{
+						Label = "Shovel",
+						Value = "ui/item_shovel_drop.wav",
+					},
+					{
+						Label = "Soda can",
+						Value = "ui/item_soda_can_drop.wav",
+					},
+					{
+						Label = "Umbrella",
+						Value = "ui/item_umbrella_pickup.wav",
+					},
+					{
+						Label = "Watch",
+						Value = "ui/item_watch_drop.wav",
+					},
+					{
+						Label = "Wooden pole",
+						Value = "ui/item_wood_pole_drop.wav",
+					},
+					{
+						Label = "Wooden weapon",
+						Value = "ui/item_wood_weapon_drop.wav",
+					},
+				}, 9) //"default" by default
+				function drop:OnSelect()
+					if drop.PlaySounds then
+						local _, sel = drop:GetSelected()
+						if sel then
+							surface.PlaySound(drop.options[sel].Value or "ui/item_default_drop.wav")
+						end
+					end
+				end
+				local old_OnMenuOpened = drop.OnMenuOpened
+				function drop:OnMenuOpened(menu)
+					drop:OnSelect()
+					old_OnMenuOpened(self, menu)
+				end
+				local old_Load = editor.controls[drop].Load
+				editor.controls[drop].Load = function(i)
+					old_Load(i)
+					drop.PlaySounds = true //don't play sound when selecting a value for the first time
+				end
 
 				local box = AddBox(holder.columns[3], language.GetPhrase("#information") .. ":")
 
