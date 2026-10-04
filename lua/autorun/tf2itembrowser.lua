@@ -3427,47 +3427,73 @@ if CLIENT then
 					_pnl:Dock(TOP)
 					combo:SetSortItems(false)
 					function combo:PopulateOptions(options)
+						local _, old_sel
+						if combo.options then
+							_, old_sel = combo:GetSelected()
+							if old_sel and combo:GetParent():IsVisible() then
+								old_sel = combo.options[old_sel].Value
+							else
+								old_sel = ""
+							end
+						end
 						combo:Clear()
 						combo.options = options
 						for k, v in ipairs (combo.options) do
 							if combo.options[k].PrependSpacer then combo:AddSpacer() end
 							combo.options[k].id = combo:AddChoice(v.Label, k)
 						end
-					end
-					combo:PopulateOptions(options)
-					editor.controls[combo] = {
-						Load = function(i)
-							if table.Count(combo.options) == 0 then return end
-							local sel
-							if subtable then
-								i = i[subtable]
-							end
-							if i then
-								for k, v in ipairs (combo.options) do
-									if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
-										sel = v.id
-										//don't break, multiple options can return true and we want to choose the lowermost one
+						if #options > 0 then
+							if old_sel then
+								//Reselect the previously selected option if it still exists, otherwise select the first one
+								for k, v in ipairs (options) do
+									if v.Value == old_sel then
+										combo:ChooseOptionID(v.id)
+										old_sel = nil
+										break
 									end
 								end
+								if old_sel then combo:ChooseOptionID(default_option_id or 1) end
+							else
+								combo:ChooseOptionID(default_option_id or 1)
 							end
-							if sel == nil then sel = (default_option_id or 1) end
-							combo:ChooseOptionID(sel)
-						end,
-						Save = function(i)
-							if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
-							local _, opt = combo:GetSelected()
-							if combo.options[opt].Value then
+						end
+					end
+					combo:PopulateOptions(options or {})
+					if key_to_set then
+						editor.controls[combo] = {
+							Load = function(i)
+								if table.Count(combo.options) == 0 then return end
+								local sel
 								if subtable then
-									i[subtable] = i[subtable] or {}
-									i[subtable][key_to_set] = combo.options[opt].Value
-								else
-									i[key_to_set] = combo.options[opt].Value
+									i = i[subtable]
 								end
-							elseif combo.options[opt].Save then 
-								combo.options[opt].Save(i)
-							end
-						end,
-					}
+								if i then
+									for k, v in ipairs (combo.options) do
+										if (v.Value and i[key_to_set] == v.Value) or (v.Load and v.Load(i) == true) then
+											sel = v.id
+											//don't break, multiple options can return true and we want to choose the lowermost one
+										end
+									end
+								end
+								if sel == nil then sel = (default_option_id or 1) end
+								combo:ChooseOptionID(sel)
+							end,
+							Save = function(i)
+								if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
+								local _, opt = combo:GetSelected()
+								if combo.options[opt].Value then
+									if subtable then
+										i[subtable] = i[subtable] or {}
+										i[subtable][key_to_set] = combo.options[opt].Value
+									else
+										i[key_to_set] = combo.options[opt].Value
+									end
+								elseif combo.options[opt].Save then 
+									combo.options[opt].Save(i)
+								end
+							end,
+						}
+					end
 					return combo
 				end
 
@@ -3715,6 +3741,97 @@ if CLIENT then
 					//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
 				}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
 
+				//Dropdowns for equip region - this creates as many dropdowns as needed, 
+				//adding an empty one to the list when the existing ones are all filled
+				local pnl = vgui.Create("DSizeToContents", box)
+				pnl:Dock(TOP)
+				pnl:DockMargin(0,betweencategories-betweenitems,0,0)
+				editor.equip_regions = pnl
+				pnl.drops = {}
+				function pnl:GetOptions()
+					local options = {}
+					table.insert(options, {Label = str_none, Value = "(none)"}) //PopulateOptions old_sel code doesn't like nil values, call the empty value "(none)" instead
+					for classid, class in ipairs (classes) do //add class-based equip regions in class order
+						if !editor.classes.checks[class.longname] or editor.classes.checks[class.longname]:GetChecked() then
+							for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
+								table.insert(options, {Label = string.NiceName(v), Value = v, PrependSpacer = (k == 1)})
+							end
+						end
+					end
+					return options
+				end
+				function pnl:UpdateDropdowns()
+					//Rebuild the available options to show equip regions for the currently selected classes
+					local options = pnl:GetOptions()
+					for k, v in ipairs (pnl.drops) do
+						v.IsBuilt = nil
+						v:PopulateOptions(options)
+						v.IsBuilt = true
+					end
+					//Clear out blank dropdowns except the last one
+					local drops_to_remove = {}
+					for k, v in ipairs (pnl.drops) do
+						if v:GetSelectedID() == 1 and k != #pnl.drops then drops_to_remove[k] = v end
+					end
+					for k, v in pairs (drops_to_remove) do
+						v:GetParent():Remove()
+						table.remove(pnl.drops, k)
+					end
+					for k, v in ipairs (pnl.drops) do
+						v:GetParent():Dock(TOP)
+					end
+					//Make sure we always have a blank dropdown at the end of the list
+					if #pnl.drops == 0 or pnl.drops[#pnl.drops]:GetSelectedID() != 1 then
+						local drop = pnl:AddDropdown(options)
+						drop.IsBuilt = true
+					end
+					for k, v in pairs (pnl.drops) do
+						local text = GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region"
+						if k > 1 then
+							text = text .. " " .. tostring(k)
+						end
+						v:GetParent().Label:SetText(text)
+					end
+				end
+				function pnl:AddDropdown(options)
+					local drop = AddDropdown(pnl, "", nil, nil, options)
+					table.insert(pnl.drops, drop)
+					function drop:OnSelect()
+						if self.IsBuilt then
+							pnl:UpdateDropdowns()
+						end
+					end
+					return drop
+				end
+				pnl.LoadOrder = 1 //make sure classes are loaded first
+				editor.controls[pnl] = {
+					Load = function(i)
+						if i.equip_regions then
+							local options = pnl:GetOptions()
+							for k, v in pairs (i.equip_regions) do
+								local drop = pnl:AddDropdown(options)
+								for k2, v2 in ipairs (options) do
+									if k == v2.Value then
+										drop:ChooseOptionID(v2.id)
+										break
+									end
+								end
+								drop.IsBuilt = true
+							end
+						end
+						pnl:UpdateDropdowns()
+					end,
+					Save = function(i)
+						for k, v in ipairs (pnl.drops) do
+							local _, opt = v:GetSelected()
+							if v.options[opt].Value and v.options[opt].Value != "(none)" then
+								i.equip_regions = i.equip_regions or {}
+								i.equip_regions[v.options[opt].Value] = 1
+							end
+						end
+					end
+				}
+
 
 				//Checkboxes to select classes in any combination
 				local box = AddBox(holder.columns[1], GetTFLanguageString("#Store_ClassFilterLabel") or "Classes:")
@@ -3737,9 +3854,7 @@ if CLIENT then
 					end
 					function check:OnChange(val) //Update all controls that are dependent on class selection
 						//Only show equip regions for the currently selected class
-						for _, pnl in pairs (editor.equip_regions.checks_by_class[i]) do
-							pnl:SetVisible(val)
-						end
+						editor.equip_regions:UpdateDropdowns()
 						//Update visibility of class-specific model fields
 						editor.class_models:UpdateVisibility()
 						//Enable/disable bodygroup controls to only allow bodygroups used by the currently selected classes
@@ -3771,65 +3886,6 @@ if CLIENT then
 						end
 						if table.Count(tab) == 0 then tab = {none = 1} end
 						i.used_by_classes = tab
-					end
-				}
-
-
-				//Checkboxes to set equip region, again in any combination
-				local box = AddBox(holder.columns[1], (GetTFLanguageString("#TF_ImportFile_EquipRegionLabel") or "Equip Region") .. ":" ) //no localization string for "equip regions" plural, oh well
-				editor.equip_regions = AddColumnHolder(box, 2, 0)
-				editor.equip_regions:Dock(TOP)
-				editor.equip_regions.checks_by_class = {}
-				editor.equip_regions.all_checks = {}
-				for classid, class in ipairs (classes) do //add class-based equip regions in class order
-					local checkbox_height
-					for k, v in ipairs (TF2Items.equip_regions_list[classid]) do
-						local check = TFStyleVGUI("DCheckBoxLabel", editor.equip_regions.columns[math.fmod(k-1, 2)+1])
-						check:Dock(TOP)
-						if k > 2 then
-							check:DockMargin(0,betweenitems,0,0)
-						elseif classid > 1 then
-							check:DockMargin(0,betweencategories,0,0) //add space between different classes' equip regions
-						end
-						check:SetText(string.NiceName(v))
-						editor.equip_regions.checks_by_class[classid] = editor.equip_regions.checks_by_class[classid] or {}
-						editor.equip_regions.checks_by_class[classid][v] = check
-						editor.equip_regions.all_checks[v] = check
-						checkbox_height = checkbox_height or check:GetTall()
-						//make sure user can read the text if it's cut off
-						AddTFStyleTooltip(check.Label, check:GetText())
-						local old_IsHovered = check.Label.IsHovered
-						function check.Label:IsHovered(...)
-							return old_IsHovered(self, ...) or check:IsHovered(...)
-						end
-					end
-					//if number of entries is odd, then add another to prevent spacing issues with the next class
-					if editor.equip_regions.checks_by_class[classid] and table.Count(editor.equip_regions.checks_by_class[classid]) % 2 != 0 then
-						local pnl = vgui.Create("Panel", editor.equip_regions.columns[2])
-						pnl:SetHeight(checkbox_height)
-						pnl:Dock(TOP)
-						pnl:DockMargin(0,betweenitems,0,0)
-						editor.equip_regions.checks_by_class[classid]["_FILLER"] = pnl
-					end
-				end
-				editor.controls[editor.equip_regions] = {
-					Load = function(i)
-						for classid, tab in pairs (editor.equip_regions.checks_by_class) do
-							for k, check in pairs (tab) do
-								if check.SetValue then check:SetValue(i.equip_regions and i.equip_regions[k]) end
-								check:SetVisible(classid == 1 or (i.used_by_classes and i.used_by_classes[classes[classid].longname]))
-							end
-						end
-					end,
-					Save = function(i)
-						local tab
-						for k, check in pairs (editor.equip_regions.all_checks) do
-							if check:IsVisible() and check:GetChecked() then
-								tab = tab or {}
-								tab[k] = 1
-							end
-						end
-						if tab then i.equip_regions = tab end
 					end
 				}
 
@@ -4961,12 +5017,6 @@ if CLIENT then
 					editor.bp:Refresh()
 				end
 				function drop:UpdateVisibility()
-					local _, old_sel = drop:GetSelected()
-					if old_sel and drop:GetParent():IsVisible() then
-						old_sel = drop.options[old_sel].Value
-					else
-						old_sel = ""
-					end
 					local options = {}
 					for i = 2, 10 do
 						if editor.classes.checks[classes[i].longname]:GetChecked() then
@@ -4979,17 +5029,6 @@ if CLIENT then
 					drop:GetParent():SetVisible(#options > 1)
 					editor.bp_showclass:SetVisible(#options > 0) //set this here as well
 					drop:PopulateOptions(options)
-					if #options > 0 then
-						//Reselect the previously selected option if it still exists, otherwise select the first one
-						for k, v in ipairs (options) do
-							if v.Value == old_sel then
-								drop:ChooseOptionID(v.id)
-								old_sel = nil
-								break
-							end
-						end
-						if old_sel then drop:ChooseOptionID(1) end
-					end
 					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
@@ -5008,12 +5047,6 @@ if CLIENT then
 					editor.bp:Refresh()
 				end
 				function drop:UpdateVisibility()
-					local _, old_sel = drop:GetSelected()
-					if old_sel and drop:GetParent():IsVisible() then
-						old_sel = drop.options[old_sel].Value
-					else
-						old_sel = ""
-					end
 					local options = {}
 					for i, style in pairs (editor.styles) do
 						local name = style.name:GetText()
@@ -5027,17 +5060,6 @@ if CLIENT then
 					end
 					drop:GetParent():SetVisible(#options > 1)
 					drop:PopulateOptions(options)
-					if #options > 0 then
-						//Reselect the previously selected option if it still exists, otherwise select the first one
-						for k, v in ipairs (options) do
-							if v.Value == old_sel then
-								drop:ChooseOptionID(v.id)
-								old_sel = nil
-								break
-							end
-						end
-						if old_sel then drop:ChooseOptionID(1) end
-					end
 					editor.bp_mdl:UpdateVisibility()
 					editor.bp:Refresh()
 				end
@@ -5055,12 +5077,6 @@ if CLIENT then
 					editor.bp:Refresh()
 				end
 				function drop:UpdateVisibility()
-					local _, old_sel = drop:GetSelected()
-					if old_sel and drop:GetParent():IsVisible() then
-						old_sel = drop.options[old_sel].Value
-					else
-						old_sel = ""
-					end
 					local options = {}
 					local vis = editor.bp:GetItemModelVisuals()
 					for k, v in ipairs ({"item", "wearable", "wearable_2"}) do
@@ -5073,17 +5089,6 @@ if CLIENT then
 					end
 					drop:GetParent():SetVisible(#options > 1)
 					drop:PopulateOptions(options)
-					if #options > 0 then
-						//Reselect the previously selected option if it still exists, otherwise select the first one
-						for k, v in ipairs (options) do
-							if v.Value == old_sel then
-								drop:ChooseOptionID(v.id)
-								old_sel = nil
-								break
-							end
-						end
-						if old_sel then drop:ChooseOptionID(1) end
-					end
 					editor.bp:Refresh()
 				end
 				//make sure to populate the drop's options first before loading, and to do that, we need to load the models first, so wait for those to finish loading
