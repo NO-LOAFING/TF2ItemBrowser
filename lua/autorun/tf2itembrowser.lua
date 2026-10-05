@@ -1215,6 +1215,11 @@ if CLIENT then
 		size = 20, //these are really wimpy units; this matches the size of the item names when spectating players
 		extended = true
 	})
+	surface.CreateFont("TF2ItemBrowser_ItemName_Larger", {
+		font = "TF2 Build",
+		size = 32, //larger variant for custom item editor dialog box headers
+		extended = true
+	})
 	surface.CreateFont("TF2ItemBrowser_ItemDesc", {
 		font = "TF2 Secondary",
 		size = 18, //on the tf2 backpack screen, desc text is 15px high, but to match our smaller item name text, this is 11px high instead
@@ -3332,28 +3337,117 @@ if CLIENT then
 				button_2:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
 				button_2:SizeToContentsX(20)
 				button_2.DoClick = function()
-					//TODO: make nicer gui for this later
-					Derma_StringRequest(
-						"Crappy Placeholder Save Dialog", 
-						"Enter file name to save the item to\n(name only, no file extension)",
-						editor.SavedName,
-						function(name)
-							local i = {}
-							for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
-								if funcs.Save then funcs.Save(i) end
-							end
-							i.name = name
-							editor.SavedName = name //show this same filename in the save window if we open it again
-							MsgN("\n\n\n")
-							PrintTable(i)
+					//Open save gui
+					local back = vgui.Create("DPanel", editor)
+					back:SetSize(editor:GetSize())
+					function back:Paint(w,h)
+						surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
+						surface.DrawRect(0,0,w,h)
+					end
+					local pnl = vgui.Create("DSizeToContents", editor)
+					pnl:DockPadding(20,20,20,20)
+					function pnl:Paint(w, h)
+						GrayDialogBorder(0,0,w,h)
+					end
+					function pnl:OnRemove()
+						back:Remove()
+					end
+					pnl:SetSize(650,400)
+					pnl:Center()
 
-							net.Start("TF2ItemBrowser_NewCustomItem_SendToSv")
-								net.WriteData(util.Compress(util.TableToJSON(i)))
-							net.SendToServer()
-						end,
-						nil,
-						GetTFLanguageString("#TF_SavePreset") or "SAVE"
-					)
+					local text = vgui.Create("DLabel", pnl)
+					text:SetFont("TF2ItemBrowser_ItemName_Larger")
+					text:SetColor(gui_colors.LightRed)
+					text:SetText("Save custom item")
+					text:SetContentAlignment(5)
+					text:Dock(TOP)
+
+					local entry_holder = vgui.Create("Panel", pnl)
+					entry_holder:Dock(TOP)
+					entry_holder:DockMargin(0,betweencategories*1.5,0,0)
+					entry_holder:SetHeight(28)
+					local text = vgui.Create("DLabel", entry_holder)
+					text:SetFont("TF2ItemBrowser_ItemName")
+					text:SetColor(gui_colors.TanLight)
+					text:SetText("Save As:")
+					text:SetContentAlignment(6)
+					text:SizeToContentsX()
+					text:Dock(LEFT)
+					text:DockMargin(0,0,8,0)
+					local _pnl = vgui.Create("DPanel", entry_holder)
+					_pnl:Dock(FILL)
+					_pnl:DockPadding(4,4,4,4)
+					function _pnl:Paint(w,h)
+						draw.RoundedBox(12, 0,0,w,h, color_black)
+					end
+					local entry = TFStyleVGUI("DTextEntry", _pnl)
+					entry:Dock(FILL)
+					entry:SetText(editor.SavedName)
+					entry:RequestFocus()
+					entry:SelectAllText(true)
+					local text = vgui.Create("DLabel", _pnl)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(gui_colors.TanDark)
+					text:SetText("data/tf2itembrowser_customitems/")
+					text:SizeToContentsX()
+					text:Dock(LEFT)
+					text:DockMargin(0,0,4,0)
+					local text = vgui.Create("DLabel", _pnl)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(gui_colors.TanDark)
+					text:SetText(".txt")
+					text:SizeToContentsX()
+					text:Dock(RIGHT)
+					text:DockMargin(4,0,0,0)
+
+					local text = vgui.Create("DLabel", pnl)
+					text:SetWrap(true)
+					text:SetAutoStretchVertical(true)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(gui_colors.TanLight)
+					text:SetText("Tips for developers:\n\n- Custom items in the browser are listed alphabetically by file name. This means you can keep item sets together by giving them a shared prefix, like \"setname_hat\", \"setname_shirt\", and so on.\n\n- To include a custom item in an addon, move the saved file into the addon's \"data_static/tf2itembrowser_customitems/\" folder. If the same file name is in both Gmod's data folder AND an addon's data_static folder, the first one will take priority over the addon.")
+					text:Dock(TOP)
+					text:DockMargin(0,betweencategories*1.5,0,0)
+
+					local button_holder = vgui.Create("Panel", pnl)
+					local button_1 = TFStyleVGUI("DButton", button_holder)
+					button_1:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
+					button_1:SizeToContentsX(20)
+					button_1.DoClick = function()
+						local name = entry:GetText()
+						local i = {}
+						for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
+							if funcs.Save then funcs.Save(i) end
+						end
+						i.name = name
+						editor.SavedName = name //show this same filename in the save window if we open it again
+						MsgN("\n\n\n")
+						PrintTable(i)
+
+						net.Start("TF2ItemBrowser_NewCustomItem_SendToSv")
+							net.WriteData(util.Compress(util.TableToJSON(i)))
+						net.SendToServer()
+
+						pnl:Remove()
+					end
+					local button_2 = TFStyleVGUI("DButton", button_holder)
+					button_2:SetText(string.upper(language.GetPhrase("dialog.cancel")))
+					button_2:SizeToContentsX(20)
+					button_2.DoClick = function()
+						pnl:Remove()
+					end
+					button_holder:Dock(TOP)
+					button_holder:DockMargin(0,betweencategories*1.5,0,0)
+					local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+					function button_holder:PerformLayout(w, h)
+						button_1:SetWide(button_w)
+						button_1:SetPos((w/2)-4-button_w, 0)
+						button_2:SetWide(button_w)
+						button_2:SetPos((w/2)+4, 0)
+						button_holder:SizeToChildren(false, true)
+					end
+
+					pnl:InvalidateLayout(true)
 				end
 				button_holder:Dock(BOTTOM)
 				button_holder:DockMargin(0,8,0,0)
