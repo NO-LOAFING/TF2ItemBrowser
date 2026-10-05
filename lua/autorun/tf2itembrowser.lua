@@ -898,7 +898,7 @@ local function LoadCustomItems()
 	if SERVER or game.SinglePlayer() then //in singleplayer, the client has access to the same data folder as the server, so it can just read the files on its own without networking; LocalPlayer():IsListenServerHost() doesn't work here because the player entity is null when we run this on startup
 		//Clear any old custom items and repopulate them; it's possible that the change we made was removing one of them
 		for k, v in pairs (TF2Items.items) do
-			if isstring(k) then tab[k] = nil end
+			if isstring(k) then TF2Items.items[k] = nil end
 		end
 
 		local function ReadCustomItems(dir, path)
@@ -961,36 +961,58 @@ end
 
 if SERVER then
 	util.AddNetworkString("TF2ItemBrowser_NewCustomItem_SendToSv")
+	util.AddNetworkString("TF2ItemBrowser_DeleteCustomItem_SendToSv")
 	util.AddNetworkString("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
 
 	net.Receive("TF2ItemBrowser_NewCustomItem_SendToSv", function(len, ply)
 		local i = util.Decompress(net.ReadData(len/8), 8000) //max 8kb; these are small text files and definitely shouldn't be this large
-		if !i then return end
 
-		//TODO: permissions; only let certain players create new custom items in multiplayer
+		//TODO: permissions; only let certain players edit custom items in multiplayer
 
 		local success = false
-		local tab = util.JSONToTable(i)
-		if tab and tab.name and tab.name != "" then //an empty string for a name will save properly, but won't load
-			if !file.IsDir("tf2itembrowser_customitems/", "DATA") then 
-				file.CreateDir("tf2itembrowser_customitems/")
+		if i then
+			local tab = util.JSONToTable(i)
+			if tab and tab.name and tab.name != "" then //an empty string for a name will save properly, but won't load
+				if !file.IsDir("tf2itembrowser_customitems/", "DATA") then 
+					file.CreateDir("tf2itembrowser_customitems/")
+				end
+				success = file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
 			end
-			success = file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
 		end
 
-		//Rebuild serverside custom items table with the new item, and make players retrieve it
-		LoadCustomItems()
+		if success then
+			//Rebuild serverside custom items table with the new item, and make players retrieve it
+			LoadCustomItems()
+			net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+				net.WriteBool(false) //Other players don't care about confirmation status for this item
+			net.SendOmit(ply)
+		end
 		//Tell the player who sent the file if saving was successful
 		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
 			net.WriteBool(true)
 			net.WriteBool(success)
 		net.Send(ply)
-		//Other players don't care about confirmation status for this item
+	end)
+
+	net.Receive("TF2ItemBrowser_DeleteCustomItem_SendToSv", function(len, ply)
+		local name = net.ReadString()
+		
+		//TODO: permissions; only let certain players edit custom items in multiplayer
+
+		local success = file.Delete("tf2itembrowser_customitems/" .. name .. ".txt")
+		
 		if success then
+			//Rebuild serverside custom items table without the deleted item, and make players retrieve it
+			LoadCustomItems()
 			net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
-				net.WriteBool(false)
+				net.WriteBool(false) //Other players don't care about confirmation status for this item
 			net.SendOmit(ply)
 		end
+		//Tell the player who sent the file if deletion was successful
+		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+			net.WriteBool(true)
+			net.WriteBool(success)
+		net.Send(ply)
 	end)
 else
 	net.Receive("TF2ItemBrowser_CustomItemsUpdate_SendToCl", function()
@@ -1333,7 +1355,9 @@ if CLIENT then
 	local snd_release = "tf_buttonclickrelease.wav" //^
 	local function AddTFButtonSounds(pnl)
 		function pnl:OnCursorEntered()
-			surface.PlaySound(snd_hover)
+			if pnl:IsEnabled() then
+				surface.PlaySound(snd_hover)
+			end
 		end
 		function pnl:OnDepressed()
 			surface.PlaySound(snd_click)
@@ -1481,12 +1505,16 @@ if CLIENT then
 			function pnl:Paint(w, h)
 				local col = self.BGColor
 				local textcol = self.FGColor
-				if self.Depressed then
-					col = self.DepressedBGColor
+				if self:IsEnabled() then
+					if self.Depressed then
+						col = self.DepressedBGColor
+						textcol = self.DepressedFGColor
+					elseif self.Hovered then
+						col = self.ArmedBGColor
+						textcol = self.ArmedFGColor
+					end
+				else
 					textcol = self.DepressedFGColor
-				elseif self.Hovered then
-					col = self.ArmedBGColor
-					textcol = self.ArmedFGColor
 				end
 				draw.RoundedBox(12, 0,0,w,h, col)
 				self:SetColor(textcol)
@@ -3342,18 +3370,12 @@ if CLIENT then
 				editor.controls = {}
 
 
-				//Dock save and close buttons to bottom of panel
+				//Dock save/delete/close buttons to bottom of panel
 				local button_holder = vgui.Create("Panel", editor)
 				local button_1 = TFStyleVGUI("DButton", button_holder)
-				button_1:SetText(string.upper(language.GetPhrase("preset.close")))
+				button_1:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
 				button_1:SizeToContentsX(20)
 				button_1.DoClick = function()
-					editor:Close()
-				end
-				local button_2 = TFStyleVGUI("DButton", button_holder)
-				button_2:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
-				button_2:SizeToContentsX(20)
-				button_2.DoClick = function()
 					//Open save gui
 					local back = vgui.Create("DPanel", editor)
 					back:SetSize(editor:GetSize())
@@ -3433,7 +3455,7 @@ if CLIENT then
 					text:SetAutoStretchVertical(true)
 					text:SetFont("TF2ItemBrowser_ItemDesc")
 					text:SetColor(gui_colors.TanLight)
-					text:SetText("Tips for developers:\n\n- Custom items in the browser are listed alphabetically by file name. This means you can keep item sets together by giving them a shared prefix, like \"setname_hat\", \"setname_shirt\", and so on.\n\n- To include a custom item in an addon, move the saved file into the addon's \"data_static/tf2itembrowser_customitems/\" folder. If the same file name is in both Gmod's data folder AND an addon's data_static folder, the first one will take priority over the addon.")
+					text:SetText("Tips for developers:\n\n- Custom items in the browser are sorted alphabetically by file name. This means you can keep item sets together by giving them a shared prefix, like \"setname_hat\", \"setname_shirt\", and so on.\n\n- To include a custom item in an addon, move the saved file into the addon's \"data_static/tf2itembrowser_customitems/\" folder. If the same file name is in both GMod's data folder AND an addon's data_static folder, the first one will take priority over the addon.")
 					text:Dock(TOP)
 					text:DockMargin(0,betweencategories*1.5,0,0)
 
@@ -3488,14 +3510,122 @@ if CLIENT then
 						end
 					end
 				end
+				local button_2 = TFStyleVGUI("DButton", button_holder)
+				button_2:SetText(string.upper(GetTFLanguageString("#TF_SteamWorkshop_Delete") or "Delete"))
+				button_2:SizeToContentsX(20)
+				button_2.DoClick = function()
+					//Open delete gui
+					local back = vgui.Create("DPanel", editor)
+					back:SetSize(editor:GetSize())
+					function back:Paint(w,h)
+						surface.SetDrawColor(gui_colors.TanDarker.r, gui_colors.TanDarker.g, gui_colors.TanDarker.b, 192)
+						surface.DrawRect(0,0,w,h)
+					end
+					local pnl = vgui.Create("DSizeToContents", editor)
+					pnl:DockPadding(20,20,20,20)
+					function pnl:Paint(w, h)
+						GrayDialogBorder(0,0,w,h)
+					end
+					function pnl:OnRemove()
+						back:Remove()
+					end
+					pnl:SetSize(500,210)
+					pnl:Center()
+					editor.SavePopup = pnl
+
+					local text = vgui.Create("DLabel", pnl)
+					text:SetFont("TF2ItemBrowser_ItemName_Larger")
+					text:SetColor(gui_colors.LightRed)
+					text:SetText("Delete custom item")
+					text:SetContentAlignment(5)
+					text:Dock(TOP)
+
+					local text = vgui.Create("DLabel", pnl)
+					text:SetWrap(true)
+					text:SetAutoStretchVertical(true)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(gui_colors.TanLight)
+					text:SetText("Are you sure you want to delete \"data/tf2itembrowser_customitems/" .. editor.SavedName .. ".txt\"?\nThis cannot be undone!")
+					text:Dock(TOP)
+					text:DockMargin(0,betweencategories*1.5,0,0)
+
+					local text = vgui.Create("DLabel", pnl)
+					pnl.errortext = text
+					text:SetWrap(true)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(desc_colors.negative)
+					text:SetText("")
+					text:Dock(TOP)
+					text:SetEnabled(false)
+					text:SetTall(0)
+
+					local button_holder = vgui.Create("Panel", pnl)
+					local button_1 = TFStyleVGUI("DButton", button_holder)
+					button_1:SetText(string.upper(GetTFLanguageString("#TF_SteamWorkshop_Delete") or "Delete"))
+					button_1:SizeToContentsX(20)
+					button_1.DoClick = function()
+						net.Start("TF2ItemBrowser_DeleteCustomItem_SendToSv")
+							net.WriteString(editor.SavedName)
+						net.SendToServer()
+					end
+					local button_2 = TFStyleVGUI("DButton", button_holder)
+					button_2:SetText(string.upper(language.GetPhrase("dialog.cancel")))
+					button_2:SizeToContentsX(20)
+					button_2.DoClick = function()
+						pnl:Remove()
+					end
+					button_holder:Dock(TOP)
+					button_holder:DockMargin(0,betweencategories*1.5,0,0)
+					local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+					function button_holder:PerformLayout(w, h)
+						button_1:SetWide(button_w)
+						button_1:SetPos((w/2)-4-button_w, 0)
+						button_2:SetWide(button_w)
+						button_2:SetPos((w/2)+4, 0)
+						button_holder:SizeToChildren(false, true)
+					end
+
+					pnl:InvalidateLayout(true)
+					function pnl:DoConfirmation(success)
+						if success then
+							surface.PlaySound("replay/deleted_take.wav")
+							editor:Close()
+						else
+							surface.PlaySound("replay/replaydialog_warn.wav")
+							local text = pnl.errortext
+							text:SetText("Error: Couldn't delete \"data/tf2itembrowser_customitems/" .. editor.SavedName .. ".txt\"")
+							text:SetEnabled(true)
+							text:SetAutoStretchVertical(true)
+							text:DockMargin(0,betweenitems,0,0)
+							pnl:InvalidateLayout(true)
+						end
+					end
+				end
+				function button_2:Think()
+					if editor.SavedName == "" then
+						self:SetEnabled(false)
+						//self.BGColor = gui_colors.TanDark
+					else
+						self:SetEnabled(true)
+						//self.BGColor = gui_colors.LightRed //match button to remove equipped item
+					end
+				end
+				local button_3 = TFStyleVGUI("DButton", button_holder)
+				button_3:SetText(string.upper(language.GetPhrase("preset.close")))
+				button_3:SizeToContentsX(20)
+				button_3.DoClick = function()
+					editor:Close()
+				end
 				button_holder:Dock(BOTTOM)
 				button_holder:DockMargin(0,8,0,0)
-				local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+				local button_w = math.max(180, button_1:GetWide(), button_2:GetWide(), button_3:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
 				function button_holder:PerformLayout(w, h)
+					button_1:SetPos((w/2)-(button_w*1.5)-8, 0)
+					button_2:SetPos((w/2)-(button_w/2), 0)
+					button_3:SetPos((w/2)+(button_w/2)+8, 0)
 					button_1:SetWide(button_w)
-					button_1:SetPos((w/2)-4-button_w, 0)
 					button_2:SetWide(button_w)
-					button_2:SetPos((w/2)+4, 0)
+					button_3:SetWide(button_w)
 					button_holder:SizeToChildren(false, true)
 				end
 
