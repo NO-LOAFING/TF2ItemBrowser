@@ -969,21 +969,38 @@ if SERVER then
 
 		//TODO: permissions; only let certain players create new custom items in multiplayer
 
+		local success = false
 		local tab = util.JSONToTable(i)
-		if !tab or !tab.name then return end //this shouldn't happen
-		if !file.IsDir("tf2itembrowser_customitems/", "DATA") then 
-			file.CreateDir("tf2itembrowser_customitems/")
+		if tab and tab.name and tab.name != "" then //an empty string for a name will save properly, but won't load
+			if !file.IsDir("tf2itembrowser_customitems/", "DATA") then 
+				file.CreateDir("tf2itembrowser_customitems/")
+			end
+			success = file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
 		end
-		file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
 
-		//Rebuild custom items table with the new item, and make players retrieve it
+		//Rebuild serverside custom items table with the new item, and make players retrieve it
 		LoadCustomItems()
+		//Tell the player who sent the file if saving was successful
 		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
-		net.Broadcast()
+			net.WriteBool(true)
+			net.WriteBool(success)
+		net.Send(ply)
+		//Other players don't care about confirmation status for this item
+		if success then
+			net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+				net.WriteBool(false)
+			net.SendOmit(ply)
+		end
 	end)
 else
 	net.Receive("TF2ItemBrowser_CustomItemsUpdate_SendToCl", function()
 		LoadCustomItems()
+		if net.ReadBool() then
+			local success = net.ReadBool()
+			if IsValid(TF2ItemBrowser_Editor) and IsValid(TF2ItemBrowser_Editor.SavePopup) then
+				TF2ItemBrowser_Editor.SavePopup:DoConfirmation(success)
+			end
+		end
 	end)
 end
 
@@ -3354,6 +3371,7 @@ if CLIENT then
 					end
 					pnl:SetSize(650,400)
 					pnl:Center()
+					editor.SavePopup = pnl
 
 					local text = vgui.Create("DLabel", pnl)
 					text:SetFont("TF2ItemBrowser_ItemName_Larger")
@@ -3401,6 +3419,16 @@ if CLIENT then
 					text:DockMargin(4,0,0,0)
 
 					local text = vgui.Create("DLabel", pnl)
+					pnl.errortext = text
+					text:SetWrap(true)
+					text:SetFont("TF2ItemBrowser_ItemDesc")
+					text:SetColor(desc_colors.negative)
+					text:SetText("")
+					text:Dock(TOP)
+					text:SetEnabled(false)
+					text:SetTall(0)
+
+					local text = vgui.Create("DLabel", pnl)
 					text:SetWrap(true)
 					text:SetAutoStretchVertical(true)
 					text:SetFont("TF2ItemBrowser_ItemDesc")
@@ -3414,21 +3442,17 @@ if CLIENT then
 					button_1:SetText(GetTFLanguageString("#TF_SavePreset") or "SAVE")
 					button_1:SizeToContentsX(20)
 					button_1.DoClick = function()
-						local name = entry:GetText()
 						local i = {}
 						for pnl, funcs in pairs (TF2ItemBrowser_Editor.controls) do
 							if funcs.Save then funcs.Save(i) end
 						end
-						i.name = name
-						editor.SavedName = name //show this same filename in the save window if we open it again
+						i.name = entry:GetText():lower()
 						MsgN("\n\n\n")
 						PrintTable(i)
 
 						net.Start("TF2ItemBrowser_NewCustomItem_SendToSv")
 							net.WriteData(util.Compress(util.TableToJSON(i)))
 						net.SendToServer()
-
-						pnl:Remove()
 					end
 					local button_2 = TFStyleVGUI("DButton", button_holder)
 					button_2:SetText(string.upper(language.GetPhrase("dialog.cancel")))
@@ -3448,6 +3472,21 @@ if CLIENT then
 					end
 
 					pnl:InvalidateLayout(true)
+					function pnl:DoConfirmation(success)
+						if success then
+							surface.PlaySound("replay/rendercomplete.wav")
+							editor.SavedName = entry:GetText():lower() //show this same filename in the save window if we open it again
+							pnl:Remove()
+						else
+							surface.PlaySound("replay/replaydialog_warn.wav")
+							local text = pnl.errortext
+							text:SetText("Couldn't save \"data/tf2itembrowser_customitems/" .. entry:GetText():lower() .. ".txt\" - bad file name?")
+							text:SetEnabled(true)
+							text:SetAutoStretchVertical(true)
+							text:DockMargin(0,4,0,0)
+							pnl:InvalidateLayout(true)
+						end
+					end
 				end
 				button_holder:Dock(BOTTOM)
 				button_holder:DockMargin(0,8,0,0)
