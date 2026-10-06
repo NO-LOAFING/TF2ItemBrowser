@@ -1070,7 +1070,8 @@ local function GetItemModelVisuals(data)
 		models = {},
 		skin = nil,
 		item_bg = {},
-		ply_bg = {}
+		ply_bg = {},
+		ply_bg_forced = {},
 	}
 	local model
 
@@ -1122,6 +1123,12 @@ local function GetItemModelVisuals(data)
 		if style.additional_hidden_bodygroups then
 			for k, v in pairs (style.additional_hidden_bodygroups) do
 				vis.ply_bg[k] = v
+			end
+		end
+		if style.additional_forced_bodygroups then
+			for k, v in pairs (style.additional_forced_bodygroups) do
+				vis.ply_bg[k] = v
+				vis.ply_bg_forced[k] = true
 			end
 		end
 	end
@@ -1355,7 +1362,7 @@ if CLIENT then
 	local snd_release = "tf_buttonclickrelease.wav" //^
 	local function AddTFButtonSounds(pnl)
 		function pnl:OnCursorEntered()
-			if pnl:IsEnabled() then
+			if !pnl.IsEnabled or pnl:IsEnabled() then
 				surface.PlaySound(snd_hover)
 			end
 		end
@@ -9853,6 +9860,49 @@ if SERVER then
 	util.AddNetworkString("TF2ItemBrowser_AttachedItems_GetFromSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItem_SendToCl")
 
+	//This is defined here because it's used by both the spawn/modify input below, AND the TF2ItemBrowser_Item_DoUnequip func further down
+	local function UpdatePlayerBodygroups(e, ent, vis, old_vis, e_being_removed)
+		//If this item does anything involving player bodygroups, then we need to reset the parent ent's bodygroups from scratch. For 
+		//example, even if we updated this item's style and it no longer disables one bodygroup, some other attached item may still be 
+		//disabling it. Instead, we have to go through every attached item, and apply their ply_bg's again to a blank slate parent ent.
+		if table.Count(vis.ply_bg) > 0 or (old_vis and table.Count(old_vis.ply_bg) > 0) then
+			local bgs = {}
+			//31635 Skeleton Crew has this wacky "additional_forced_bodygroups" that actively overrides other items' bodygroups,
+			//for the purpose of disabling 230 The Sydney Sleeper's "darts" bodygroup. If we don't do a special check for this,
+			//then it becomes dependent on load order - equipping sleeper then crew enables-then-disables the darts as intended, 
+			//but equipping crew then sleeper disables-then-enables the darts, causing them to show when they shouldn't.
+			local bgs_forced = {}
+
+			for k, child in ipairs (ent:GetChildren()) do
+				if child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
+					if e_being_removed and child == e then continue end
+					local child_vis
+					if child == e then
+						child_vis = vis
+					else 
+						child_vis = GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item)
+					end
+					for k, v in pairs (child_vis.ply_bg) do
+						if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
+						if bgs_forced[k] then continue end
+						bgs[k] = v
+					end
+					for k, v in pairs (child_vis.ply_bg_forced) do
+						if isstring(k) then k = ent:FindBodygroupByName(k) end
+						bgs_forced[k] = true
+					end
+				end
+			end
+
+			for i = 0, ent:GetNumBodyGroups() do
+				ent:SetBodygroup(i, 0)
+			end
+			for k, v in pairs (bgs) do
+				ent:SetBodygroup(k, v)
+			end
+		end
+	end
+
 	net.Receive("TF2ItemBrowser_Input_SendToSv", function(_, ply)
 
 		local input = net.ReadUInt(BrowserInputs_bits)
@@ -10287,11 +10337,7 @@ if SERVER then
 					undo.SetPlayer(ply)
 				undo.Finish("Attached Item (" .. i.name .. ")") //item name instead of model name because this can change
 
-				for k, v in pairs (vis.ply_bg) do
-					//when attaching a new item, we can keep this simple, and just change the ply_bg's the item has listed
-					if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-					ent:SetBodygroup(k, v)
-				end
+				UpdatePlayerBodygroups(spawned_models[1], ent, vis)
 				//Do parent skin change for zombie skin items
 				if i.attributes and i.attributes["player skin override"] and ent:SkinCount() > 4 and ent:GetSkin() <= 3 then
 					ent:SetSkin(ent:GetSkin() + 4)
@@ -10419,36 +10465,7 @@ if SERVER then
 
 			//Check if the bodygroup changes this item applies to the parent ent were modified
 			if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item then
-				local old_ply_bg = GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg
-				local all_keys = {}
-				table.Merge(all_keys, vis.ply_bg)
-				table.Merge(all_keys, old_ply_bg)
-				for k, _ in pairs (all_keys) do
-					if ent:FindBodygroupByName(k) != -1 and vis.ply_bg[k] != old_ply_bg[k] then
-						//If this item's ply_bg's have changed, then we need to reset the parent ent's bodygroups from scratch. 
-						//For example, even if this item no longer disables one bodygroup, some other attached item may still 
-						//be disabling it. Instead, we have to go through every attached item, and apply their ply_bg's again 
-						//to a blank slate parent ent.
-						for i = 0, ent:GetNumBodyGroups() do
-							ent:SetBodygroup(i, 0)
-						end
-						for k, child in ipairs (ent:GetChildren()) do
-							if child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
-								local child_ply_bg
-								if child == e then
-									child_ply_bg = vis.ply_bg 
-								else 
-									child_ply_bg = GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg
-								end
-								for k, v in pairs (child_ply_bg) do
-									if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-									ent:SetBodygroup(k, v)
-								end
-							end
-						end
-						break
-					end
-				end
+				UpdatePlayerBodygroups(e, ent, vis, GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item))
 			end
 
 			duplicator.ClearEntityModifier(e, "TF2ItemBrowser_Item") //StoreEntityModifier uses table.Copy, which means values that are present in the old table but absent in the new table will remain (i.e. when switching from a team-colored paint to single-color paint), and we don't want that, so wipe the table
@@ -10537,24 +10554,9 @@ if SERVER then
 		local ent = e:GetParent()
 		if !IsValid(ent) then return end
 
-		//When unequipped, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
 		if e.EntityMods and e.EntityMods.TF2ItemBrowser_Item and !e.TF2ItemBrowser_Item_IsSubModelOf then
-			for k, _ in pairs (GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item).ply_bg) do
-				//If any ply_bg's were changed, then do the same routine as attach_item_modify above; get every attached 
-				//item other than the one we're removing, and apply their ply_bg's again to a blank slate parent ent.
-				for i = 0, ent:GetNumBodyGroups() do
-					ent:SetBodygroup(i, 0)
-				end
-				for k, child in ipairs (ent:GetChildren()) do
-					if child != e and child.EntityMods and child.EntityMods.TF2ItemBrowser_Item and !child.TF2ItemBrowser_Item_IsSubModelOf then
-						for k, v in pairs (GetItemModelVisuals(child.EntityMods.TF2ItemBrowser_Item).ply_bg) do
-							if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
-							ent:SetBodygroup(k, v)
-						end
-					end
-				end
-				break
-			end
+			//When unequipped, check if this item was applying any bodygroup changes to the parent ent that we want to revert.
+			UpdatePlayerBodygroups(e, ent, GetItemModelVisuals(e.EntityMods.TF2ItemBrowser_Item), nil, true)
 			//Undo parent skin change for zombie skin items
 			local i = TF2Items.items[e.EntityMods.TF2ItemBrowser_Item.id] or {}
 			if i.attributes and i.attributes["player skin override"] and ent:GetSkin() > 3 then
