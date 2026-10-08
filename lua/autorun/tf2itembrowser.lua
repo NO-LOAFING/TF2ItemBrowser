@@ -352,7 +352,7 @@ local function InheritPrefabValues(k, v, ptab, ptabname)
 end
 for k, v in pairs (s.items) do
 	if !istable(v) then
-		//check for bad non-table entries in items table, because some doofus at valve put the sounds for 31651 Grenadier's Goggles outside the item
+		//check for bad non-table entries in items table, because one time some doofus at valve put the sounds for 31651 Grenadier's Goggles outside the item
 		if GetConVarNumber("developer") >= 1 then
 			MsgN("TF2ItemBrowser: items table contains bad non-table entry '", v, "', rejecting")
 		end
@@ -1092,8 +1092,14 @@ local function GetItemModelVisuals(data)
 		//of a bodygroup name, so we'll have to add special handling just for these two items, oh boy!
 		vis.ply_bg[num_bg_k] = num_bg_v
 	end
-	//note: there's also visuals.show_player_bodygroup_name, only used by 1098 The Classic with value "bullets"; 
-	//i don't think this does anything, because if it did, it would make the classic show the sleeper's darts
+	//Note: this is a custom value used to add a non-style-based equivalent of style.additional_forced_bodygroups to custom items; 
+	//if valve ever adds an official item with this same functionality, its value will have a different name from the one saved in 
+	//old custom items, and we'll have to add handling for that
+	for k, v in pairs (GetVisualsValue(i, data.team, "_player_forced_bodygroups") or {}) do
+		vis.ply_bg[k] = v
+		vis.ply_bg_forced[k] = true
+	end
+	//note: there's also visuals.show_player_bodygroup_name, only used by 1098 The Classic with value "bullets", which doesn't appear to do anything
 
 	//Now get overrides from style
 	if i.visuals and i.visuals.styles then //this is never contained in visuals_red/visuals_blu
@@ -4267,8 +4273,8 @@ if CLIENT then
 					{
 						label = "Bullets", // (" .. string.lower(GetTFLanguageString("#TF_Class_Name_HWGuy") or "Heavy") .. ")",
 						bgs = {
-							heavy = "bullets"
-							//sniper has a bullets bodygroup but it's not useful here, it just enables sydney sleeper darts
+							heavy = "bullets",
+							sniper = {name = "bullets", forced = {darts = 0}} //also forcibly disable sydney sleeper darts if equipped at the same time
 						}
 					},
 					{
@@ -4304,7 +4310,7 @@ if CLIENT then
 					for class, bg in pairs (v.bgs) do
 						local val = 1
 						if istable(bg) then 
-							val = bg.val
+							val = bg.val or 1
 							bg = bg.name
 						end
 						keys_by_bg[bg] = {val = val, k = k}
@@ -4365,7 +4371,13 @@ if CLIENT then
 								i.visuals.player_bodygroups = i.visuals.player_bodygroups or {}
 								local val = 1
 								if istable(bg) then
-									val = bg.val
+									if bg.forced then
+										for k2, v2 in pairs (bg.forced) do
+											i.visuals._player_forced_bodygroups = i.visuals._player_forced_bodygroups or {}
+											i.visuals._player_forced_bodygroups[k2] = v2
+										end
+									end
+									val = bg.val or 1
 									bg = bg.name
 								end
 								i.visuals.player_bodygroups[bg] = val
@@ -4842,7 +4854,7 @@ if CLIENT then
 									local val = 1
 									local bg = v.bgs[classes[vis.class].longname]
 									if istable(bg) then 
-										val = bg.val
+										val = bg.val or 1
 										bg = bg.name
 									end
 									if bg then
@@ -5803,7 +5815,13 @@ if CLIENT then
 										tab2.additional_hidden_bodygroups = tab2.additional_hidden_bodygroups or {}
 										local val = 1
 										if istable(bg) then
-											val = bg.val
+											if bg.forced then
+												for k2, v2 in pairs (bg.forced) do
+													tab2.additional_forced_bodygroups = tab2.additional_forced_bodygroups or {}
+													tab2.additional_forced_bodygroups[k2] = v2
+												end
+											end
+											val = bg.val or 1
 											bg = bg.name
 										end
 										tab2.additional_hidden_bodygroups[bg] = val
@@ -5813,7 +5831,7 @@ if CLIENT then
 							if style.disable_genteel_smoke:IsVisible() and style.disable_genteel_smoke:GetChecked() then
 								tab2.use_smoke_particle_effect = 0
 							end
-							//add the style even if it's empty; players might use one empty "default" style 
+							//add the style even if it's empty; users might use one empty "default" style 
 							//and another non-default style to add a selection between both options
 							tab[i2-1] = tab2
 						end
@@ -9870,7 +9888,7 @@ if SERVER then
 			//31635 Skeleton Crew has this wacky "additional_forced_bodygroups" that actively overrides other items' bodygroups,
 			//for the purpose of disabling 230 The Sydney Sleeper's "darts" bodygroup. If we don't do a special check for this,
 			//then it becomes dependent on load order - equipping sleeper then crew enables-then-disables the darts as intended, 
-			//but equipping crew then sleeper disables-then-enables the darts, causing them to show when they shouldn't.
+			//but equipping crew then sleeper disables-then-enables the darts, causing them to appear when they shouldn't.
 			local bgs_forced = {}
 
 			for k, child in ipairs (ent:GetChildren()) do
