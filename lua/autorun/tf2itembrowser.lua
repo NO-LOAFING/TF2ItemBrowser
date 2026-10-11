@@ -958,8 +958,13 @@ else
 		if !tab then return end
 
 		if TF2ItemBrowser_RequestCustomItems then
+			//Clear any old custom items and repopulate them; it's possible that the change we made was removing one of them
+			for k, v in pairs (TF2Items.items) do
+				if isstring(k) then TF2Items.items[k] = nil end
+			end
 			for k, v in pairs (tab) do
-				TF2Items.items[k] = v
+				v.name = tostring(v.name) //items with a number string for a name (i.e. "1") get turned into numbers by tabletojson/jsontotable, so tostring() them to be sure
+				TF2Items.items[tostring(k)] = v //same as above
 			end
 			TF2ItemBrowser_RequestCustomItems = nil
 			if IsValid(TF2ItemBrowser) then TF2ItemBrowser:RebuildIconList() end
@@ -3682,8 +3687,7 @@ if CLIENT then
 			function pnl:DoConfirmation(success)
 				if success then
 					surface.PlaySound("replay/deleted_take.wav")
-					local i = TF2Items.items[editor.SavedName]
-					if !i then
+					if !TF2Items.items[editor.SavedName] or !game.SinglePlayer() then //in multiplayer, the client won't have received the new post-deletion item table yet, so we can't check if deleting the item replaced it with an addon item, or load the addon item with OpenCustomItemEditor if we wanted to. instead, just always close the editor.
 						editor:Close()
 					else
 						TF2ItemBrowser_OpenCustomItemEditor(editor.SavedName)
