@@ -967,6 +967,23 @@ else
 	end)
 end
 
+local function PlayerCanEditCustomItems(ply)
+	if game.SinglePlayer() then return true end
+	if CLIENT then ply = LocalPlayer() end
+	if !IsValid(ply) then return false end
+	local result = hook.Run("TF2ItemBrowser_PlayerCanEditCustomItems", ply)
+	if result == nil then result = true end
+	return result
+end
+if !game.SinglePlayer() then
+	local cv_alloweditor = CreateConVar("sv_tf2itembrowser_alloweditor", 1, {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Sets which players are allowed to add, edit, and delete custom TF2 items in a multiplayer game (0: no one, 1: super admins only, 2: admins only, 3: everyone)", 0, 3)
+	//make this a removable hook just in case there's a server admin plugin somewhere out there that doesn't like the default gmod (super)admin system
+	hook.Add("TF2ItemBrowser_PlayerCanEditCustomItems", "default_convar", function(ply)
+		local cv = cv_alloweditor:GetInt()
+		return (cv >= 1 and ply:IsSuperAdmin()) or (cv >= 2 and ply:IsAdmin()) or cv >= 3
+	end)
+end
+
 if SERVER then
 	util.AddNetworkString("TF2ItemBrowser_NewCustomItem_SendToSv")
 	util.AddNetworkString("TF2ItemBrowser_DeleteCustomItem_SendToSv")
@@ -974,8 +991,7 @@ if SERVER then
 
 	net.Receive("TF2ItemBrowser_NewCustomItem_SendToSv", function(len, ply)
 		local i = util.Decompress(net.ReadData(len/8), 8000) //max 8kb; these are small text files and definitely shouldn't be this large
-
-		//TODO: permissions; only let certain players edit custom items in multiplayer
+		if !PlayerCanEditCustomItems(ply) then return end
 
 		local success = false
 		if i then
@@ -1004,8 +1020,7 @@ if SERVER then
 
 	net.Receive("TF2ItemBrowser_DeleteCustomItem_SendToSv", function(len, ply)
 		local name = net.ReadString()
-		
-		//TODO: permissions; only let certain players edit custom items in multiplayer
+		if !PlayerCanEditCustomItems(ply) then return end
 
 		local success = file.Delete("tf2itembrowser_customitems/" .. name .. ".txt")
 		
@@ -2625,6 +2640,19 @@ if CLIENT then
 			button.DoClick = function()
 				TF2ItemBrowser_OpenCustomItemEditor()
 			end
+			if !game.SinglePlayer() then
+				local old_Think = button.Think
+				function button:Think()
+					if PlayerCanEditCustomItems() then
+						self:SetEnabled(true)
+						AddTFStyleTooltip(button, "")
+					else
+						self:SetEnabled(false)
+						AddTFStyleTooltip(button, "Custom item editing prohibited by server")
+					end
+					return old_Think(self)
+				end
+			end
 
 			filters:InvalidateLayout(true)
 			filters:SizeToChildren(false,true)
@@ -3385,6 +3413,7 @@ if CLIENT then
 	
 	function TF2ItemBrowser_OpenCustomItemEditor(id)
 
+		if !PlayerCanEditCustomItems() then return end
 		if IsValid(TF2ItemBrowser_Editor) then TF2ItemBrowser_Editor:Close() end
 
 		local editor = g_ContextMenu:Add("DFrame")
@@ -3395,6 +3424,15 @@ if CLIENT then
 		TF2ItemBrowser_Editor = editor
 		editor:SetSizable(true)
 		editor.controls = {}
+		if !game.SinglePlayer() then
+			local old_Think = editor.Think
+			function editor:Think()
+				if !PlayerCanEditCustomItems() then
+					editor:Close()
+				end
+				return old_Think(self)
+			end
+		end
 
 
 		//Dock save/delete/close buttons to bottom of panel
@@ -9703,7 +9741,7 @@ if CLIENT then
 			end)
 		end
 
-		if isstring(self.data.id) then
+		if isstring(self.data.id) and PlayerCanEditCustomItems() then
 			menu:AddOption("Edit custom item", function()
 				TF2ItemBrowser_OpenCustomItemEditor(self.data.id)
 			end)
