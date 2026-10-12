@@ -8562,6 +8562,7 @@ if CLIENT then
 							pnl.OnSettingChanged()
 						end
 					end
+					slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the unusual effect menu, so just disable it for now.
 					
 					//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
 					check = TFStyleVGUI("DCheckBox", slider)
@@ -8967,6 +8968,7 @@ if CLIENT then
 						pnl.OnSettingChanged()
 					end
 				end
+				slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
 
 				//The rest of these paintkit settings are global convars, not saved to the entity, so categorize them separately
 
@@ -9037,6 +9039,7 @@ if CLIENT then
 						slider.LastValue = val
 					end
 				end
+				slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
 
 				local check = TFStyleVGUI("DCheckBoxLabel", container)
 				local scratch_check = check
