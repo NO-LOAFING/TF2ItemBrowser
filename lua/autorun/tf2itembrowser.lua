@@ -6911,10 +6911,9 @@ if CLIENT then
 		
 	end
 
-	function PANEL:CreateItemModelsAndParticles(bailfunc, data, disable_fallback_model) //data is a separate arg here so it can either use self.data or a custom defined data table
+	function PANEL:CreateItemModels(data, disable_fallback_model) //data is a separate arg here so it can either use self.data or a custom defined data table
 
 		local models = {}
-		local particles = {}
 
 		local i = TF2Items.items[data.id] or {}
 		local vis = GetItemModelVisuals(data)
@@ -7065,29 +7064,6 @@ if CLIENT then
 					}
 				end
 
-				//crit spark particles
-				if data.crit.enabled and v.role == "item" then
-					if data.crit.sparks_rb then
-						local pname = "critgun_weaponmodel_red"
-						if data.team then pname = "critgun_weaponmodel_blu" end
-						local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
-						if IsValid(part) then
-							part:SetShouldDraw(false)
-							table.insert(particles, part)
-						end
-					end
-					if data.crit.sparks_c then
-						local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
-						if IsValid(part) then
-							local col = data.crit.col[data.team] or data.crit.col[false]
-							col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
-							part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
-							part:SetShouldDraw(false)
-							table.insert(particles, part)
-						end
-					end
-				end
-
 				//war paint
 				if data.wp.enabled and v.role == "item"  then
 					local instance
@@ -7141,8 +7117,57 @@ if CLIENT then
 					end
 				end
 			end
-			//add particle effects to both base items and fallbacks
+			//tell CreateItemParticles to add particle effects to both base items and fallbacks
 			if v.role == "item" or v.role == "no_model_fallback" then
+				ent.ShouldAddParticles = v.role
+			end
+			ent:SetNoDraw(true)
+			ent:SetIK(false)
+			//disable jigglebones
+			for i = 0, ent:GetBoneCount() - 1 do
+				ent:ManipulateBoneJiggle(i, 2)
+			end
+			table.insert(models, ent)
+		end
+		return models
+
+	end
+
+	function PANEL:CreateItemParticles(models, bailfunc, data)
+
+		local particles = {}
+		local i = TF2Items.items[data.id] or {}
+		for _, ent in ipairs (models) do
+			if ent.ShouldAddParticles then
+				//crit spark particles
+				if data.crit.enabled then
+					//if spawning an effect right now could potentially cause a crash, bail out and try again later
+					if (data.crit.sparks_rb or data.crit.sparks_c) and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+						if bailfunc then bailfunc() end
+						return
+					end
+					if data.crit.sparks_rb then
+						local pname = "critgun_weaponmodel_red"
+						if data.team then pname = "critgun_weaponmodel_blu" end
+						local part = CreateParticleSystem(ent, pname, PATTACH_ABSORIGIN_FOLLOW)
+						if IsValid(part) then
+							part:SetShouldDraw(false)
+							table.insert(particles, part)
+						end
+					end
+					if data.crit.sparks_c then
+						local part = CreateParticleSystem(ent, "critgun_weaponmodel_colorable", PATTACH_ABSORIGIN_FOLLOW)
+						if IsValid(part) then
+							local col = data.crit.col[data.team] or data.crit.col[false]
+							col = Vector(65,65,65) + (col * 3)	//we overbrighten the color value (second controlpoint) by a large amount because
+							part:AddControlPoint(1, game.GetWorld(), PATTACH_WORLDORIGIN, 0, col)	//crit color values actually tend to be pretty low to avoid overpowering the texture
+							part:SetShouldDraw(false)
+							table.insert(particles, part)
+						end
+					end
+				end
+
+				//unusual and default particles
 				local function AddEffect(tab)
 					local name = tab.system
 					if name:EndsWith("_teamcolor_red") and data.team then
@@ -7157,7 +7182,7 @@ if CLIENT then
 					end
 
 					local part
-					if data.pe_unusual_offset or v.role == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
+					if data.pe_unusual_offset or ent.ShouldAddParticles == "no_model_fallback" then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594
 						ent:InvalidateBoneCache()
 						local manip = Vector(0, data.pe_unusual_offset or 0, 0)
 						local bone = ent:LookupBone("bip_head")
@@ -7238,15 +7263,8 @@ if CLIENT then
 					end
 				end
 			end
-			ent:SetNoDraw(true)
-			ent:SetIK(false)
-			//disable jigglebones
-			for i = 0, ent:GetBoneCount() - 1 do
-				ent:ManipulateBoneJiggle(i, 2)
-			end
-			table.insert(models, ent)
 		end
-		return models, particles
+		return particles
 
 	end
 
@@ -7260,11 +7278,10 @@ if CLIENT then
 
 		//Custom paint func using our DrawItemModels func
 		function mdl:Paint(w, h)
-			
 			if !mdl.models or !mdl.models[1] or !mdl.particles then return end
 			for k, v in ipairs (mdl.particles) do
 				//if a particlesystem becomes invalid (i.e. a conflicting effect was loaded) then bail out and refresh the fx
-				if !IsValid(v) then pnl.Refresh() break end
+				if !IsValid(v) then mdl:Refresh() break end
 			end
 
 			-- Get the panel's scissor rect, and apply it to model render
@@ -7276,6 +7293,10 @@ if CLIENT then
 			mdl.LastPaint = RealTime() //this is in DModelPanel's Paint func, i'm not sure this does anything any more
 
 			render.SetScissorRect( 0, 0, 0, 0, false )
+		end
+
+		//for override
+		function mdl:Refresh()
 		end
 
 		//Modified OnMousePressed to make the orbit movement account for the rotation of the entity
@@ -7447,6 +7468,9 @@ if CLIENT then
 			GrayDialogBorder(0,0,w,h)
 			old_Paint(mdl,w,h)
 		end
+		function mdl:Refresh()
+			pnl.Refresh()
+		end
 
 		function pnl.Refresh()
 			name_container:Clear()
@@ -7462,19 +7486,15 @@ if CLIENT then
 			end
 			local vis = GetItemModelVisuals(self.data)
 
+			//Clean up old models and particles
 			for k, v in ipairs (mdl.models) do
 				if IsValid(v) then v:Remove() end
 			end
-
 			for k, v in ipairs (mdl.particles) do
 				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
 			end
 
-			local models, particles = self:CreateItemModelsAndParticles(function()
-				timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
-			end, self.data)
-			mdl.models = models or {}
-			mdl.particles = particles or {}
+			mdl.models = self:CreateItemModels(self.data) or {}
 			mdl.Entity = mdl.models[1]
 
 			//Only reset the camera if the values returned by DoItemModelCamera have changed (i.e. a model or animation changed)
@@ -7535,6 +7555,11 @@ if CLIENT then
 			if mdl.mdlang and IsValid(mdl.models[1]) then
 				mdl.models[1]:SetAngles(mdl.mdlang)
 			end
+
+			//Now that we've created and positioned the models, create the particles
+			mdl.particles = self:CreateItemParticles(mdl.models, function()
+				timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
+			end, self.data) or {}
 
 			//Hide the class selector if all classes use the same model (i.e. medals)
 			//Also compare the bodygroups because of use_per_class_bodygroups.
@@ -9547,7 +9572,7 @@ if CLIENT then
 				end
 			end
 
-			local models, particles
+			local models
 			local function CleanUpModels()
 				if models then
 					for k, v in ipairs (models) do
@@ -9565,14 +9590,7 @@ if CLIENT then
 				end
 
 				if !models then
-					models, particles = self:CreateItemModelsAndParticles(nil, data, true) //disable fallback model
-					//particles don't play well with rendertargets, so we disabled everything in data that should cause them 
-					//to be added, but make absolutely sure to remove any existing particles just in case we missed one.
-					if particles then
-						for k, v in ipairs (particles) do
-							if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
-						end
-					end
+					models = self:CreateItemModels(data, true) //disable fallback model
 					if models and i._customitem_bp then
 						//inject class model for i._customitem_bp.showclass
 						if i._customitem_bp.showclass then
@@ -9587,6 +9605,8 @@ if CLIENT then
 									if isstring(k) then k = ent:FindBodygroupByName(k) end //on some items, k is a number already
 									ent:SetBodygroup(k, v)
 								end
+								ent:SetNoDraw(true)
+								ent:SetIK(false)
 							end
 						end
 						//use model angle specified in table
