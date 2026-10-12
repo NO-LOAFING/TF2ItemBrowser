@@ -1346,7 +1346,7 @@ if CLIENT then
 	local quality_colors = {
 		normal		= Color(178,178,178,255),
 		rarity1		= Color(77,116,85,255), //genuine
-		rarity2		= Color(141,131,75,255), //"customized (unused)""
+		rarity2		= Color(141,131,75,255), //"customized (unused)"
 		rarity3		= Color(204,204,250,255), //"artisan"
 		rarity4		= Color(134,80,172,255), //unusual
 		vintage		= Color(71,98,145,255),
@@ -2636,10 +2636,10 @@ if CLIENT then
 			filters.custom = AddIncludeExcludeFilter("Custom items")
 
 			local button = TFStyleVGUI("DButton", filters.custom)
-			//filters.custom:SetTall(button:GetTall()) //we can get away with making this smaller because the plus in this font is so small
-			button:SetText("+")
-			//button:SizeToContentsX(20) //^
-			button:SizeToContentsX(10) 
+			//filters.custom:SetTall(button:GetTall())
+			button:SetText(GetTFLanguageString("#TF_PublishedFiles_Add") or "Add")
+			//button:SizeToContentsX(20)
+			button:SizeToContentsX(10)
 			button:Dock(RIGHT)
 			button:DockMargin(0,0,0,0)
 			button.DoClick = function()
@@ -2658,14 +2658,6 @@ if CLIENT then
 					return old_Think(self)
 				end
 			end
-
-			filters:InvalidateLayout(true)
-			filters:SizeToChildren(false,true)
-			timer.Simple(0.1,function()
-				filters:InvalidateLayout(true)
-				filters:SizeToChildren(false,true)
-			end)
-
 
 			window.RebuildIconList = function()
 				if TF2ItemBrowser_RequestCustomItems or filters.equip_region.IsRebuilding or filters.item_set.IsRebuilding then return end
@@ -2882,82 +2874,6 @@ if CLIENT then
 				end
 			end
 			//window.RebuildIconList() gets called automatically by the initial iconlist:PerformLayout() above
-
-
-			local old_Think = window.Think
-			window.ImageQueue = {}
-			window.IconRenderQueue = {}
-			//this one is global so it carries over between windows
-			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
-			local iconsperframe = 100
-			function window:Think(...)
-				if TF2ItemBrowser_RequestCustomItems then
-					net.Start("TF2ItemBrowser_CustomItems_GetFromSv", true)
-					net.SendToServer()
-				end
-				if self.icons_to_add and self.icons_to_add_key then
-					for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
-						local v = self.icons_to_add[k]
-						if v then
-							local item = iconlist:Add("TF2ItemIcon")
-							local col = (k-1)%iconlist.columns
-							local row = math.floor((k-1)/iconlist.columns)
-							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap_w), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap_h))
-							item.data = v //this will be populated with the default data table for this item once the icon renders
-							self.icons[v] = item
-							item.item_conflict = self:GetItemHasConflict(v)
-						else
-							//We've gone through the whole table, so we're done here, get rid of it
-							self.icons_to_add = nil
-							self.icons_to_add_key = nil
-							if self.icons_to_add_showloader then
-								self.icons_to_add_showloader = nil
-								//Allow the list to be scrolled and clicked on now that it's fully loaded
-								right_scroll:SetMouseInputEnabled(true)
-							end
-							break
-						end
-					end
-					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
-					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
-				end
-				for k, v in ipairs (self.ImageQueue) do
-					table.remove(self.ImageQueue, k)
-					if IsValid(v.pnl) then
-						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
-						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
-							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
-							v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
-							continue
-						end
-						v.pnl.mat = Material(v.img .. ".vmt")
-						if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
-							TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
-							break //only load one material per frame to prevent bad perf
-						end
-					end
-				end
-				for k, v in ipairs (self.IconRenderQueue) do
-					if IsValid(v.pnl) then
-						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
-						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
-							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
-							table.remove(self.IconRenderQueue, k)
-							v.pnl.IconRenderToQueue = true //requeue it if the icon moves back onscreen
-							continue
-						end
-					end
-					if v.func() then //func will return false if it's not ready to render yet (i.e. waiting for paintkit texture to generate)
-						table.remove(self.IconRenderQueue, k)
-					end
-					break //only render one icon per frame to prevent bad perf
-				end
-				//if our selected entity is deleted, then update the attached item list
-				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
-					self:SetEntity(NULL)
-				end
-				old_Think(self, ...)
-			end
 
 
 			local atticons_holder = vgui.Create("DPanel", right_holder)
@@ -3210,14 +3126,97 @@ if CLIENT then
 				attopts:SizeToChildren(false,true)
 			end
 
+			filters:InvalidateLayout(true)
+			filters:SizeToChildren(false,true)
 			deselect_holder:InvalidateLayout(true)
 			attopts:InvalidateLayout(true)
 			attopts:SizeToChildren(false,true)
-			timer.Simple(0.1,function()
-				deselect_holder:InvalidateLayout(true)
-				attopts:InvalidateLayout(true)
-				attopts:SizeToChildren(false,true)
-			end)
+			window.DoPostInit = true
+
+
+			local old_Think = window.Think
+			window.ImageQueue = {}
+			window.IconRenderQueue = {}
+			//this one is global so it carries over between windows
+			TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
+			local iconsperframe = 100
+			function window:Think(...)
+				if TF2ItemBrowser_RequestCustomItems then
+					net.Start("TF2ItemBrowser_CustomItems_GetFromSv", true)
+					net.SendToServer()
+				end
+				if self.icons_to_add and self.icons_to_add_key then
+					for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
+						local v = self.icons_to_add[k]
+						if v then
+							local item = iconlist:Add("TF2ItemIcon")
+							local col = (k-1)%iconlist.columns
+							local row = math.floor((k-1)/iconlist.columns)
+							item:SetPos(col*(item_icon_sizes[icon_size].w+item_icon_sizes[icon_size].gap_w), row*(item_icon_sizes[icon_size].h+item_icon_sizes[icon_size].gap_h))
+							item.data = v //this will be populated with the default data table for this item once the icon renders
+							self.icons[v] = item
+							item.item_conflict = self:GetItemHasConflict(v)
+						else
+							//We've gone through the whole table, so we're done here, get rid of it
+							self.icons_to_add = nil
+							self.icons_to_add_key = nil
+							if self.icons_to_add_showloader then
+								self.icons_to_add_showloader = nil
+								//Allow the list to be scrolled and clicked on now that it's fully loaded
+								right_scroll:SetMouseInputEnabled(true)
+							end
+							break
+						end
+					end
+					//MsgN("self.icons_to_add_key = ", self.icons_to_add_key)
+					if self.icons_to_add_key then self.icons_to_add_key = self.icons_to_add_key + iconsperframe end
+				end
+				for k, v in ipairs (self.ImageQueue) do
+					table.remove(self.ImageQueue, k)
+					if IsValid(v.pnl) then
+						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
+						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
+							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
+							v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
+							continue
+						end
+						v.pnl.mat = Material(v.img .. ".vmt")
+						if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
+							TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
+							break //only load one material per frame to prevent bad perf
+						end
+					end
+				end
+				for k, v in ipairs (self.IconRenderQueue) do
+					if IsValid(v.pnl) then
+						local _, y = self.Right:ScreenToLocal(v.pnl:LocalToScreen(0,0))
+						if y > self.Right:GetTall() or (y+v.pnl:GetTall()) < 0 then
+							//if the icon is offscreen, unqueue it and move on to the next one, without holding up the queue
+							table.remove(self.IconRenderQueue, k)
+							v.pnl.IconRenderToQueue = true //requeue it if the icon moves back onscreen
+							continue
+						end
+					end
+					if v.func() then //func will return false if it's not ready to render yet (i.e. waiting for paintkit texture to generate)
+						table.remove(self.IconRenderQueue, k)
+					end
+					break //only render one icon per frame to prevent bad perf
+				end
+				//if our selected entity is deleted, then update the attached item list
+				if self.atticons_holder and self.atticons_holder:IsVisible() and !IsValid(self:GetEntity()) then
+					self:SetEntity(NULL)
+				end
+				//Make sure to do this after everything is done building (don't just use timers), or it can cause issues where the left scroll area is the wrong size upon opening the browser
+				if self.DoPostInit then
+					filters:InvalidateLayout(true)
+					filters:SizeToChildren(false,true)
+					deselect_holder:InvalidateLayout(true)
+					attopts:InvalidateLayout(true)
+					attopts:SizeToChildren(false,true)
+					self.DoPostInit = nil
+				end
+				old_Think(self, ...)
+			end
 
 			AccessorFunc(window, "m_Entity", "Entity")
 			function window:SetEntity(ent)
