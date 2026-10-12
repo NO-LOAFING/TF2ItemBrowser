@@ -10453,14 +10453,24 @@ if SERVER then
 					ent:SetSkin(ent:GetSkin() + 4)
 				end
 
-				//timer.Simple(0.1, function() //do this on a timer so the entity isn't still null on the client's end
-				//	if !IsValid(e) then return end
+				//in singleplayer, send the message to open the spawn panel to the client immediately because it feels smoother;
+				//in multiplayer, we have to do this on a timer to ensure the entity isn't still null on the client's end
+				local function SendItem()
 					net.Start("TF2ItemBrowser_AttachedItem_SendToCl")
 						net.WriteEntity(spawned_models[1])
 						net.WriteBool(forceopen) //open spawn panel upon received?
 						WriteItemDataTable(data)
 					net.Send(ply)
-				//end
+				end
+				if game.SinglePlayer() then
+					SendItem()
+				else
+					timer.Simple(0.1, function()
+						if !IsValid(spawned_models[1]) then return end
+						SendItem()
+					end)
+				end
+
 			end
 
 		elseif input == "attach_item_modify" then
