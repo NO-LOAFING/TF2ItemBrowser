@@ -2277,6 +2277,18 @@ if CLIENT then
 		unusual_butterfly_teamcolor_red = {Vector(-20,-20,-12), Vector(20,20,30)},
 		unusual_butterfly_teamcolor_blue = {Vector(-20,-20,-12), Vector(20,20,30)},
 		unusual_butterfly_parent_purple = {Vector(-20,-20,-12), Vector(20,20,30)},
+		//halloween 2026
+		unusual_muertopetals_teamc_teamcolor_red = {Vector(-14,-14,-12), Vector(14,14,8)},
+		unusual_muertopetals_teamc_teamcolor_blue = {Vector(-14,-14,-12), Vector(14,14,8)},
+		unusual_autumnbreeze_parent = {Vector(-18,-18,-15), Vector(18,18,20)},
+		unusual_fablefeathers_teamcolor_red = {Vector(-10,-10,-10), Vector(10,10,35)},
+		unusual_fablefeathers_teamcolor_blue = {Vector(-10,-10,-10), Vector(10,10,35)},
+		unusual_fablefeathers_purple_parent = {Vector(-10,-10,-10), Vector(10,10,35)},
+		unusual_boiltoil_purple_parent = {Vector(-8,-8,-6), Vector(8,8,10)},
+		unusual_boiltoil_green_parent = {Vector(-8,-8,-6), Vector(8,8,10)},
+		unusual_scaredsouls_purple_parent = {Vector(-8,-8,4), Vector(8,8,20)},
+		unusual_scaredsouls_green_parent = {Vector(-8,-8,4), Vector(8,8,20)},
+		unusual_scaredsouls_orange_parent = {Vector(-8,-8,4), Vector(8,8,20)},
 	}
 	local DrawItemModels, DoItemModelCamera, CreateItemIconModelPanel
 
@@ -9397,6 +9409,13 @@ if CLIENT then
 		function pnl.OnRemove()
 			//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
 			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
+
+			//If any of the custom dropdown menus (i.e. paints, unusuals) are currently open, close them
+			for _, pnl2 in ipairs (pnl:GetChildren()) do
+				for _, pnl3 in ipairs (pnl2:GetChildren()) do
+					if IsValid(pnl3.container) then pnl3.container:Remove() end
+				end
+			end
 		end
 
 	end
