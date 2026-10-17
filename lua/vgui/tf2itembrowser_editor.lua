@@ -2190,7 +2190,7 @@ function PANEL:OpenEditor(id)
 	editor.styles = {}
 	function button:AddStyle()
 
-		local box = AddBox(holder.columns[3], tf.GetStyleNameString(1) .. ":")
+		local box = AddBox(holder.columns[3], tf.GetNumberedStyleString(1) .. ":")
 		local i = table.insert(editor.styles, box)
 		//for most of these boxes, we have a thick dockpadding on all sides to make the controls fit inside nicely, while the label at the top
 		//uses negative dockmargins to appear closer to the edges at the controls. unfortunately, DSizeToContents doesn't like items within it
@@ -2207,7 +2207,7 @@ function PANEL:OpenEditor(id)
 		box.label:SetParent(text_holder)
 		box.label:DockMargin(0,0,0,0)
 		box.label:Dock(FILL)
-		box.label:SetText(tf.GetStyleNameString(i) .. ":")
+		box.label:SetText(tf.GetNumberedStyleString(i) .. ":")
 		local close = vgui.Create("DButton", text_holder)
 		close:SetText("")
 		close:SetSize(22,22)
@@ -2230,7 +2230,7 @@ function PANEL:OpenEditor(id)
 			close:Remove()
 			box:Remove()
 			for i, style in ipairs (editor.styles) do
-				style.label:SetText(tf.GetStyleNameString(i) .. ":")
+				style.label:SetText(tf.GetNumberedStyleString(i) .. ":")
 			end
 			//update backpack icon style selector
 			editor.bp_style:UpdateVisibility()

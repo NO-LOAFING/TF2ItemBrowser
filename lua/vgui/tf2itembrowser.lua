@@ -740,15 +740,25 @@ function PANEL:RebuildIconList()
 				if v.item_type_name then
 					str = str .. " " .. (tf.GetPhrase(v.item_type_name) or "")
 				end
-				//if v.item_description then
-				//	//this can add irrelevant nonsense sometimes, but can also catch associated words that aren't in any other text. is this worth it?
-				//	str = str .. " " .. (tf.GetPhrase(v.item_description) or "")
-				//end
+				if v.item_description then
+					//this can add irrelevant nonsense sometimes, but can also catch associated words that aren't in any other text. is this worth it?
+					str = str .. " " .. (tf.GetPhrase(v.item_description) or "")
+				end
 				if v._item_set then
 					str = str .. " " .. (tf.GetPhrase(tf.TF2Items.item_sets[v._item_set].name) or v._item_set)
 				end
 				if v._item_collection then
 					str = str .. " " .. (tf.GetPhrase(tf.TF2Items.item_collections[v._item_collection].name) or v._item_collection)
+				end
+				if v._rarity then
+					//include the full "(rarity) Grade (item)" string, so that searching for "elite grade" or similar will work, 
+					//instead of only just "elite". there's also a localization string available for just the word "grade", but 
+					//we use this one instead just in case they're translated differently in some languages.
+					local rarity = tf.GetPhrase("#TFUI_InvTooltip_RarityNoWear")
+					rarity = string.Replace(rarity, "%s1", tf.GetPhrase("#" .. tf.TF2Items.rarities[v._rarity].loc_key) or "")
+					rarity = string.Replace(rarity, "%s2", "")
+					rarity = string.Replace(rarity, "%s3", "")
+					str = str .. " " .. rarity
 				end
 				//Add all model paths to the search string so we can search those too
 				local mdls = {}
@@ -779,6 +789,12 @@ function PANEL:RebuildIconList()
 				if v.equip_regions then
 					for e, _ in pairs (v.equip_regions) do
 						str = str .. " " .. e
+					end
+				end
+				//Add styles, such as searching for items that can be "australium"
+				if v.visuals and v.visuals.styles and table.Count(v.visuals.styles) > 1 then
+					for style_id, _ in pairs (v.visuals.styles) do
+						str = str .. " " .. tf.GetItemStyleName(k, style_id)
 					end
 				end
 				v._searchstr = str:lower()

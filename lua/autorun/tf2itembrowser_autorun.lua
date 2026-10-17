@@ -1226,6 +1226,32 @@ function tf.GetItemDefaultParticleEffects(data)
 
 end
 
+function tf.GetItemStyleName(item_id, style_id)
+	local i = tf.TF2Items.items[item_id]
+	if !i or !i.visuals or !i.visuals.styles then return "INVALID STYLE " .. style_id end
+	local style = i.visuals.styles[style_id]
+	if !style then return "INVALID STYLE " .. style_id end
+
+	local name = tf.GetPhrase(style.name) or style.name
+	if !name then
+		if isstring(item_id) then
+			name = tf.GetNumberedStyleString(style_id+1)
+		elseif style.aus_prefix then
+			name = string.Trim(tf.GetPhrase("#ItemNameAustralium") or "#ItemNameAustralium")
+		elseif style_id == 0 then //assume this is the non-australium style for weapons with australium
+			name = tf.GetPhrase("#TF_style0_normal") or "#TF_style0_normal"
+		end
+	end
+	return name or "BAD UNNAMED STYLE " .. style_id
+end
+
+//Used for unnamed styles in custom items
+function tf.GetNumberedStyleString(i)
+	local str = tf.GetPhrase("#TF_style" .. tostring(i-1))
+	if !str then str = (tf.GetPhrase("#Context_Style") or "Style") .. " " .. tostring(i) end
+	return str
+end
+
 
 
 
@@ -2141,13 +2167,6 @@ if CLIENT then
 	end
 
 
-
-
-	function tf.GetStyleNameString(i)
-		local str = tf.GetPhrase("#TF_style" .. tostring(i-1))
-		if !str then str = (tf.GetPhrase("#Context_Style") or "Style") .. " " .. tostring(i) end
-		return str
-	end
 
 
 	list.Set("DesktopWindows", "TF2ItemBrowser", {

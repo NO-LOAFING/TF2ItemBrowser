@@ -1038,23 +1038,13 @@ function PANEL:UpdateItemDescription()
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 and !i._call_styles_animations then
 			//valve's method takes up too much space, make this a single line instead
 			local str
-			for k, v in SortedPairs (i.visuals.styles) do
-				local name = tf.GetPhrase(v.name) or v.name
-				if !name then
-					if isstring(self.data.id) then
-						name = tf.GetStyleNameString(k+1)
-					elseif v.aus_prefix then
-						name = string.Trim(tf.GetPhrase("#ItemNameAustralium") or "#ItemNameAustralium")
-					elseif k == 0 then //assume this is the non-australium style for weapons with australium
-						name = tf.GetPhrase("#TF_style0_normal") or "#TF_style0_normal"
-					end
-				end
+			for k, _ in SortedPairs (i.visuals.styles) do
 				if !str then
 					str = (tf.GetPhrase("#Store_AvailableStyles_Header") or "Available Styles:") .. " "
 				else
 					str = str .. ", "
 				end
-				str = str .. (name or "BAD UNHANDLED STYLE " .. k)
+				str = str .. tf.GetItemStyleName(self.data.id, k)
 			end
 			if !done_spacer then table.insert(desc, {str = "", col = tf.desc_colors.level}) done_spacer = true end
 			table.insert(desc, {str = str, col = tf.desc_colors.level})
@@ -1869,18 +1859,8 @@ function PANEL:CreateSpawnPanel()
 		local name = (tf.GetPhrase("#Context_Style") or "Style") .. ":"
 		if i._call_styles_animations then name = (tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation") .. ":" end
 		AddDropdown(name, function(drop)
-			for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
-				local name = tf.GetPhrase(v.name, true) or v.name
-				if !name then
-					if isstring(self.data.id) then
-						name = tf.GetStyleNameString(k+1)
-					elseif v.aus_prefix then
-						name = string.Trim(tf.GetPhrase("#ItemNameAustralium") or "#ItemNameAustralium")
-					elseif k == 0 then //assume this is the non-australium style for weapons with australium
-						name = tf.GetPhrase("#TF_style0_normal") or "#TF_style0_normal"
-					end
-				end
-				drop:AddChoice(name or "BAD UNHANDLED STYLE " .. k, k, self.data.style == k)
+			for k, _ in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+				drop:AddChoice(tf.GetItemStyleName(self.data.id, k), k, self.data.style == k)
 			end
 		end, function(data)
 			self.data.style = data
