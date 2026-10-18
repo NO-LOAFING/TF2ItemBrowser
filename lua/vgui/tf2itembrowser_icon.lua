@@ -3908,14 +3908,21 @@ end
 
 function PANEL:DoClick()
 
-	surface.PlaySound(self.sound_pressed)
+	timer.Simple(0, function()
+		//if the item model hasn't been loaded yet, the game will stutter when the spawnpanel is opened,
+		//so wait until the next frame so that the sound doesn't play and then immediately get cut off
+		surface.PlaySound(self.sound_pressed)
+	end)
 	self:CreateSpawnPanel()
 
 end
 
 function PANEL:DoRightClick()
 
-	surface.PlaySound(self.sound_pressed) //not tf2-authentic to do this on right click, but feels better this way
+	timer.Simple(0, function()
+		//do this on a timer too just to make sure it doesn't sound subtly different from left-click
+		surface.PlaySound(self.sound_pressed) //not tf2-authentic to do this on right click, but feels better this way
+	end)
 	local menu = DermaMenu()
 
 	//quick-spawn options, to spawn/equip items quickly without customizing them first, or to unequip items more efficiently

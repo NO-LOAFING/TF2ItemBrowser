@@ -1,6 +1,18 @@
 TF2ItemBrowser_Globals = TF2ItemBrowser_Globals or {} //container for various loose values we want to make available to all files
 local tf = TF2ItemBrowser_Globals //and a much shorter local name so that it isn't super inconvenient to refer to in code, without potentially conflicting with other addons
 
+
+
+
+
+
+
+
+
+
+//Read TF2 localization files, and use a separate custom function to get TF2 language strings so that we can't
+//accidentally conflict with phrases from GMod or other addons that happen to use the same localization tokens.
+
 if CLIENT then
 	function tf.GetPhrase(str)
 		local result
@@ -97,6 +109,13 @@ end
 
 
 
+
+
+
+
+
+//Global values used by both client and server
+
 tf.classes = {
 	{longname = "(any)",	shortname = "(any)",	langstr = tf.str_any},
 	{longname = "scout",	shortname = "scout",	langstr = "#TF_Class_Name_Scout"},
@@ -116,8 +135,26 @@ for k, v in ipairs (tf.classes) do
 end
 
 
+tf.EFFECT_NONE = 0
+tf.EFFECT_UBER = 1
+tf.EFFECT_JARATE = 2
+tf.EFFECT_GOLD = 3
+tf.EFFECT_ICE = 4
+tf.jarate_colors = {
+	[false] = Vector(6, 9, 2),
+	[true] = Vector(7, 5, 1),
+}
 
 
+
+
+
+
+
+
+
+
+//Read and process the TF2 item schema - we also modify some data to make it more convenient for the the addon's usage
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
 local s = util.KeyValuesToTable(_s, false, true)
@@ -302,7 +339,7 @@ SafeAmendItem(1179, "The Thermal Thruster", function(i) i._disable_icon_camera =
 
 //TODO: better backpack icons (and names?) for:
 //1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon and no name
-//1057 MvM GateBotLight Scout (and the others) - missing textures and all use the same name
+//1057 MvM GateBotLight Scout (and the others) - missing textures and all use the same name, bad localization for names and styles
 //30143 tw_demobot_armor (and the others) - placeholder white circle
 
 
@@ -880,7 +917,7 @@ end
 tf.TF2Items = s
 
 
-//Load custom items - items saved by the player will be in the data/ folder, while addons can include their own in their data_static/ folder.
+//Load custom items - items saved by the player will be in the data/ folder, while addons can include their own items in their data_static/ folder.
 //These are determined by the server, not clients, because they need to be consistent between all users - if we want this feature to be useful in 
 //multiplayer, then we want to have item defs for models that the server has available, not for whatever players happen to have saved on their end.
 local function LoadCustomItems()
@@ -1226,31 +1263,34 @@ function tf.GetItemDefaultParticleEffects(data)
 
 end
 
-function tf.GetItemStyleName(item_id, style_id)
-	local i = tf.TF2Items.items[item_id]
-	if !i or !i.visuals or !i.visuals.styles then return "INVALID STYLE " .. style_id end
-	local style = i.visuals.styles[style_id]
-	if !style then return "INVALID STYLE " .. style_id end
+if CLIENT then
+	function tf.GetItemStyleName(item_id, style_id)
+		local i = tf.TF2Items.items[item_id]
+		if !i or !i.visuals or !i.visuals.styles then return "INVALID STYLE " .. style_id end
+		local style = i.visuals.styles[style_id]
+		if !style then return "INVALID STYLE " .. style_id end
 
-	local name = tf.GetPhrase(style.name) or style.name
-	if !name then
-		if isstring(item_id) then
-			name = tf.GetNumberedStyleString(style_id+1)
-		elseif style.aus_prefix then
-			name = string.Trim(tf.GetPhrase("#ItemNameAustralium") or "#ItemNameAustralium")
-		elseif style_id == 0 then //assume this is the non-australium style for weapons with australium
-			name = tf.GetPhrase("#TF_style0_normal") or "#TF_style0_normal"
+		local name = tf.GetPhrase(style.name) or style.name
+		if !name then
+			if isstring(item_id) then
+				name = tf.GetNumberedStyleString(style_id+1)
+			elseif style.aus_prefix then
+				name = string.Trim(tf.GetPhrase("#ItemNameAustralium") or "#ItemNameAustralium")
+			elseif style_id == 0 then //assume this is the non-australium style for weapons with australium
+				name = tf.GetPhrase("#TF_style0_normal") or "#TF_style0_normal"
+			end
 		end
+		return name or "BAD UNNAMED STYLE " .. style_id
 	end
-	return name or "BAD UNNAMED STYLE " .. style_id
+
+	//Used for unnamed styles in custom items
+	function tf.GetNumberedStyleString(i)
+		local str = tf.GetPhrase("#TF_style" .. tostring(i-1))
+		if !str then str = (tf.GetPhrase("#Context_Style") or "Style") .. " " .. tostring(i) end
+		return str
+	end
 end
 
-//Used for unnamed styles in custom items
-function tf.GetNumberedStyleString(i)
-	local str = tf.GetPhrase("#TF_style" .. tostring(i-1))
-	if !str then str = (tf.GetPhrase("#Context_Style") or "Style") .. " " .. tostring(i) end
-	return str
-end
 
 
 
@@ -1259,19 +1299,9 @@ end
 
 
 
-
-
-tf.EFFECT_NONE = 0
-tf.EFFECT_UBER = 1
-tf.EFFECT_JARATE = 2
-tf.EFFECT_GOLD = 3
-tf.EFFECT_ICE = 4
-tf.jarate_colors = {
-	[false] = Vector(6, 9, 2),
-	[true] = Vector(7, 5, 1),
-}
 
 if CLIENT then
+	//All common values and funcs used for TF2-themed vgui styling
 
 	tf.LoadoutItemPopupBorder = GWEN.CreateTextureBorder(0, 0, 64, 64, 11, 11, 11, 11, Material("vgui/button_holder_central.vmt"))
 	tf.GrayDialogBorder = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/loadout_rect.vmt"))
@@ -1845,7 +1875,13 @@ if CLIENT then
 
 
 
-	//These functions are used by both itemicons and custom item editor, so make them global
+
+
+
+
+
+
+	//These functions are used for rendering item models by both icons and the editor, so make them global
 
 	//Custom draw func, used by both the DAdjustableModelPanel in the spawn window, and the icon texture renderer used for paintkits and such
 	local LocalModelLights = {
@@ -2169,6 +2205,14 @@ if CLIENT then
 
 
 
+
+
+
+
+
+
+	//Make the browser accessible in the context menu
+
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slightly too long to fit in the desktop icon's label, hrmph
 		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
@@ -2185,7 +2229,7 @@ if CLIENT then
 		end
 	})
 
-
+	//Func used by both the browser and item icons to open the editor
 	function TF2ItemBrowser_OpenCustomItemEditor(id)
 		if !tf.PlayerCanEditCustomItems() then return end
 		if IsValid(TF2ItemBrowser_Editor) then TF2ItemBrowser_Editor:Close() end
@@ -2196,9 +2240,25 @@ if CLIENT then
 		editor:Center()
 		editor:OpenEditor(id)
 	end
-
 end
 
+properties.Add("tf2itembrowser_select", {
+	MenuLabel = "Select with TF2 Item Browser",
+	Order = 1,
+	MenuIcon = "games/16/tf.png",
+	AppendSpacer = true, //doesn't work, lame
+	
+	Filter = function(self, ent, ply)
+		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
+		if !(ent:LookupBone("bip_pelvis") or (IsValid(ent.AttachedEntity) and ent.AttachedEntity:LookupBone("bip_pelvis"))) then return false end //make sure it has the right skeleton to attach tf2 items to
+		if !gamemode.Call("CanProperty", ply, "tf2itembrowser_select", ent) then return false end
+		return true
+	end,
+
+	Action = function(self, ent)
+		TF2ItemBrowser:SetEntity(ent)
+	end
+})
 
 
 
@@ -2209,7 +2269,8 @@ end
 
 
 
-//Networking for browser inputs
+//Networking for browser inputs, including all functionality for spawning items in the world
+
 tf.BrowserInputs = {
 	[0] = "item_spawn",
 	"attach_item_spawn",
@@ -2226,7 +2287,7 @@ tf.BrowserInputs = table.Flip(tf.BrowserInputs)
 //- net.Read gets the number, then retrieves its corresponding string with table.KeyFromValue(tf.BrowserInputs, input)
 //This lets us add as many networkable strings to this table as we want, without having to manually assign each one a number.
 
- function tf.WriteItemDataTable(data)
+function tf.WriteItemDataTable(data)
 	//normal items have id numbers, custom items have id strings
 	net.WriteBool(isstring(data.id))
 	if !isstring(data.id) then
@@ -2376,7 +2437,6 @@ function tf.ReadItemDataTable()
 end
 
 if SERVER then
-
 	util.AddNetworkString("TF2ItemBrowser_Input_SendToSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItems_GetFromSv")
 	util.AddNetworkString("TF2ItemBrowser_AttachedItem_SendToCl")
@@ -3179,9 +3239,7 @@ if SERVER then
 			end
 		end
 	end)
-
 else
-
 	language.Add("undone_TF2ItemBrowser_Item", "Undone Attached Item")
 	
 	net.Receive("TF2ItemBrowser_AttachedItem_SendToCl", function()
@@ -3194,23 +3252,4 @@ else
 
 		TF2ItemBrowser.atticons.AddItem(ent, data, forceopen)
 	end)
-
 end
-
-properties.Add("tf2itembrowser_select", {
-	MenuLabel = "Select with TF2 Item Browser",
-	Order = 1,
-	MenuIcon = "games/16/tf.png",
-	AppendSpacer = true, //doesn't work, lame
-	
-	Filter = function(self, ent, ply)
-		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
-		if !(ent:LookupBone("bip_pelvis") or (IsValid(ent.AttachedEntity) and ent.AttachedEntity:LookupBone("bip_pelvis"))) then return false end //make sure it has the right skeleton to attach tf2 items to
-		if !gamemode.Call("CanProperty", ply, "tf2itembrowser_select", ent) then return false end
-		return true
-	end,
-
-	Action = function(self, ent)
-		TF2ItemBrowser:SetEntity(ent)
-	end
-})

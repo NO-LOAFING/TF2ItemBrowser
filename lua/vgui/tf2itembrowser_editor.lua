@@ -1,5 +1,7 @@
-local BackpackItemBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt")) //for custom item editor's preview; the version used by item icon code scales with the currently selected icon size
-local BackpackItemMouseOverBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover_vc.vmt")) //^
+//for custom item editor's backpack icon preview; the version used by item icons scales with the currently selected icon size, which we don't want here
+local BackpackItemBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_vc.vmt"))
+local BackpackItemMouseOverBorderUnscaled = GWEN.CreateTextureBorder(0, 0, 256, 128, 24, 24, 24, 24, Material("vgui/backpack_rect_mouseover_vc.vmt"))
+
 local rtmat = CreateMaterial("TF2ItemBrowser_EditorIconRT", "UnlitGeneric", {
 	["$basetexture"] = "color/white",
 	["$translucent"] = "1",
