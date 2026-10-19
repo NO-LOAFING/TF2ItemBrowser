@@ -284,9 +284,9 @@ function PANEL:Init()
 		local pnl = vgui.Create("DPanel", filters)
 		pnl:SetTall(20)
 		pnl.Button1 = tf.TFStyleVGUI("DCheckBox", pnl)
-		pnl.Button1.OnChange = function(_, val) pnl:OnChange(val, pnl.Button1) end
+		pnl.Button1.OnChange = function(_, val) pnl.OnChange(val, pnl.Button1) end
 		pnl.Button2 = tf.TFStyleVGUI("DCheckBox", pnl)
-		pnl.Button2.OnChange = function(_, val) pnl:OnChange(val, pnl.Button2) end
+		pnl.Button2.OnChange = function(_, val) pnl.OnChange(val, pnl.Button2) end
 		pnl.Button2.NegativeCheck = true //use different visuals
 		pnl.Label = vgui.Create("DLabel", pnl)
 		pnl.Label:SetText(label)
@@ -859,13 +859,13 @@ function PANEL:RebuildIconList()
 		end
 	end
 	self.iconlist.columns = columns
-	local rows = math.floor((#self.icons_to_add-1)/columns)+1
+	local rows = math.floor((#self.icons_to_add)/columns)+1
 	self.iconlist:SetHeight((rows*tf.item_icon_sizes[icon_size].h) + ((rows-1)*tf.item_icon_sizes[icon_size].gap_h))
 	//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items if there's a loading bar
 	self.right_scroll:InvalidateLayout()
 	self.right_scroll.VBar:SetScroll(0)
 	self.right_scroll:SetMouseInputEnabled(!self.icons_to_add_showloader)
-	//if #self.icons_to_add != 1 then
+	//if #self.icons_to_add != 1 thens
 		//self.ItemCountText:SetText("(" .. tostring(#self.icons_to_add) .. " items)")
 		self.ItemCountText:SetText("(" .. string.Replace(tf.GetPhrase("#Store_CartItems") or "%s1 Items", "%s1", tostring(#self.icons_to_add)) .. ")")
 	//else
@@ -885,20 +885,24 @@ function PANEL:Think(...)
 		net.SendToServer()
 	end
 	if self.icons_to_add and self.icons_to_add_key then
+		//Add random item button to start of iconlist; do this here and not in RebuildIconList so console doesn't complain about adding vgui child during layout
+		if self.icons_to_add_key == 1 --[[and #self.icons_to_add > 0]] then //gotta add this to empty lists as well, so that it doesn't awkwardly disappear when updating filters during use
+			local item = self.iconlist:Add("TF2ItemBrowser_Icon")
+			item:SetupRandomItemIcon()
+		end
 		local icon_size = tf.cv_icon_size:GetInt()
 		for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
 			local v = self.icons_to_add[k]
 			if v then
 				local item = self.iconlist:Add("TF2ItemBrowser_Icon")
-				local col = (k-1)%self.iconlist.columns
-				local row = math.floor((k-1)/self.iconlist.columns)
+				local col = k%self.iconlist.columns
+				local row = math.floor(k/self.iconlist.columns)
 				item:SetPos(col*(tf.item_icon_sizes[icon_size].w+tf.item_icon_sizes[icon_size].gap_w), row*(tf.item_icon_sizes[icon_size].h+tf.item_icon_sizes[icon_size].gap_h))
 				item.data = v //this will be populated with the default data table for this item once the icon renders
-				self.icons[v] = item
 				item.item_conflict = self:GetItemHasConflict(v)
 			else
-				//We've gone through the whole table, so we're done here, get rid of it
-				self.icons_to_add = nil
+				//We've gone through the whole table, so we're done here
+				//Don't remove self.icons_to_add, this is also used by the random item button
 				self.icons_to_add_key = nil
 				if self.icons_to_add_showloader then
 					self.icons_to_add_showloader = nil

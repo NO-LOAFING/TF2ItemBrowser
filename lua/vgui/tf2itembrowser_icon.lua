@@ -690,6 +690,47 @@ function PANEL:SetDefaultData()
 
 end
 
+function PANEL:SetupRandomItemIcon()
+
+	//default to the currently selected class in the filters, except for "none"
+	local _, class = TF2ItemBrowser.filters.class:GetSelected()
+	if class > 10 then class = 1 end
+	self.random = {
+		class = class,
+		paint_chance = 0.5,
+		paint_match = true,
+		unusual_chance = 0.1,
+		unusual_validonly = true,
+		wp_chance = 0.5,
+		wp_randomwear = true,
+		festivizer_chance = 0.25,
+		aus_chance = 0.1,
+	}
+
+	self.quality = "unique"
+	self.sound_pressed = "ui/item_dueling_pistols_pickup.wav" //like a roulette wheel, you know
+	//self.sound_drop = "ui/item_default_drop.wav" //no drop sound - we'll use the drop sound of whatever random item we pick instead
+
+	self.itemname = "Random Item"
+	local format = tf.GetPhrase("#ItemTypeDesc")
+	if format then
+		format = string.Replace(format, "%s1", #TF2ItemBrowser.icons_to_add)
+		format = string.Replace(format, "%s2", "Random Item")
+	end
+	self.itemdesc = {
+		{str = format or "", col = tf.desc_colors.level},
+		{str = "Randomly choose an item to spawn.", col = tf.desc_colors.neutral}
+	}
+
+end
+
+function PANEL:GenerateRandomItem()
+
+	//TODO
+	surface.PlaySound("replay/replaydialog_warn.wav")
+
+end
+
 function PANEL:UpdateItemName()
 
 	//based on https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L610, it's a whopper
@@ -1605,8 +1646,6 @@ end
 
 function PANEL:CreateSpawnPanel()
 
-	local i = tf.TF2Items.items[self.data.id] or {}
-
 	if IsValid(TF2ItemBrowser.SpawnPanel) then
 		if TF2ItemBrowser.SpawnPanel.Owner == self then
 			return
@@ -1624,212 +1663,8 @@ function PANEL:CreateSpawnPanel()
 	name_container:Dock(TOP)
 	name_container.Paint = function() end
 	//this will be populated in pnl.Refresh()
-	
-	local mdl = tf.CreateItemIconModelPanel(pnl)
-	pnl.ModelPanel = mdl
-	mdl:SetSize(300,300)
-	mdl.PaintMargin = 3 //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
-	side_margins = (tf.popup_w-300-tf.popup_pad-tf.popup_pad)/2 //force this panel to stay a square, and align all the other controls with it
-	mdl:DockMargin(side_margins,tf.betweencategories-5,side_margins,tf.betweencategories)
-	mdl:Dock(TOP)
-	local old_Paint = mdl.Paint
-	function mdl:Paint(w,h)
-		tf.GrayDialogBorder(0,0,w,h)
-		old_Paint(mdl,w,h)
-	end
-	function mdl:Refresh()
-		pnl.Refresh()
-	end
 
-	function pnl.Refresh()
-		name_container:Clear()
-		self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
-		name_container:InvalidateLayout(true)
-		name_container:SizeToChildren(false, true)
-
-		//update these every time we open or refresh the panel, since they can change after the icon has been created
-		if !IsValid(ent) then 
-			self.data.team = TF2ItemBrowser.attopts.team.Value
-			local _, f = TF2ItemBrowser.attopts.fx:GetSelected()
-			self.data.fx = f
-		end
-		local vis = tf.GetItemModelVisuals(self.data)
-
-		//Clean up old models and particles
-		for k, v in ipairs (mdl.models) do
-			if IsValid(v) then v:Remove() end
-		end
-		for k, v in ipairs (mdl.particles) do
-			if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
-		end
-
-		mdl.models = self:CreateItemModels(self.data) or {}
-		mdl.Entity = mdl.models[1]
-
-		//Only reset the camera if the values returned by tf.DoItemModelCamera have changed (i.e. a model or animation changed)
-		local cam = tf.DoItemModelCamera(mdl.models, self)
-		local docamera = mdl.old_cam == nil
-		if mdl.old_cam then
-			for k, v in pairs (cam) do
-				if v != mdl.old_cam[k] then
-					docamera = true
-					break
-				end
-			end
-		end
-		if docamera then
-			mdl.old_cam = table.Copy(cam)
-			//For custom items, use backpack icon camera values, but only if the displayed model matches the one used by the icon.
-			//This override happens after the old_cam check, so that alternative models which return the same results from
-			//tf.DoItemModelCamera (i.e. styles that only change material) can also use the backpack icon camera values.
-			if mdl.models[1] and i._customitem_bp and !i._customitem_bp.showclass then
-				local bpmdl = true
-				if i._customitem_bp.mdl then
-					for k, v in pairs ({"item", "wearable", "wearable_2"}) do
-						if self.data.models[v] and i._customitem_bp.mdl != v then
-							bpmdl = false
-							break
-						end
-					end
-				end
-				if bpmdl then
-					local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[i._customitem_bp.class] or self.data.class, team = self.data.team, style = i._customitem_bp.style or self.data.style})
-					if i._customitem_bp.mdl then
-						if vis2.models[i._customitem_bp.mdl] != vis.models[i._customitem_bp.mdl] then 
-							bpmdl = false
-						end
-					else
-						for k, v in pairs ({"item", "wearable", "wearable_2"}) do
-							if vis2.models[v] != vis.models[v] then
-								bpmdl = false
-								break
-							end
-						end
-					end
-					if bpmdl then
-						cam = i._customitem_bp
-						mdl.mdlang = i._customitem_bp.mdlang
-					end
-				end
-				if !bpmdl then
-					mdl.mdlang = nil
-				end
-			else
-				mdl.mdlang = nil
-			end
-			mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
-			mdl:SetFOV(cam.fov)
-			mdl:SetLookAng(Angle(cam.ang))
-		end
-		if mdl.mdlang and IsValid(mdl.models[1]) then
-			mdl.models[1]:SetAngles(mdl.mdlang)
-		end
-
-		//Now that we've created and positioned the models, create the particles
-		mdl.particles = self:CreateItemParticles(mdl.models, function()
-			timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
-		end, self.data) or {}
-
-		//Hide the class selector if all classes use the same model (i.e. medals)
-		//Also compare the bodygroups because of use_per_class_bodygroups.
-		local should_show_class = false
-		if i.used_by_classes then
-			for k, v in pairs (i.used_by_classes) do
-				if k != tf.classes[self.data.class].longname then
-					local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[k], team = self.data.team, style = self.data.style})
-					if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
-						for k, v in pairs (vis2.item_bg) do
-							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
-							//badges like the dueling badges have useless bodygroup setters for some reason
-							if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
-								should_show_class = true
-								break
-							end
-						end
-						if should_show_class then break end
-					end
-					for k, v in pairs (vis2.models) do
-						if istable(v) then
-							for k2, v2 in pairs (v) do
-								if vis.models[k][k2] != v2 then
-									should_show_class = true
-									break
-								end
-							end
-						elseif vis.models[k] != v then
-							should_show_class = true
-							break
-						end
-					end
-				end
-			end
-		end
-		local par = pnl.class:GetParent()
-		if !should_show_class and par:IsVisible() then
-			par:SetVisible(false)
-			par.stored_margin = {par:GetDockMargin()}
-		elseif should_show_team and !par:IsVisible() then
-			par:SetVisible(true)
-			if par.stored_margin then
-				par:DockMargin(par.stored_margin[1], par.stored_margin[2], par.stored_margin[3], par.stored_margin[4])
-			end
-		end
-
-		pnl:InvalidateLayout(true)
-		pnl:SizeToChildren(false,true)
-		self:PositionPopupPanel(pnl)
-	end
-	
-	function pnl.OnSettingChanged()
-		self:SetData()
-		pnl.Refresh()
-		if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
-	end	
-
-	local checks = vgui.Create("Panel", pnl) //container for submodel controls
-	checks:SetHeight(20)
-	checks:Dock(TOP)
-	checks.checks = {}
-	for k, v in SortedPairs (self.data.models) do
-		local check = tf.TFStyleVGUI("DCheckBoxLabel", checks)
-		check.model = k
-		local text = string.NiceName(k)
-		if k == "item" then
-			text = tf.GetPhrase("#Item") or "Item"
-		elseif k == "attached_festive" then
-			text = tf.GetPhrase("#TF_FestivizerTool") or "Festivizer"
-		end
-		//no tf localization strings for "wearable" or "stat clock", unfortunately
-		check:SetText(text)
-		check:Dock(LEFT)
-		check:SetChecked(v)
-		check.OnChange = function(_, val)
-			self.data.models[k] = val
-			pnl.OnSettingChanged()
-		end
-		table.insert(checks.checks, check)
-	end
-	checks:DockMargin(side_margins,0,side_margins,tf.betweencategories)
-	function checks:PerformLayout(w, h)
-		for _, v in ipairs (checks.checks) do
-			v:SetWide(w / #checks.checks) //draw these side-by-side so as to not take up too much space
-		end
-	end
-	checks:InvalidateLayout()
-	if #checks.checks < 2 then
-		//if there's only one submodel then we don't need these
-		checks:Remove()
-	elseif self.data.models.wearable == nil and self.data.models.wearable_2 == nil and self.data.models.taunt_prop == nil then
-		//if we only have the base item and optional attachments, then we don't need the option for the base item
-		for k, v in ipairs (checks.checks) do
-			if v.model == "item" then
-				table.remove(checks.checks, k)
-				v:Remove()
-				break
-			end
-		end
-	end	
-
+	local side_margins = (tf.popup_w-300-tf.popup_pad-tf.popup_pad)/2 //force the modelpanel to stay a square, and align all the other controls with it
 	local function AddDropdown(label, populatefunc, select_extras)
 		local combo = tf.TFStyleVGUI("DComboBox", pnl)
 		local _pnl = tf.AddTFLabelToVGUI(combo, label)
@@ -1840,1666 +1675,1936 @@ function PANEL:CreateSpawnPanel()
 		function combo.OnSelect(_, index, value, data)
 			if select_extras then select_extras(data) end
 			combo.value = data
-			pnl.OnSettingChanged()
+			if pnl.OnSettingChanged then pnl.OnSettingChanged() end
 		end
 		return combo
 	end
+	
+	if !self.random then
+		local i = tf.TF2Items.items[self.data.id] or {}
 
-	pnl.class = AddDropdown(tf.GetPhrase("#TF_ImportFile_Models") or "Class:", function(drop)
-		for k, v in ipairs (tf.classes) do //add class options in class order
-			if i.used_by_classes and i.used_by_classes[v.longname] then
-				drop:AddChoice(tf.GetPhrase(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
-			end
+		local mdl = tf.CreateItemIconModelPanel(pnl)
+		pnl.ModelPanel = mdl
+		mdl:SetSize(300,300)
+		mdl.PaintMargin = 3 //set precisely to cut off the modelpanel at the edges of the GrayDialogBorder
+		mdl:DockMargin(side_margins,tf.betweencategories-5,side_margins,tf.betweencategories)
+		mdl:Dock(TOP)
+		local old_Paint = mdl.Paint
+		function mdl:Paint(w,h)
+			tf.GrayDialogBorder(0,0,w,h)
+			old_Paint(mdl,w,h)
 		end
-	end, function(data)
-		self.data.class = data
-	end)
-
-	if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
-		local name = (tf.GetPhrase("#Context_Style") or "Style") .. ":"
-		if i._call_styles_animations then name = (tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation") .. ":" end
-		AddDropdown(name, function(drop)
-			for k, _ in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
-				drop:AddChoice(tf.GetItemStyleName(self.data.id, k), k, self.data.style == k)
-			end
-		end, function(data)
-			self.data.style = data
-		end)
-	end
-
-	if i.capabilities and i.capabilities.paintable == 1 then
-		local drop = AddDropdown(string.Trim(string.Replace(tf.GetPhrase("#Econ_Paint_Name") or "Paint Color:", "%s1", "")), function(drop)
-			drop:AddChoice(tf.str_none, nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
-			drop:AddSpacer()
-			for k, v in ipairs (paints) do
-				local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v.override or (self.data.paint.col[false] == v[1] and self.data.paint.col[true] == v[2]))
-				drop:AddChoice(tf.GetPhrase(v.name) or v.name, v, is_selected)
-			end
-			if drop:GetText() == "" then drop:SetText(tf.str_custom) end
-		end, function(data)
-			if !data then
-				if self.default_paint then
-					self.data.paint.enabled = true
-					self.data.paint.col = table.Copy(self.default_paint)
-				else
-					self.data.paint.enabled = false
-					self.data.paint.col = {[false] = Vector(255,255,255)}
-				end
-				self.data.paint.override = {[false] = 0}
-			else
-				self.data.paint.enabled = true
-				if data.override then
-					self.data.paint.override = {[false] = data.override, [true] = data.override_2}
-				else
-					self.data.paint.override = {[false] = 0}
-				end
-				if data[1] then
-					self.data.paint.col = {[false] = data[1], [true] = data[2]}
-				end
-			end
-		end)
-		function drop.OpenMenu()
-			//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
-			//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
-			//when an option is selected.
-			if IsValid(drop.container) then
-				drop.container:Remove()
-				return
-			end
-
-			local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-			container:DockPadding(16,16,16,16)
-			function container:Paint(w,h)
-				tf.LoadoutItemPopupBorder(0,0,w,h)
-			end
-			drop.container = container
-
-			//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
-			//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
-			//so instead make the container behave like a DermaMenu.
-			CloseDermaMenus()
-			container:SetIsMenu(true)
-			function container:GetDeleteSelf() return true end
-			function container:OnRemove() 
-				//fix keyboard focus getting stuck on col's textentries if we remove container while focused
-				local chump = vgui.GetKeyboardFocus()
-				if IsValid(chump) then chump:KillFocus() end
-			end
-			RegisterDermaMenuForClose(container)
-
-			local text = vgui.Create("DLabel", container)
-			text:SetContentAlignment(7) //top left
-			text:SetAutoStretchVertical(true)
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(tf.gui_colors.TanLight)
-			text:SetText(drop:GetParent().Label:GetText())
-			text:Dock(TOP)
-			text:DockMargin(0,0,0,8)
-			text:SizeToContents()
-
-			local close = vgui.Create("DButton", container)
-			close:SetText("")
-			close:SetSize(22,22)
-			function close:Paint(w,h)
-				close:SetPos(container:GetWide()-w-12, 12)
-				if self.Depressed then
-					surface.SetDrawColor(color_white)
-				elseif self.Hovered then
-					surface.SetDrawColor(tf.gui_colors.LightRed)
-				else
-					surface.SetDrawColor(tf.gui_colors.TanDark)
-				end
-				surface.SetMaterial(tf.close_button)
-				surface.DrawTexturedRect(0,0,w,h)
-			end
-			tf.AddTFButtonSounds(close)
-			function close:DoClick()
-				container:Remove()
-			end
-
-			local size = 48
-			local icons = vgui.Create("DIconLayout", container)
-			icons:Dock(TOP)
-			icons:SetSpaceX(4)
-			icons:SetSpaceY(4)
-			
-			for k, v in pairs (drop.Choices) do
-				local data = drop.Data[k]
-				local button = vgui.Create("DButton", icons)
-				button:SetSize(size, size)
-				local name, col, col_2
-				if data then
-					name = tf.GetPhrase(data.name) or data.name
-					if data[1] then
-						col = data[1]
-					end
-					if data[2] then
-						col_2 = data[2]
-					end
-				end
-				button:SetText("")
-				function button.DoClick()
-					drop:ChooseOption(v, k)
-					container.col.BeingUpdated = true
-					local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
-					container.col:SetColor(Color(_col.x, _col.y, _col.z))
-					container.col.BeingUpdated = nil
-				end
-				local tex_corner16 = surface.GetTextureID("gui/corner16")
-				local tex_corner8 = surface.GetTextureID("gui/corner8")
-				function button:Paint(w, h)
-					//there aren't many border colors that are visible against *all* the paint options;
-					//just pick two that work, regardless of tf2-authenticity, and make the more intense
-					//one the "selected" color.
-					local _col
-					if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
-						_col = tf.gui_colors.LightRed
-					elseif button.Hovered then
-						_col = tf.gui_colors.TanLight
-					end
-					if _col then
-						draw.RoundedBox(12, 0,0,w,h, _col)
-					end
-
-					//if we successfully set a border color, then shrink down the color preview
-					//so that the RoundedBox we just drew appears as a border around it.
-					local bd = 0
-					local c = 12-4
-					local c_whole = 12
-					local tex = tex_corner16
-					local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
-					if _col then
-						bd = 4
-						c = 8-1
-						c_whole = 8
-						tex = tex_corner8
-						cornerw = (1/8)*c
-					end
-
-					local col = col
-					local col_2 = col_2
-					if (data and data.override) then
-						col = ProxyentPaintColor_GetOverrideColor(data.override)
-						if data.override_2 then
-							col_2 = ProxyentPaintColor_GetOverrideColor(data.override_2)
-						end
-					end
-
-					if col_2 then
-						//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
-
-						surface.SetDrawColor(col.x, col.y, col.z, 255)
-						surface.SetTexture(tex)
-						surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
-						surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
-						surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
-						draw.NoTexture()
-						surface.DrawPoly({ //left triangle
-							{x = bd+c, y = bd}, //upper left corner
-							{x = w-bd-c, y = bd}, //upper right corner
-							{x = bd+c, y = h-bd}, //lower left corner
-						})
-
-						surface.SetDrawColor(col_2.x, col_2.y, col_2.z, 255)
-						surface.SetTexture(tex)
-						surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
-						surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
-						surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
-						draw.NoTexture()
-						surface.DrawPoly({ //right triangle
-							{x = w-bd-c, y = bd}, //upper right corner
-							{x = w-bd-c, y = h-bd}, //lower right corner
-							{x = bd+c, y = h-bd}, //lower left corner
-						})
-					elseif col then
-						//recreating this color table every frame sucks, but
-						//it's the only way to handle the color-changing ones
-						draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, {r = col.x, g = col.y, b = col.z, a = 255})
-					else
-						//custom appearance for "none" option
-						draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, tf.gui_colors.TanDarker)
-						surface.SetDrawColor(tf.gui_colors.LightRed)
-						surface.SetMaterial(tf.close_button_nocircle)
-						local w2 = w * 0.75
-						local h2 = h * 0.75
-						surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-					end
-				end
-				tf.AddTFButtonSounds(button)
-				//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
-				tf.AddTFStyleTooltip(button, name or v)
-			end
-			icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
-			icons:InvalidateLayout()
-
-			local col = tf.TFStyleVGUI("DColorMixer", container)
-			col:SetLabel("#tool.colour.color")
-			col.label:SetDark(false)
-			container.col = col
-			col:SetAlphaBar(false)
-			local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
-			col:SetColor(Color(_col.x, _col.y, _col.z))
-			col.ValueChanged = function(_, _col)
-				if container.col.BeingUpdated then return end
-				_col = Vector(_col.r, _col.g, _col.b)
-				//0,0,0 (and anything darker than 3,3,3) is used by the vmt to mean "no paint color", which means it'll get overwritten by the hat's
-				//default color, so if the player is trying to paint something pure black, then redirect it to a color that actually works.
-				if _col.x < 3 and _col.y < 3 and _col.z < 3 then
-					_col = Vector(3,3,3)
-				end
-				self.data.paint.enabled = true
-				self.data.paint.override = {[false] = 0}
-				self.data.paint.col = {[false] = _col}
-				drop.selected = nil //un-highlight the currently selected option
-				drop:SetText(tf.str_custom)
-				pnl.OnSettingChanged()
-			end
-			col:DockMargin(0,16,0,0)
-			col:InvalidateChildren(true)
-			col:Dock(TOP)
-
-			container:SizeToChildren(true, true)
-			container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
-			container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
-			container:IsMouseInputEnabled(true)
-			container:InvalidateLayout()
-
-			local x, y = drop:LocalToScreen(drop:GetWide(), 0)
-			if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
-			if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
-			container:SetPos(x, y)
+		function mdl:Refresh()
+			pnl.Refresh()
 		end
-	end
 
-	//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
-	local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true, _custom_weapon = true}
-	if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and !i.act_as_wearable and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
-		local drop = AddDropdown("Crit Glow Color:", function(drop) //no tf localization string for this
-			drop:AddChoice(tf.str_none, nil, !self.data.crit.enabled)
-			drop:AddSpacer()
-			for k, v in ipairs (critglows) do
-				local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1] and self.data.crit.col[true] == v[2]
-				drop:AddChoice(tf.GetPhrase(v.name) or v.name, v, is_selected)
+		function pnl.Refresh()
+			name_container:Clear()
+			self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
+			name_container:InvalidateLayout(true)
+			name_container:SizeToChildren(false, true)
+
+			//update these every time we open or refresh the panel, since they can change after the icon has been created
+			if !IsValid(ent) then 
+				self.data.team = TF2ItemBrowser.attopts.team.Value
+				local _, f = TF2ItemBrowser.attopts.fx:GetSelected()
+				self.data.fx = f
 			end
-			if drop:GetText() == "" then drop:SetText(tf.str_custom) end
-		end, function(data)
-			if !data then
-				self.data.crit.enabled = false
-				self.data.crit.col = {[false] = Vector(1,1,1)}
-				self.data.crit.sparks_rb = false 
-				self.data.crit.sparks_c = false
-			else
-				self.data.crit.enabled = true
-				self.data.crit.col = {[false] = data[1], [true] = data[2]}
-				self.data.crit.sparks_rb = data.sparks_rb
-				self.data.crit.sparks_c = false
+			local vis = tf.GetItemModelVisuals(self.data)
+
+			//Clean up old models and particles
+			for k, v in ipairs (mdl.models) do
+				if IsValid(v) then v:Remove() end
 			end
-		end)
-		function drop.OpenMenu()
-			//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
-			//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
-			//when an option is selected.
-			if IsValid(drop.container) then
-				drop.container:Remove()
-				return
+			for k, v in ipairs (mdl.particles) do
+				if IsValid(v) then v:StopEmissionAndDestroyImmediately() end
 			end
 
-			local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-			container:DockPadding(16,16,16,16)
-			function container:Paint(w,h)
-				tf.LoadoutItemPopupBorder(0,0,w,h)
-			end
-			drop.container = container
+			mdl.models = self:CreateItemModels(self.data) or {}
+			mdl.Entity = mdl.models[1]
 
-			//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
-			//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
-			//so instead make the container behave like a DermaMenu.
-			CloseDermaMenus()
-			container:SetIsMenu(true)
-			function container:GetDeleteSelf() return true end
-			function container:OnRemove() 
-				//fix keyboard focus getting stuck on col's textentries if we remove container while focused
-				local chump = vgui.GetKeyboardFocus()
-				if IsValid(chump) then chump:KillFocus() end
-			end
-			RegisterDermaMenuForClose(container)
-
-			local text = vgui.Create("DLabel", container)
-			text:SetContentAlignment(7) //top left
-			text:SetAutoStretchVertical(true)
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(tf.gui_colors.TanLight)
-			text:SetText(drop:GetParent().Label:GetText())
-			text:Dock(TOP)
-			text:DockMargin(0,0,0,8)
-			text:SizeToContents()
-
-			local close = vgui.Create("DButton", container)
-			close:SetText("")
-			close:SetSize(22,22)
-			function close:Paint(w,h)
-				close:SetPos(container:GetWide()-w-12, 12)
-				if self.Depressed then
-					surface.SetDrawColor(color_white)
-				elseif self.Hovered then
-					surface.SetDrawColor(tf.gui_colors.LightRed)
-				else
-					surface.SetDrawColor(tf.gui_colors.TanDark)
-				end
-				surface.SetMaterial(tf.close_button)
-				surface.DrawTexturedRect(0,0,w,h)
-			end
-			tf.AddTFButtonSounds(close)
-			function close:DoClick()
-				container:Remove()
-			end
-
-			//diconlayout and color picker copied from paint dropdown, bah
-			local size = 48
-			local icons = vgui.Create("DIconLayout", container)
-			icons:Dock(TOP)
-			icons:SetSpaceX(4)
-			icons:SetSpaceY(4)
-
-			for k, v in pairs (drop.Choices) do
-				local data = drop.Data[k]
-				local button = vgui.Create("DButton", icons)
-				button:SetSize(size, size)
-				local name, col, col_2
-				if data then
-					name = tf.GetPhrase(data.name) or data.name
-					if name == "" then name = nil end
-					if data[1] then
-						col = Color(data[1].x, data[1].y, data[1].z, 255) //unlike paint selector, this can just be a Color value because we don't have to worry about animated color-changing paints
-					end
-					if data[2] then
-						col_2 = Color(data[2].x, data[2].y, data[2].z, 255) //^
-					end
-				end
-				button:SetText("")
-				function button.DoClick()
-					drop:ChooseOption(v, k)
-					container.col.BeingUpdated = true
-					local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-					container.col:SetColor(Color(_col.x, _col.y, _col.z))
-					container.col.BeingUpdated = nil
-					container.check_c:SetChecked(self.data.crit.sparks_c)
-					container.check_rb:SetChecked(self.data.crit.sparks_rb)
-				end
-				//button paint code also copied almost entirely from paint selector! lame!
-				local tex_corner16 = surface.GetTextureID("gui/corner16")
-				local tex_corner8 = surface.GetTextureID("gui/corner8")
-				function button:Paint(w, h)
-					//there aren't many border colors that are visible against *all* the paint options;
-					//just pick two that work, regardless of tf2-authenticity, and make the more intense
-					//one the "selected" color.
-					local _col
-					if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
-						_col = tf.gui_colors.LightRed
-					elseif button.Hovered then
-						_col = tf.gui_colors.TanLight
-					end
-					if _col then
-						draw.RoundedBox(12, 0,0,w,h, _col)
-					end
-
-					//if we successfully set a border color, then shrink down the color preview
-					//so that the RoundedBox we just drew appears as a border around it.
-					local bd = 0
-					local c = 12-4
-					local c_whole = 12
-					local tex = tex_corner16
-					local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
-					if _col then
-						bd = 4
-						c = 8-1
-						c_whole = 8
-						tex = tex_corner8
-						cornerw = (1/8)*c
-					end
-
-					if col_2 then
-						//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
-
-						surface.SetDrawColor(col)
-						surface.SetTexture(tex)
-						surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
-						surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
-						surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
-						draw.NoTexture()
-						surface.DrawPoly({ //left triangle
-							{x = bd+c, y = bd}, //upper left corner
-							{x = w-bd-c, y = bd}, //upper right corner
-							{x = bd+c, y = h-bd}, //lower left corner
-						})
-
-						surface.SetDrawColor(col_2)
-						surface.SetTexture(tex)
-						surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
-						surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
-						surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
-						draw.NoTexture()
-						surface.DrawPoly({ //right triangle
-							{x = w-bd-c, y = bd}, //upper right corner
-							{x = w-bd-c, y = h-bd}, //lower right corner
-							{x = bd+c, y = h-bd}, //lower left corner
-						})
-					elseif col then
-						draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, col)
-					else
-						//custom appearance for "none" option
-						draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, tf.gui_colors.TanDarker)
-						surface.SetDrawColor(tf.gui_colors.LightRed)
-						surface.SetMaterial(tf.close_button_nocircle)
-						local w2 = w * 0.75
-						local h2 = h * 0.75
-						surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-					end
-				end
-				tf.AddTFButtonSounds(button)
-				//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
-				tf.AddTFStyleTooltip(button, name or v)
-			end
-			icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
-			icons:InvalidateLayout()
-
-			local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
-			container.check_rb = check
-			check:SetText("Team Sparks")
-			check:DockMargin(0,16,0,0)
-			check:Dock(TOP)
-			check:SetChecked(self.data.crit.sparks_rb)
-			check.OnChange = function(_, val)
-				self.data.crit.enabled = true
-				self.data.crit.sparks_rb = val
-				pnl.OnSettingChanged()
-			end
-
-			local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
-			container.check_c = check
-			check:SetText("Colorable Sparks")
-			check:DockMargin(0,8,0,0)
-			check:Dock(TOP)
-			check:SetChecked(self.data.crit.sparks_c)
-			check.OnChange = function(_, val)
-				self.data.crit.enabled = true
-				self.data.crit.sparks_c = val
-				pnl.OnSettingChanged()
-			end
-
-			local col = tf.TFStyleVGUI("DColorMixer", container)
-			col:SetLabel("#tool.colour.color")
-			col.label:SetDark(false)
-			container.col = col
-			col:SetAlphaBar(false)
-			local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
-			col:SetColor(Color(_col.x, _col.y, _col.z))
-			col.ValueChanged = function(_, _col)
-				if container.col.BeingUpdated then return end
-				_col = Vector(_col.r, _col.g, _col.b)
-				self.data.crit.enabled = true
-				self.data.crit.col = {[false] = _col}
-				drop.selected = nil //un-highlight the currently selected option
-				drop:SetText(tf.str_custom)
-				pnl.OnSettingChanged()
-			end
-			col:DockMargin(0,16,0,0)
-			col:InvalidateChildren(true)
-			col:Dock(TOP)
-
-			container:SizeToChildren(true, true)
-			container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 + container.check_rb:GetTall() + 8 + container.check_c:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
-			container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
-			container:IsMouseInputEnabled(true)
-			container:InvalidateLayout()
-
-			local x, y = drop:LocalToScreen(drop:GetWide(), 0)
-			if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
-			if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
-			container:SetPos(x, y)
-		end
-	end
-
-	local submenu
-	local function SubmenuLoseFocus(pnl)
-		if IsValid(pnl) and pnl != submenu --[[and !pnl.m_bIsMenuComponent]] then
-			local par = pnl:GetParent()
-			if !IsValid(par) or SubmenuLoseFocus(par) then
-				return true
-			end
-		end
-	end
-	hook.Add("VGUIMousePressed", "TF2ItemBrowser_SubMenuLoseFocus", function(pnl, mcode)
-		if IsValid(submenu) and SubmenuLoseFocus(pnl) then
-			submenu:Remove()
-		end
-	end)
-	local function AddSubDropdown(container)
-		local drop2 = tf.TFStyleVGUI("DComboBox", container)
-		drop2:Dock(TOP)
-		//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
-		function drop2:OpenMenu(pControlOpener)
-			if ( pControlOpener && pControlOpener == self.TextEntry ) then
-				return
-			end
-
-			-- Don't do anything if there aren't any options..
-			if ( #self.Choices == 0 ) then return end
-
-			-- If the menu still exists and hasn't been deleted
-			-- then just close it and don't open a new one.
-			self:CloseMenu()
-
-			//Change 1 of 2: Make sure that opening this menu doesn't close the parent dropdown, and associate it with the hook above
-			if IsValid(submenu) then submenu:Remove() end
-			submenu = DermaMenu(true, container)
-			self.Menu = submenu
-
-			--[[if ( self:GetSortItems() ) then
-				local sorted = {}
-				for k, v in pairs( self.Choices ) do
-					local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
-					if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
-					table.insert( sorted, { id = k, data = v, label = val } )
-				end
-				for k, v in SortedPairsByMemberValue( sorted, "label" ) do
-					local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
-					if ( self.ChoiceIcons[ v.id ] ) then
-						option:SetIcon( self.ChoiceIcons[ v.id ] )
-					end
-					if ( self.Spacers[ v.id ] ) then
-						self.Menu:AddSpacer()
-					end
-				end
-			else]]
-				for k, v in pairs( self.Choices ) do
-					//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the parent dropdown (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
-					local option = self.Menu:AddOption( v )
-					option.DoClick = function()
-						option.m_MenuClicking = false
-						if IsValid(self) then
-							self:ChooseOption( v, k )
-							self:CloseMenu()
-						end
-					end
-					if ( self.ChoiceIcons[ k ] ) then
-						option:SetIcon( self.ChoiceIcons[ k ] )
-					end
-					if ( self.Spacers[ k ] ) then
-						self.Menu:AddSpacer()
-					end
-				end
-			//end
-
-			local x, y = self:LocalToScreen( 0, self:GetTall() )
-
-			self.Menu:SetMinimumWidth( self:GetWide())
-			self.Menu:Open( x, y, false, self )
-
-			self:OnMenuOpened( self.Menu )
-		end
-		return drop2
-	end
-
-	//Add unusual effect dropdown
-	local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
-	local u_wep = i.particle_suffix
-	if u_hat or u_wep then
-		local drop = AddDropdown(string.Trim(tf.GetPhrase("#IT_UnusualTitle") or "Unusual effect:"), function(drop)
-			drop:AddChoice(tf.str_none, 0, self.data.pe_unusual == 0)
-			drop:AddSpacer()
-			if u_hat then
-				for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
-					if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
-					if v.system:EndsWith("_teamcolor_blue") then continue end
-					drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
-				end
-			end
-			if u_wep then
-				for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
-					if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
-					drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
-				end
-			end
-		end, function(data)
-			self.data.pe_unusual = data
-		end)
-		function drop.OpenMenu()
-			//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
-			//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
-			//when an option is selected.
-			if IsValid(drop.container) then
-				drop.container:Remove()
-				return
-			end
-
-			local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-			container:DockPadding(16,16,16,16)
-			function container:Paint(w,h)
-				tf.LoadoutItemPopupBorder(0,0,w,h)
-			end
-			drop.container = container
-
-			//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
-			//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
-			//so instead make the container behave like a DermaMenu.
-			CloseDermaMenus()
-			container:SetIsMenu(true)
-			function container:GetDeleteSelf() return true end
-			function container:OnRemove() 
-				//fix keyboard focus getting stuck on col's textentries if we remove container while focused
-				local chump = vgui.GetKeyboardFocus()
-				if IsValid(chump) then chump:KillFocus() end
-			end
-			RegisterDermaMenuForClose(container)
-
-			local text = vgui.Create("DLabel", container)
-			text:SetContentAlignment(7) //top left
-			text:SetAutoStretchVertical(true)
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(tf.gui_colors.TanLight)
-			text:SetText(drop:GetParent().Label:GetText())
-			text:Dock(TOP)
-			text:DockMargin(0,0,0,8)
-			text:SizeToContents()
-
-			local close = vgui.Create("DButton", container)
-			close:SetText("")
-			close:SetSize(22,22)
-			function close:Paint(w,h)
-				close:SetPos(container:GetWide()-w-12, 12)
-				if self.Depressed then
-					surface.SetDrawColor(color_white)
-				elseif self.Hovered then
-					surface.SetDrawColor(tf.gui_colors.LightRed)
-				else
-					surface.SetDrawColor(tf.gui_colors.TanDark)
-				end
-				surface.SetMaterial(tf.close_button)
-				surface.DrawTexturedRect(0,0,w,h)
-			end
-			tf.AddTFButtonSounds(close)
-			function close:DoClick()
-				container:Remove()
-			end
-
-			local categories = {}
-			for k, v in ipairs ({"Series 1", "Series 2", "Halloween 2011", "Halloween 2012", "Robotic Boogaloo", "Series 3", "Halloween 2013", "Halloween 2014", "End of the Line", "Invasion"}) do
-				categories[v] = {order = k, items = {}}
-			end
-			categories["Other"] = {order = 99999999, items = {}}
-			for k, v in pairs (drop.Choices) do
-				local data = drop.Data[k]
-				local tab = tf.TF2Items.attribute_controlled_attached_particles_all[data]
-				if tab and tab.system then
-					local name = tab.system
-					if name:EndsWith("_teamcolor_red") and self.data.team then
-						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
-					end
-					if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-
-					if data == 406 and name == "coin_spin" then continue end //not an unusual, don't add this one
-					
-					local pcfs = PEPlus_FindPCFsFromEffect(name)
-					if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
-					local has_been_categorized = false
-					local entry = {name = name, k = k, v = v}
-					for k2, v2 in ipairs (pcfs) do
-						local cat
-						if v2.pcf == "particles/item_fx.pcf" then
-							//All fx introduced before seasonal community updates are in this one pcf, so we have to hard-code their categories
-							if data <= 19 then
-								cat = "Series 1"
-							elseif data <= 36 then
-								cat = "Series 2"
-							elseif data <= 40 then
-								cat = "Halloween 2011"
-							elseif data <= 47 then
-								cat = "Halloween 2012"
-							elseif data <= 62 then //series 3 fx are defined before roboog despite being added a month later?
-								cat = "Series 3"
-							elseif data <= 72 then
-								cat = "Robotic Boogaloo"
-							elseif data <= 80 then
-								cat = "Halloween 2013"
-							elseif data <= 86 then
-								cat = "Halloween 2014"
-							elseif data <= 90 then
-								cat = "End of the Line"
-							elseif data <= 99 then
-								cat = "Invasion"
-							else //this shouldn't happen
-								cat = "Other"
-							end
-						elseif v2.pcf == "particles/invasion_unusuals.pcf" then
-							cat = "Invasion"
-						else
-							//Generate categories for seasonal update pcfs automatically using the file name
-							local season
-							if string.StartsWith(v2.pcf, "particles/summer") then
-								season = "summer"
-							elseif string.StartsWith(v2.pcf, "particles/halloween") then
-								season = "halloween"
-							elseif string.StartsWith(v2.pcf, "particles/smissmas") then
-								season = "smissmas"
-							end
-							if season and string.EndsWith(v2.pcf, "_unusuals.pcf") then
-								local pcf = string.TrimLeft(v2.pcf, "particles/" .. season)
-								pcf = string.TrimRight(pcf, "_unusuals.pcf")
-								//Get the year number from the file path
-								if #pcf != 4 then continue end //make sure the only part of the string left is the year; this will stop working in 8000 years
-								pcf = tonumber(pcf)
-								if !pcf then continue end
-
-								cat = string.NiceName(season) .. " " .. tostring(pcf)
-								if season == "summer" then
-									season = 1
-								elseif season == "halloween" then
-									season = 2
-								elseif season == "smissmas" then
-									season = 3
-								end
-								categories[cat] = categories[cat] or {order = (pcf*10)+season, items = {}}
-							end
-						end //Note: This will also need handling for taunt fx pcfs if taunts are ever properly implemented
-						if cat then
-							entry.pcf = v2.pcf
-							entry.path = v2.path
-							table.insert(categories[cat].items, entry)
-							has_been_categorized = true
-							continue
-						end
-					end
-					if !has_been_categorized then
-						entry.pcf = pcfs[1].pcf
-						entry.path = pcfs[1].path
-						table.insert(categories["Other"].items, entry)
+			//Only reset the camera if the values returned by tf.DoItemModelCamera have changed (i.e. a model or animation changed)
+			local cam = tf.DoItemModelCamera(mdl.models, self)
+			local docamera = mdl.old_cam == nil
+			if mdl.old_cam then
+				for k, v in pairs (cam) do
+					if v != mdl.old_cam[k] then
+						docamera = true
+						break
 					end
 				end
 			end
-			//Sort the categories by display order, and discard empty categories
-			local cat2 = {}
-			for k, v in pairs (categories) do
-				if #v.items > 0 then 
-					cat2[v.order] = {name = k, items = v.items}
-				end
-			end
-			categories = cat2
-			local function GetDefaultCategory()
-				local default_category, fallback_default_category
-				//By default, select the category containing the currently selected option
-				for k, v in SortedPairs (categories) do
-					for _, entry in ipairs (v.items) do
-						local data = drop.Data[entry.k]
-						if self.data.pe_unusual == data then
-							default_category = k
-							break
-						end
-					end
-					if default_category then break end
-					if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
-				end
-				return default_category or fallback_default_category
-			end
-
-			local search_holder, icons
-			if table.Count(categories) > 1 then
-				search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
-				search_holder.Paint = function() end
-				search_holder:SetHeight(20)
-				search_holder:Dock(TOP)
-				local drop2, search
-
-				drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
-				drop2:DockMargin(0,0,8,0)
-				drop2:Dock(LEFT)
-				drop2:SetSortItems(false)
-				local selected = GetDefaultCategory()
-				for k, v in SortedPairs (categories) do
-					local name = v.name
-					if string.StartsWith(name, "Summer") then
-						name = string.Replace(name, "Summer", tf.GetPhrase("#TF_SteamWorkshop_Tag_Summer") or "Summer")
-					elseif string.StartsWith(name, "Halloween") then
-						name = string.Replace(name, "Halloween", tf.GetPhrase("#TF_SteamWorkshop_Tag_Halloween") or "Halloween")
-					elseif string.StartsWith(name, "Smissmas") then
-						name = string.Replace(name, "Smissmas", tf.GetPhrase("#TF_SteamWorkshop_Tag_Smissmas") or "Smissmas")
-					elseif name == "Other" then
-						name = tf.GetPhrase("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
-					end
-					//No good localization strings for the other ones; there's a "Series" string used for crate series, but 
-					//it's not translated the same as unusual series in every language, and the community updates only have
-					//one for Invasion, which seems to be a generic community update string (#GameType_Community_Update)
-					drop2:AddChoice(name, k, k == selected)
-				end
-				function drop2.OnSelect(_, index, value, data)
-					search:SetText("")
-					icons.SelectCategory(data)
-				end
-
-				search = tf.TFStyleVGUI("DTextEntry", search_holder)
-				search:Dock(FILL)
-				search:SetPlaceholderText("#spawnmenu.search")
-				search:SetUpdateOnType(true)
-				search.OnValueChange = function(_, p)
-					timer.Create("TF2ItemBrowser_SearchDelay_UFilter", 0.5, 1, function()
-						if IsValid(icons) then
-							if #p == 0 then
-								//Search is empty, go back to using the category dropdown
-								//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
-								local selected = GetDefaultCategory()
-								for k, v in pairs (drop2.Data) do
-									if v == selected then
-										drop2:ChooseOptionID(k)
-									end
-								end
-							else
-								//Search is populated, stop using categories and show all matching options
-								p = p:lower()
-								local tab = {}
-								for k, v in SortedPairs (categories) do
-									for _, entry in ipairs (v.items) do
-										if entry.v:lower():find(p, 1, true) then
-											table.insert(tab, entry)
-										end
-									end
-								end
-								icons.RebuildIcons(tab)
-								drop2:SetText("")
-							end
-						end
-					end)
-				end
-				function search_holder.PerformLayout(_, w, h)
-					drop2:SetWide((w/2)-4)
-				end
-			end
-
-			local icons_holder = vgui.Create("DPanel", container)
-			icons_holder.Paint = function() end
-			local scroll = tf.TFStyleVGUI("DScrollPanel",icons_holder)
-			if search_holder then
-				icons_holder:DockMargin(0,8,0,0)
-			end
-			icons_holder:Dock(TOP)
-			scroll:Dock(FILL)
-
-			local size = 128
-			icons = vgui.Create("DIconLayout", scroll)
-			icons:Dock(FILL)
-			icons:SetSpaceX(8)
-			icons:SetSpaceY(8)
-
-			local slider
-			if u_hat then
-				slider = tf.TFStyleVGUI("DNumSlider", container)
-				slider:SetText(tf.GetPhrase("#GameUI_ParticleHatUseHead") or "Adjust Unusual")
-				slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
-				slider:SetDefaultValue(0)
-				slider:Dock(TOP)
-				slider:DockMargin(0,16,0,0)
-				slider:SetValue(self.data.pe_unusual_offset or 0)
-				slider:SetEnabled(self.data.pe_unusual_offset != nil)
-				function slider.OnValueChanged(_, val)
-					if self.data.pe_unusual_offset != val and self.data.pe_unusual_offset != nil then
-						self.data.pe_unusual_offset = val
-						pnl.OnSettingChanged()
-					end
-				end
-				slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the unusual effect menu, so just disable it for now.
-				
-				//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
-				check = tf.TFStyleVGUI("DCheckBox", slider)
-				check:DockMargin(0,0,6,0) //+6 on right emulates our custom DCheckBoxLabel style
-				check:Dock(LEFT)
-				check:SetZPos(-1) //dock this to the left of the slider's label
-				check:SetChecked(self.data.pe_unusual_offset != nil)
-				check.OnChange = function(_, val)
-					if val then
-						self.data.pe_unusual_offset = slider:GetValue()
-						slider:SetEnabled(true)
-					else
-						self.data.pe_unusual_offset = nil
-						slider:SetEnabled(false)
-					end
-					pnl.OnSettingChanged()
-				end
-			end
-
-			function icons.SelectCategory(cat)
-				icons.RebuildIcons(table.Copy(categories[cat].items))
-			end
-			function icons.RebuildIcons(tab)
-				icons:Clear()
-				//add "none" option to the start of every category or search
-				table.insert(tab, 1, {k = 1, v = drop.Choices[1], name = drop.Choices[1], pcf = ""})
-				for _, entry in ipairs (tab) do
-					//reuse PE+ spawnicons for particle previews because they nicely manage the fx already
-					local icon = vgui.Create("ContentIcon_PEPlus", icons)
-					icon:Setup(entry.pcf, entry.name, entry.path)
-					icon:SetSize(size, size)
-					icon.disable_autohide = true //prevent the particle effect from getting auto-removed when the spawnmenu is closed
-					icon.disable_icons = true //don't show corner icons for cpoint count or extra info, because they aren't useful here
-					icon.disable_defaultcontenticon = true //don't run the default contenticon draw function (draws frame around icon, text label at bottom), we're going to draw our own
-					function icon.DoRightClick() end
-					function icon:DoClick()
-						local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
-
-						//If the icon's effect is currently being overridden by another pcf's effect of the same name, reload the pcf on click instead (copied from PE+ code)
-						if self:IsCurrentlyOverridden(pcf, self.name) then
-							surface.PlaySound("common/wpn_select.wav")
-							PEPlus_AddParticles(pcf, self.name) //crash prevention
-						else
-							drop:ChooseOption(entry.v, entry.k)
-						end
-					end
-					local override = unusual_icon_overrides[entry.name]
-					if override then
-						icon.view = PEPlus_BoundsToView(override[1], override[2])
-					end
-					local old_Paint = icon.Paint
-					function icon.Paint(_,w,h)
-						//custom background
-						local col = tf.gui_colors._unu_default
-						if icon.Depressed or self.data.pe_unusual == drop.Data[entry.k] then //highlight the currently selected option
-							col = tf.gui_colors._unu_depressed
-						elseif icon.Hovered then
-							col = tf.gui_colors._unu_hovered
-						end
-						draw.RoundedBox(12, 0,0,w,h, col)
-
-						old_Paint(icon,w,h)
-						icon:SetTooltip(nil) //icon's paint func sets the tooltip, so we have to override this here
-
-						//custom appearance for "none" option so it isn't just blank
-						if entry.pcf == "" then
-							surface.SetDrawColor(tf.gui_colors.LightRed)
-							surface.SetMaterial(tf.close_button_nocircle)
-							local w2 = w * 0.75
-							local h2 = h * 0.75
-							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-						end
-					end
-					//custom text label; this is multiline so do the same textWrap approach as AddItemText
-					local tab = {}
-					for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
-						//do these in reverse order because we're docking them to the bottom
-						table.insert(tab, 1, v)
-					end
-					for k, v in ipairs (tab) do
-						local label = icon:Add("DLabel")
-						label:Dock(BOTTOM)
-						label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-						label:SetText(v)
-						label:SetTextColor(tf.gui_colors.TanLight)
-						label:SetAutoStretchVertical(true)
-						label:SetContentAlignment(5) //center
-					end
-					tf.AddTFButtonSounds(icon)
-				end
-				local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
-				icons:SetSize(w, h)
-				icons:InvalidateLayout()
-				icons_holder:SetSize(w, h)
-				icons_holder:InvalidateLayout()
-				scroll:InvalidateLayout()
-
-				//Resize and reposition container whenever the category is changed
-				local control_height = 0
-				if search_holder then control_height = search_holder:GetTall() + 8 end
-				if u_hat then control_height = control_height + 16 + slider:GetTall() end
-				container:SetTall(text:GetTall() + 8 + control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
-				if container:GetTall() > ScrH() then
-					local diff = container:GetTall() - ScrH()
-					icons_holder:SetTall(icons_holder:GetTall() - diff)
-					container:SetTall(container:GetTall() - diff)
-					w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
-				end
-				container:SetWide(w + 16 + 8)
-
-				container:IsMouseInputEnabled(true)
-				container:InvalidateLayout()
-
-				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
-				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
-				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
-				container:SetPos(x, y)
-			end
-			icons.SelectCategory(GetDefaultCategory())
-		end
-	end
-
-	//Show toggle for default particle effects (cigar smoke, halo effect, earbud notes, etc.)
-	local pe_def = tf.GetItemDefaultParticleEffects(self.data)
-	if #pe_def > 0 then
-		local names = {}
-		for k, v in ipairs (pe_def) do
-			names[v._displayname or string.NiceName(v.system)] = true
-		end
-		local name
-		for k, v in pairs (names) do
-			if !name then
-				name = ""
-			else
-				name = name .. ", "
-			end
-			name = name .. k
-		end
-		local check = tf.TFStyleVGUI("DCheckBoxLabel", pnl)
-		check:SetText("Add default particle effects (" .. name .. ")")
-		check:Dock(TOP)
-		check:DockMargin(side_margins,0,side_margins,tf.betweenitems)
-		check:SetChecked(self.data.pe_def)
-		check.OnChange = function(_, val)
-			self.data.pe_def = val
-			pnl.OnSettingChanged()
-		end
-	end
-
-	if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
-		local drop = AddDropdown((tf.GetPhrase("#TF_ItemPreview_ItemPaintkit") or "War Paint") .. ":", function(drop)
-			drop:AddChoice(tf.str_none, nil, self.data.wp.enabled == false)
-			drop:AddSpacer()
-			local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
-			for k, v in ipairs (tab) do
-				//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
-				drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
-			end
-		end, function(data)
-			if !data then
-				self.data.wp.enabled = false
-			else
-				self.data.wp.enabled = true
-				self.data.wp.id = data.id
-			end
-			pnl.OnSettingChanged()
-		end)
-		function drop.OpenMenu()
-			//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
-			//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
-			//when an option is selected.
-			if IsValid(drop.container) then
-				drop.container:Remove()
-				return
-			end
-
-			local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
-			container:DockPadding(16,16,16,16)
-			function container:Paint(w,h)
-				tf.LoadoutItemPopupBorder(0,0,w,h)
-			end
-			drop.container = container
-
-			//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
-			//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
-			//so instead make the container behave like a DermaMenu.
-			CloseDermaMenus()
-			container:SetIsMenu(true)
-			function container:GetDeleteSelf() return true end
-			function container:OnRemove() 
-				//fix keyboard focus getting stuck on col's textentries if we remove container while focused
-				local chump = vgui.GetKeyboardFocus()
-				if IsValid(chump) then chump:KillFocus() end
-			end
-			RegisterDermaMenuForClose(container)
-
-			local text = vgui.Create("DLabel", container)
-			text:SetContentAlignment(7) //top left
-			text:SetAutoStretchVertical(true)
-			text:SetFont("TF2ItemBrowser_ItemName")
-			text:SetColor(tf.gui_colors.TanLight)
-			text:SetText(drop:GetParent().Label:GetText())
-			text:Dock(TOP)
-			text:DockMargin(0,0,0,8)
-			text:SizeToContents()
-
-			local close = vgui.Create("DButton", container)
-			close:SetText("")
-			close:SetSize(22,22)
-			function close:Paint(w,h)
-				close:SetPos(container:GetWide()-w-12, 12)
-				if self.Depressed then
-					surface.SetDrawColor(color_white)
-				elseif self.Hovered then
-					surface.SetDrawColor(tf.gui_colors.LightRed)
-				else
-					surface.SetDrawColor(tf.gui_colors.TanDark)
-				end
-				surface.SetMaterial(tf.close_button)
-				surface.DrawTexturedRect(0,0,w,h)
-			end
-			tf.AddTFButtonSounds(close)
-			function close:DoClick()
-				container:Remove()
-			end
-
-			//the pre-paintkit collections actually have very few paintkits per individual weapon, so collapse them 
-			//into a single category for each update. also collapse the single-paintkit collections containing dragon 
-			//slayer and smissmas sweater into one category, though this doesn't help much.
-			local category_remaps = {
-				Concealed_killer_collection		= "Operation_gun_mettle_master_collection",
-				Craftsmann_collection			= "Operation_gun_mettle_master_collection",
-				Teufort_collection			= "Operation_gun_mettle_master_collection",
-				Powerhouse_collection			= "Operation_gun_mettle_master_collection",
-				tough_break_drop_collection_01		= "operation_tough_break_master_collection",
-				tough_break_drop_collection_02		= "operation_tough_break_master_collection",
-				tough_break_case_collection_01_pyroland	= "operation_tough_break_master_collection",
-				tough_break_case_collection_02_warbirds	= "operation_tough_break_master_collection",
-				UniqueSkins_collection			= "Other",
-				UniqueFreeSkins_collection		= "Other",
-			}
-			local categories = {}
-			categories["Other"] = {order = 99999999, items = {}}
-			for k, v in ipairs (tf.paintkit_collections) do
-				if category_remaps[v] then v = category_remaps[v] end
-				categories[v] = categories[v] or {order = k, items = {}}
-			end
-			
-			for k, v in pairs (drop.Choices) do
-				local data = drop.Data[k]
-				if data then 
-					local cat = tf.paintkit_ids_to_collections[data.id] or "Other"
-					if category_remaps[cat] then cat = category_remaps[cat] end
-					table.insert(categories[cat].items, {k = k, v = v, data = data})
-				end
-			end
-			//Sort the categories by display order, and discard empty categories
-			local cat2 = {}
-			for k, v in pairs (categories) do
-				if #v.items > 0 then 
-					local name = k
-					if tf.TF2Items.item_collections[k] then
-						name = tf.GetPhrase(tf.TF2Items.item_collections[k].name) or k
-					elseif name == "Other" then
-						name = tf.GetPhrase("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
-					end
-					cat2[v.order] = {name = name, items = v.items}
-				end
-			end
-			categories = cat2
-			local function GetDefaultCategory()
-				local default_category, fallback_default_category
-				//By default, select the category containing the currently selected option
-				for k, v in SortedPairs (categories) do
-					for _, entry in ipairs (v.items) do
-						if (self.data.wp.enabled and entry.data and entry.data.id == self.data.wp.id)
-						or (!self.data.wp.enabled and !entry.data) then
-							default_category = k
-							break
-						end
-					end
-					if default_category then break end
-					if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
-				end
-				return default_category or fallback_default_category
-			end
-
-			local search_holder, icons
-			if table.Count(categories) > 1 then
-				search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
-				search_holder.Paint = function() end
-				search_holder:SetHeight(20)
-				search_holder:Dock(TOP)
-				local drop2, search
-
-				drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
-				drop2:DockMargin(0,0,8,0)
-				drop2:Dock(LEFT)
-				drop2:SetSortItems(false)
-				local selected = GetDefaultCategory()
-				for k, v in SortedPairs (categories) do
-					drop2:AddChoice(v.name, k, k == selected)
-				end
-				function drop2.OnSelect(_, index, value, data)
-					search:SetText("")
-					icons.SelectCategory(data)
-				end
-
-				search = tf.TFStyleVGUI("DTextEntry", search_holder)
-				search:Dock(FILL)
-				search:SetPlaceholderText("#spawnmenu.search")
-				search:SetUpdateOnType(true)
-				search.OnValueChange = function(_, p)
-					timer.Create("TF2ItemBrowser_SearchDelay_WPFilter", 0.5, 1, function()
-						if IsValid(icons) then
-							if #p == 0 then
-								//Search is empty, go back to using the category dropdown
-								//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
-								local selected = GetDefaultCategory()
-								for k, v in pairs (drop2.Data) do
-									if v == selected then
-										drop2:ChooseOptionID(k)
-									end
-								end
-							else
-								//Search is populated, stop using categories and show all matching options
-								p = p:lower()
-								local tab = {}
-								for k, v in SortedPairs (categories) do
-									for _, entry in ipairs (v.items) do
-										if entry.v:lower():find(p, 1, true) then
-											table.insert(tab, entry)
-										end
-									end
-								end
-								icons.RebuildIcons(tab)
-								drop2:SetText("")
-							end
-						end
-					end)
-				end
-				function search_holder.PerformLayout(_, w, h)
-					drop2:SetWide((w/2)-4)
-				end
-			end
-
-			local icons_holder = vgui.Create("DPanel", container)
-			icons_holder.Paint = function() end
-			local scroll = tf.TFStyleVGUI("DScrollPanel",icons_holder)
-			if search_holder then
-				icons_holder:DockMargin(0,8,0,0)
-			end
-			icons_holder:Dock(TOP)
-			scroll:Dock(FILL)
-
-			local size = 128
-			icons = vgui.Create("DIconLayout", scroll)
-			icons:Dock(FILL)
-			icons:SetSpaceX(8)
-			icons:SetSpaceY(8)
-
-			local entry = tf.TFStyleVGUI("DTextEntry", container, true)
-			local entrypnl = tf.AddTFLabelToVGUI(entry, "Seed")
-			entrypnl:Dock(TOP)
-			entrypnl:DockMargin(0,16,0,0)
-			entry:SetNumeric(true)
-			entry:SetText(self.data.wp.seed or "0")
-			entry.OnEnter = function()
-				local val = entry:GetText()
-				if val != self.data.wp.seed then 
-					self.data.wp.seed = val
-					pnl.OnSettingChanged()
-				end
-			end
-			entry.OnFocusChanged = function(_, b) 
-				if !b then entry:OnEnter() end
-			end
-			local button = tf.TFStyleVGUI("DButton", entrypnl)
-			button:SetText(tf.GetPhrase("#TF_ItemPreview_PaintkitSeed") or "Randomize")
-			button:SizeToContentsX(20)
-			button:Dock(RIGHT)
-			button:DockMargin(8,0,0,0)
-			button.DoClick = function()
-				local val = tostring(WP.RNG.RandomSeed())
-				entry:SetText(val)
-				self.data.wp.seed = val
-				pnl.OnSettingChanged()
-			end
-
-			local slider = tf.TFStyleVGUI("DNumSlider", container)
-			local wear_slider = slider
-			slider:SetText("Wear Level")
-			slider:SetMinMax(1, 5)
-			slider:SetDecimals(0)
-			slider:Dock(TOP)
-			slider:DockMargin(0,8,0,0)
-			slider:SetValue(self.data.wp.wear or 1)
-			function slider.OnValueChanged(_, val)
-				val = math.Round(val)
-				slider:SetValue(val) //snap to rounded value; if we don't do this, the displayed value will always be rounded *down* and can get out-of-sync with the actual value
-				if val != self.data.wp.wear then //only send updates on whole numbers
-					self.data.wp.wear = val
-					pnl.OnSettingChanged()
-				end
-			end
-			slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
-
-			//The rest of these paintkit settings are global convars, not saved to the entity, so categorize them separately
-
-			local combo = AddSubDropdown(container)
-			local combopnl = tf.AddTFLabelToVGUI(combo, "Texture Resolution (Global)")
-			combopnl:Dock(TOP)
-			combopnl:DockMargin(0,16,0,0)
-			combo:SetSortItems(false)
-			local cv = GetConVar("warpaint_rtt_resolution")
-			if cv then cv = cv:GetString() end
-			combo:AddChoice("512x512 (Fast)", "512", cv == "512")
-			combo:AddChoice("1024x1024 (Balanced)", "1024", cv == "1024")
-			combo:AddChoice("2048x2048 (High Quality)", "2048", cv == "2048")
-			function combo.OnSelect(_, index, value, data)
-				RunConsoleCommand("warpaint_rtt_resolution", tostring(data or value))
-				//wait a moment for the convar change to take effect, otherwise the updated skin it generates will use the old 
-				//setting. not sure if this is the right approach (are there circumstances where this isn't enough time?), is 
-				//there something else we should be using to ensure that the convar is updated before rebuilding?
-				timer.Simple(0.1, function()
-					if IsValid(pnl) then pnl.OnSettingChanged() end
-				end)
-			end
-
-			local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
-			local intensity_check = check
-			check:SetText("Increased Intensity Wears (Global)")
-			check:DockMargin(0,8,0,0)
-			check:Dock(TOP)
-			local cv = GetConVar("warpaint_increased_intensity")
-			if cv then cv = cv:GetBool() end
-			check:SetChecked(cv)
-			check.OnChange = function(_, val)
-				if val then val = "1" else val = "0" end
-				RunConsoleCommand("warpaint_increased_intensity", val)
-				container:UpdateSize()
-				//wait a moment for the convar change to take effect (see above)
-				timer.Simple(0.1, function()
-					if IsValid(pnl) then pnl.OnSettingChanged() end
-				end)
-			end
-			local help = vgui.Create("DLabel", container)
-			help:SetWrap(true)
-			//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
-			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			help:SetColor(tf.gui_colors.TanLight)
-			help:SetText("Non-TF2-accurate wear with higher visual intensity")
-			help:Dock(TOP)
-			help:DockMargin(22,0,32,0)
-			local intensity_help = help
-
-			local slider = tf.TFStyleVGUI("DNumSlider", container)
-			local intensity_slider = slider
-			slider:SetText("Intensity Multiplier")
-			slider:SetMinMax(1, 5)
-			slider:SetDefaultValue(1)
-			slider:Dock(TOP)
-			slider:SetConVar("warpaint_intensity_multiplier")
-			function slider.OnValueChanged(_, val)
-				val = math.Round(val, 2)
-				if val != slider.LastValue then
-					if slider.LastValue != nil then //OnValueChanged runs automatically when the slider is first created, don't update pnl unnecessarily when that happens
-						//wait a moment for the convar change to take effect (see above)
-						timer.Simple(0.1, function()
-							if IsValid(pnl) then pnl.OnSettingChanged() end
-						end)
-						//MsgN("val changed from ", slider.LastValue, " to ", val)
-					end
-					slider.LastValue = val
-				end
-			end
-			slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
-
-			local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
-			local scratch_check = check
-			check:SetText("Double Scratches")
-			check:Dock(TOP)
-			local cv = GetConVar("warpaint_double_scratch")
-			if cv then cv = cv:GetBool() end
-			check:SetChecked(cv)
-			check.OnChange = function(_, val)
-				if val then val = "1" else val = "0" end
-				RunConsoleCommand("warpaint_double_scratch", val)
-				container:UpdateSize()
-				//wait a moment for the convar change to take effect (see above)
-				timer.Simple(0.1, function()
-					if IsValid(pnl) then pnl.OnSettingChanged() end
-				end)
-			end
-			local help = vgui.Create("DLabel", container)
-			help:SetWrap(true)
-			//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
-			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			help:SetColor(tf.gui_colors.TanLight)
-			help:SetText("Samples scratch texture twice at different UVs for denser wear patterns")
-			help:Dock(TOP)
-			help:DockMargin(22+32,0,32,0)
-			local scratch_help = help
-
-			function container:UpdateSize()
-				//Resize and reposition container whenever the category is changed or intensity controls are toggled
-				local control_height = 0
-				if search_holder then control_height = search_holder:GetTall() + 8 end
-				if intensity_check:GetChecked() then
-					intensity_slider:SetHeight(21)
-					intensity_slider:DockMargin(32,8,0,0)
-					scratch_check:SetHeight(20)
-					scratch_check:DockMargin(32,8,0,0)
-					//scratch_help:SetAutoStretchVertical(true)
-					//scratch_help:InvalidateLayout(true)
-					scratch_help:SetTall(20) //default height apparently; can't do AutoStretchVertical here because we can't get an accurate height if we haven't set the container's width yet
-					control_height = control_height + 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall() + scratch_help:GetTall()
-				else
-					intensity_slider:SetHeight(0)
-					intensity_slider:DockMargin(0,0,0,0)
-					scratch_check:SetHeight(0)
-					scratch_check:DockMargin(0,0,0,0)
-					//scratch_help:SetAutoStretchVertical(false)
-					scratch_help:SetTall(0)
-				end
-				local w, h = icons.CurW, icons.CurH
-				container:SetTall(text:GetTall() + 8 + control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + combopnl:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
-				if container:GetTall() > ScrH() then
-					local diff = container:GetTall() - ScrH()
-					icons_holder:SetSize(w, h) //set this again to prevent the height from getting clobbered when the "increased intensity wears" check is toggled multiple times
-					icons_holder:SetTall(icons_holder:GetTall() - diff)
-					container:SetTall(container:GetTall() - diff)
-					w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
-				end
-				container:SetWide(w + 16 + 8)
-				
-				container:IsMouseInputEnabled(true)
-				container:InvalidateLayout()
-
-				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
-				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
-				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
-				container:SetPos(x, y)
-			end
-
-			function icons.SelectCategory(cat)
-				local tab = {}
-				for _, entry in ipairs (categories[cat].items) do
-					table.insert(tab, entry)
-				end
-				icons.RebuildIcons(tab)
-			end
-			function icons.RebuildIcons(tab)
-				icons:Clear()
-				//add "none" option to the start of every category or search
-				table.insert(tab, 1, {k = 1, v = drop.Choices[1]})
-				for _, entry in ipairs (tab) do
-					local icon = vgui.Create("ContentIcon", icons)
-					icon:SetSize(size, size)
-					function icon.DoRightClick() end
-					function icon:DoClick()
-						drop:ChooseOption(entry.v, entry.k)
-					end
-					icon:SetTooltip(nil)
-					function icon.Paint(_,w,h)
-						//custom background
-						local col = tf.gui_colors._unu_default
-						local textcol = tf.gui_colors.TanLight
-						if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
-						or (!self.data.wp.enabled and !entry.data) or icon.Depressed then //highlight the currently selected option
-							col = tf.gui_colors._unu_depressed
-						elseif icon.Hovered then
-							col = tf.gui_colors._unu_hovered
-						elseif entry.data then
-							//Show quality color on text label, but revert to the default color when hovered/selected,
-							//because some colors are too hard to read as small text on some of these backgrounds
-							textcol = tf.rarity_colors[tf.paintkit_rarities[entry.data.id]] or textcol
-						end
-						draw.RoundedBox(12, 0,0,w,h, col)
-						for k, v in ipairs (icon.labels) do
-							v:SetTextColor(textcol)
-						end
-
-						icon.Image:PaintAt(0,0,w,h)
-
-						//custom appearance for "none" option so it isn't just blank
-						if !entry.data then
-							surface.SetDrawColor(tf.gui_colors.LightRed)
-							surface.SetMaterial(tf.close_button_nocircle)
-							local w2 = w * 0.75
-							local h2 = h * 0.75
-							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
-						end
-					end
-					//custom text label; this is multiline so do the same textWrap approach as AddItemText
-					local tab = {}
-					icon.labels = {}
-					for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
-						//do these in reverse order because we're docking them to the bottom
-						table.insert(tab, 1, v)
-					end
-					for k, v in ipairs (tab) do
-						local label = icon:Add("DLabel")
-						label:Dock(BOTTOM)
-						label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-						label:SetText(v)
-						label:SetTextColor(tf.gui_colors.TanLight)
-						label:SetAutoStretchVertical(true)
-						label:SetContentAlignment(5) //center
-						table.insert(icon.labels, label)
-					end
-					tf.AddTFButtonSounds(icon)
-					//grab cached spawnicon if it exists, otherwise tell the icon render queue to create one
-					local data = drop.Data[entry.k]
-					if data and data.id then
-						local iconmdl = mdl.models[1]:GetModel()
-						local configs = WP.WarpaintData.GetById(data.id)
-						for _, config in ipairs(configs) do
-							if config.weapon == "paintkit_tool" then
-								iconmdl = "models/items/paintkit_tool.mdl"
+			if docamera then
+				mdl.old_cam = table.Copy(cam)
+				//For custom items, use backpack icon camera values, but only if the displayed model matches the one used by the icon.
+				//This override happens after the old_cam check, so that alternative models which return the same results from
+				//tf.DoItemModelCamera (i.e. styles that only change material) can also use the backpack icon camera values.
+				if mdl.models[1] and i._customitem_bp and !i._customitem_bp.showclass then
+					local bpmdl = true
+					if i._customitem_bp.mdl then
+						for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+							if self.data.models[v] and i._customitem_bp.mdl != v then
+								bpmdl = false
 								break
 							end
 						end
-						local iconpath = "tf2itembrowser_paintkiticons/" .. data.id .. "_" .. string.StripExtension(string.GetFileFromFilename(iconmdl)) .. ".png"
-						function icon.RebuildIconTexture()
-							local ent = ClientsideModel(iconmdl, RENDERGROUP_OTHER)
-							if IsValid(ent) then
-								ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
-								ent:SetNoDraw(true)
+					end
+					if bpmdl then
+						local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[i._customitem_bp.class] or self.data.class, team = self.data.team, style = i._customitem_bp.style or self.data.style})
+						if i._customitem_bp.mdl then
+							if vis2.models[i._customitem_bp.mdl] != vis.models[i._customitem_bp.mdl] then 
+								bpmdl = false
 							end
-							table.insert(TF2ItemBrowser.IconRenderQueue, {func = function()
-								//if ent is invalid, then remove from the queue
-								if !IsValid(ent) then
-									return true
-								end
-								//if icon no longer exists, then remove from the queue
-								if !IsValid(icon) then
-									ent:Remove()
-									return true
-								end
-								
-								//apply paintkit instance to ent; we do this in the render queue func and not 
-								//when spawning ent, so that if multiple icons are queued at once, we can 
-								//spread out the load times.
-								if !ent.WarpaintData then
-									local instance
-									local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
-
-									//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
-									if weaponType then
-										-- Try to build a full multi-layer instance if we have a warpaint ID
-										instance = WP.WarpaintData.BuildInstance(
-											data.id,
-											weaponType,
-											"1", //always use the same seed
-											1, //factory new
-											0 //always use red team
-										)
-										if instance then
-											-- Set the matIndex since BuildInstance doesn't set it
-											instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
-										end
-									end
-									//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
-									--[[-- Fallback to simple instance if multi-layer failed or wasn't available
-									if !instance then
-										MsgN(i.name, " using warpaint fallback, not good")
-										local pattern
-										for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
-											if v.id == self.data.wp.id then
-												pattern = v.primaryTexture
-												break
-											end
-										end
-										instance = WP.WarpaintInstance.New({
-											patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
-											seed = self.data.wp.seed,
-											wearLevel = self.data.wp.wear,
-											wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
-											team = _team,
-											weaponType = weaponType,
-											matIndex = WP.Weapons.GetMatIndex(weaponType)
-										})
-									end]]
-									if instance then
-										//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
-										WP.Materials.Apply(ent, instance)
-										ent.instance = instance
-									else
-										//if we failed to instantiate the material, bail out
-										return true
-									end
-								end
-
-								//Don't render the icon until the paintkit material is no longer a placeholder
-								local wp_state = WP.Materials.GetForEntity(ent)
-								if wp_state == nil then
-									//If WP.Materials.GetForEntity got stuck and can't retrieve 
-									//the material (usually caused by removing an ent with a WP 
-									//material), then reinstantiate it and try again
-									WP.Materials.Apply(ent, ent.instance)
-									return false
-								elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
-									return false
-								end
-
-								//Render the icon texture
-								local models = {ent}
-								local cam = tf.DoItemModelCamera(models, self)
-								render.SetWriteDepthToDestAlpha(false)
-								render.Clear(0, 0, 0, 0, true, true)
-								tf.DrawItemModels(0, 0, size, size, models, {}, cam.ang, cam.pos, cam.fov)
-								local img = render.Capture({format = "png", x = 0, y = 0, w = size, h = size})
-								if !file.IsDir("tf2itembrowser_paintkiticons/", "DATA") then 
-									file.CreateDir("tf2itembrowser_paintkiticons/")
-								end
-								if file.Write(iconpath, img) then
-									icon:SetMaterial("data/" .. iconpath)
-								end
-								ent:Remove()
-								return true
-							end})
-							icon:SetMaterial(tf.spinner:GetName())
-						end
-						if file.Exists(iconpath, "DATA") then
-							icon:SetMaterial("data/" .. iconpath)
 						else
-							icon.RebuildIconTexture()
+							for k, v in pairs ({"item", "wearable", "wearable_2"}) do
+								if vis2.models[v] != vis.models[v] then
+									bpmdl = false
+									break
+								end
+							end
 						end
-						function icon.DoRightClick()
-							////TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
-							//local menu = DermaMenu()
+						if bpmdl then
+							cam = i._customitem_bp
+							mdl.mdlang = i._customitem_bp.mdlang
+						end
+					end
+					if !bpmdl then
+						mdl.mdlang = nil
+					end
+				else
+					mdl.mdlang = nil
+				end
+				mdl:SetCamPos(Vector(cam.pos)) //use copies of pos/ang, otherwise the values in old_cam will change as the camera moves
+				mdl:SetFOV(cam.fov)
+				mdl:SetLookAng(Angle(cam.ang))
+			end
+			if mdl.mdlang and IsValid(mdl.models[1]) then
+				mdl.models[1]:SetAngles(mdl.mdlang)
+			end
 
-							//local opt = menu:AddOption("Re-render", function()
-								icon.RebuildIconTexture()
-							//end)
-							//opt:SetIcon("icon16/picture_save.png")
+			//Now that we've created and positioned the models, create the particles
+			mdl.particles = self:CreateItemParticles(mdl.models, function()
+				timer.Simple(0.1, function() if IsValid(pnl) then pnl.Refresh() end end) //bail function
+			end, self.data) or {}
 
-							//menu:Open()
+			//Hide the class selector if all classes use the same model (i.e. medals)
+			//Also compare the bodygroups because of use_per_class_bodygroups.
+			local should_show_class = false
+			if i.used_by_classes then
+				for k, v in pairs (i.used_by_classes) do
+					if k != tf.classes[self.data.class].longname then
+						local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[k], team = self.data.team, style = self.data.style})
+						if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
+							for k, v in pairs (vis2.item_bg) do
+								//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+								//badges like the dueling badges have useless bodygroup setters for some reason
+								if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
+									should_show_class = true
+									break
+								end
+							end
+							if should_show_class then break end
+						end
+						for k, v in pairs (vis2.models) do
+							if istable(v) then
+								for k2, v2 in pairs (v) do
+									if vis.models[k][k2] != v2 then
+										should_show_class = true
+										break
+									end
+								end
+							elseif vis.models[k] != v then
+								should_show_class = true
+								break
+							end
 						end
 					end
 				end
-				local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
-				icons:SetSize(w, h)
-				icons.CurW, icons.CurH = w, h //used by container:UpdateSize(); GetSize doesn't work there since it changes after invalidating layout; which results in the size changing as the "increased intensity wears" check is toggled
-				icons:InvalidateLayout()
-				icons_holder:SetSize(w, h)
-				icons_holder:InvalidateLayout()
-				scroll:InvalidateLayout()
-
-				container:UpdateSize()
 			end
-			icons.SelectCategory(GetDefaultCategory())
+			local par = pnl.class:GetParent()
+			if !should_show_class and par:IsVisible() then
+				par:SetVisible(false)
+				par.stored_margin = {par:GetDockMargin()}
+			elseif should_show_team and !par:IsVisible() then
+				par:SetVisible(true)
+				if par.stored_margin then
+					par:DockMargin(par.stored_margin[1], par.stored_margin[2], par.stored_margin[3], par.stored_margin[4])
+				end
+			end
+
+			pnl:InvalidateLayout(true)
+			pnl:SizeToChildren(false,true)
+			self:PositionPopupPanel(pnl)
 		end
+		
+		function pnl.OnSettingChanged()
+			self:SetData()
+			pnl.Refresh()
+			if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
+		end	
+
+		local checks = vgui.Create("Panel", pnl) //container for submodel controls
+		checks:SetHeight(20)
+		checks:Dock(TOP)
+		checks.checks = {}
+		for k, v in SortedPairs (self.data.models) do
+			local check = tf.TFStyleVGUI("DCheckBoxLabel", checks)
+			check.model = k
+			local text = string.NiceName(k)
+			if k == "item" then
+				text = tf.GetPhrase("#Item") or "Item"
+			elseif k == "attached_festive" then
+				text = tf.GetPhrase("#TF_FestivizerTool") or "Festivizer"
+			end
+			//no tf localization strings for "wearable" or "stat clock", unfortunately
+			check:SetText(text)
+			check:Dock(LEFT)
+			check:SetChecked(v)
+			check.OnChange = function(_, val)
+				self.data.models[k] = val
+				pnl.OnSettingChanged()
+			end
+			table.insert(checks.checks, check)
+		end
+		checks:DockMargin(side_margins,0,side_margins,tf.betweencategories)
+		function checks:PerformLayout(w, h)
+			for _, v in ipairs (checks.checks) do
+				v:SetWide(w / #checks.checks) //draw these side-by-side so as to not take up too much space
+			end
+		end
+		checks:InvalidateLayout()
+		if #checks.checks < 2 then
+			//if there's only one submodel then we don't need these
+			checks:Remove()
+		elseif self.data.models.wearable == nil and self.data.models.wearable_2 == nil and self.data.models.taunt_prop == nil then
+			//if we only have the base item and optional attachments, then we don't need the option for the base item
+			for k, v in ipairs (checks.checks) do
+				if v.model == "item" then
+					table.remove(checks.checks, k)
+					v:Remove()
+					break
+				end
+			end
+		end
+
+		pnl.class = AddDropdown(tf.GetPhrase("#TF_ImportFile_Models") or "Class:", function(drop)
+			for k, v in ipairs (tf.classes) do //add class options in class order
+				if i.used_by_classes and i.used_by_classes[v.longname] then
+					drop:AddChoice(tf.GetPhrase(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
+				end
+			end
+		end, function(data)
+			self.data.class = data
+		end)
+
+		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
+			local name = (tf.GetPhrase("#Context_Style") or "Style") .. ":"
+			if i._call_styles_animations then name = (tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation") .. ":" end
+			AddDropdown(name, function(drop)
+				for k, _ in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+					drop:AddChoice(tf.GetItemStyleName(self.data.id, k), k, self.data.style == k)
+				end
+			end, function(data)
+				self.data.style = data
+			end)
+		end
+
+		if i.capabilities and i.capabilities.paintable == 1 then
+			local drop = AddDropdown(string.Trim(string.Replace(tf.GetPhrase("#Econ_Paint_Name") or "Paint Color:", "%s1", "")), function(drop)
+				drop:AddChoice(tf.str_none, nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
+				drop:AddSpacer()
+				for k, v in ipairs (paints) do
+					local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v.override or (self.data.paint.col[false] == v[1] and self.data.paint.col[true] == v[2]))
+					drop:AddChoice(tf.GetPhrase(v.name) or v.name, v, is_selected)
+				end
+				if drop:GetText() == "" then drop:SetText(tf.str_custom) end
+			end, function(data)
+				if !data then
+					if self.default_paint then
+						self.data.paint.enabled = true
+						self.data.paint.col = table.Copy(self.default_paint)
+					else
+						self.data.paint.enabled = false
+						self.data.paint.col = {[false] = Vector(255,255,255)}
+					end
+					self.data.paint.override = {[false] = 0}
+				else
+					self.data.paint.enabled = true
+					if data.override then
+						self.data.paint.override = {[false] = data.override, [true] = data.override_2}
+					else
+						self.data.paint.override = {[false] = 0}
+					end
+					if data[1] then
+						self.data.paint.col = {[false] = data[1], [true] = data[2]}
+					end
+				end
+			end)
+			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					tf.LoadoutItemPopupBorder(0,0,w,h)
+				end
+				drop.container = container
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(tf.gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText())
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(tf.gui_colors.LightRed)
+					else
+						surface.SetDrawColor(tf.gui_colors.TanDark)
+					end
+					surface.SetMaterial(tf.close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				tf.AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
+
+				local size = 48
+				local icons = vgui.Create("DIconLayout", container)
+				icons:Dock(TOP)
+				icons:SetSpaceX(4)
+				icons:SetSpaceY(4)
+				
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local button = vgui.Create("DButton", icons)
+					button:SetSize(size, size)
+					local name, col, col_2
+					if data then
+						name = tf.GetPhrase(data.name) or data.name
+						if data[1] then
+							col = data[1]
+						end
+						if data[2] then
+							col_2 = data[2]
+						end
+					end
+					button:SetText("")
+					function button.DoClick()
+						drop:ChooseOption(v, k)
+						container.col.BeingUpdated = true
+						local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
+						container.col:SetColor(Color(_col.x, _col.y, _col.z))
+						container.col.BeingUpdated = nil
+					end
+					local tex_corner16 = surface.GetTextureID("gui/corner16")
+					local tex_corner8 = surface.GetTextureID("gui/corner8")
+					function button:Paint(w, h)
+						//there aren't many border colors that are visible against *all* the paint options;
+						//just pick two that work, regardless of tf2-authenticity, and make the more intense
+						//one the "selected" color.
+						local _col
+						if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
+							_col = tf.gui_colors.LightRed
+						elseif button.Hovered then
+							_col = tf.gui_colors.TanLight
+						end
+						if _col then
+							draw.RoundedBox(12, 0,0,w,h, _col)
+						end
+
+						//if we successfully set a border color, then shrink down the color preview
+						//so that the RoundedBox we just drew appears as a border around it.
+						local bd = 0
+						local c = 12-4
+						local c_whole = 12
+						local tex = tex_corner16
+						local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
+						if _col then
+							bd = 4
+							c = 8-1
+							c_whole = 8
+							tex = tex_corner8
+							cornerw = (1/8)*c
+						end
+
+						local col = col
+						local col_2 = col_2
+						if (data and data.override) then
+							col = ProxyentPaintColor_GetOverrideColor(data.override)
+							if data.override_2 then
+								col_2 = ProxyentPaintColor_GetOverrideColor(data.override_2)
+							end
+						end
+
+						if col_2 then
+							//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
+
+							surface.SetDrawColor(col.x, col.y, col.z, 255)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
+							surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
+							surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //left triangle
+								{x = bd+c, y = bd}, //upper left corner
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+
+							surface.SetDrawColor(col_2.x, col_2.y, col_2.z, 255)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
+							surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
+							surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //right triangle
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = w-bd-c, y = h-bd}, //lower right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+						elseif col then
+							//recreating this color table every frame sucks, but
+							//it's the only way to handle the color-changing ones
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, {r = col.x, g = col.y, b = col.z, a = 255})
+						else
+							//custom appearance for "none" option
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, tf.gui_colors.TanDarker)
+							surface.SetDrawColor(tf.gui_colors.LightRed)
+							surface.SetMaterial(tf.close_button_nocircle)
+							local w2 = w * 0.75
+							local h2 = h * 0.75
+							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+						end
+					end
+					tf.AddTFButtonSounds(button)
+					//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+					tf.AddTFStyleTooltip(button, name or v)
+				end
+				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
+				icons:InvalidateLayout()
+
+				local col = tf.TFStyleVGUI("DColorMixer", container)
+				col:SetLabel("#tool.colour.color")
+				col.label:SetDark(false)
+				container.col = col
+				col:SetAlphaBar(false)
+				local _col = self.data.paint.col[self.data.team] or self.data.paint.col[false]
+				col:SetColor(Color(_col.x, _col.y, _col.z))
+				col.ValueChanged = function(_, _col)
+					if container.col.BeingUpdated then return end
+					_col = Vector(_col.r, _col.g, _col.b)
+					//0,0,0 (and anything darker than 3,3,3) is used by the vmt to mean "no paint color", which means it'll get overwritten by the hat's
+					//default color, so if the player is trying to paint something pure black, then redirect it to a color that actually works.
+					if _col.x < 3 and _col.y < 3 and _col.z < 3 then
+						_col = Vector(3,3,3)
+					end
+					self.data.paint.enabled = true
+					self.data.paint.override = {[false] = 0}
+					self.data.paint.col = {[false] = _col}
+					drop.selected = nil //un-highlight the currently selected option
+					drop:SetText(tf.str_custom)
+					pnl.OnSettingChanged()
+				end
+				col:DockMargin(0,16,0,0)
+				col:InvalidateChildren(true)
+				col:Dock(TOP)
+
+				container:SizeToChildren(true, true)
+				container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
+				container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
+				container:IsMouseInputEnabled(true)
+				container:InvalidateLayout()
+
+				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
+				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+				container:SetPos(x, y)
+			end
+		end
+
+		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
+		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true, _custom_weapon = true}
+		if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and !i.act_as_wearable and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
+			local drop = AddDropdown("Crit Glow Color:", function(drop) //no tf localization string for this
+				drop:AddChoice(tf.str_none, nil, !self.data.crit.enabled)
+				drop:AddSpacer()
+				for k, v in ipairs (critglows) do
+					local is_selected = self.data.crit.enabled and self.data.crit.col[false] == v[1] and self.data.crit.col[true] == v[2]
+					drop:AddChoice(tf.GetPhrase(v.name) or v.name, v, is_selected)
+				end
+				if drop:GetText() == "" then drop:SetText(tf.str_custom) end
+			end, function(data)
+				if !data then
+					self.data.crit.enabled = false
+					self.data.crit.col = {[false] = Vector(1,1,1)}
+					self.data.crit.sparks_rb = false 
+					self.data.crit.sparks_c = false
+				else
+					self.data.crit.enabled = true
+					self.data.crit.col = {[false] = data[1], [true] = data[2]}
+					self.data.crit.sparks_rb = data.sparks_rb
+					self.data.crit.sparks_c = false
+				end
+			end)
+			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					tf.LoadoutItemPopupBorder(0,0,w,h)
+				end
+				drop.container = container
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(tf.gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText())
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(tf.gui_colors.LightRed)
+					else
+						surface.SetDrawColor(tf.gui_colors.TanDark)
+					end
+					surface.SetMaterial(tf.close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				tf.AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
+
+				//diconlayout and color picker copied from paint dropdown, bah
+				local size = 48
+				local icons = vgui.Create("DIconLayout", container)
+				icons:Dock(TOP)
+				icons:SetSpaceX(4)
+				icons:SetSpaceY(4)
+
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local button = vgui.Create("DButton", icons)
+					button:SetSize(size, size)
+					local name, col, col_2
+					if data then
+						name = tf.GetPhrase(data.name) or data.name
+						if name == "" then name = nil end
+						if data[1] then
+							col = Color(data[1].x, data[1].y, data[1].z, 255) //unlike paint selector, this can just be a Color value because we don't have to worry about animated color-changing paints
+						end
+						if data[2] then
+							col_2 = Color(data[2].x, data[2].y, data[2].z, 255) //^
+						end
+					end
+					button:SetText("")
+					function button.DoClick()
+						drop:ChooseOption(v, k)
+						container.col.BeingUpdated = true
+						local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+						container.col:SetColor(Color(_col.x, _col.y, _col.z))
+						container.col.BeingUpdated = nil
+						container.check_c:SetChecked(self.data.crit.sparks_c)
+						container.check_rb:SetChecked(self.data.crit.sparks_rb)
+					end
+					//button paint code also copied almost entirely from paint selector! lame!
+					local tex_corner16 = surface.GetTextureID("gui/corner16")
+					local tex_corner8 = surface.GetTextureID("gui/corner8")
+					function button:Paint(w, h)
+						//there aren't many border colors that are visible against *all* the paint options;
+						//just pick two that work, regardless of tf2-authenticity, and make the more intense
+						//one the "selected" color.
+						local _col
+						if button.Depressed or (drop:GetSelectedID() == k) then //highlight the currently selected option
+							_col = tf.gui_colors.LightRed
+						elseif button.Hovered then
+							_col = tf.gui_colors.TanLight
+						end
+						if _col then
+							draw.RoundedBox(12, 0,0,w,h, _col)
+						end
+
+						//if we successfully set a border color, then shrink down the color preview
+						//so that the RoundedBox we just drew appears as a border around it.
+						local bd = 0
+						local c = 12-4
+						local c_whole = 12
+						local tex = tex_corner16
+						local cornerw = (1/12)*c //clip off the edges of these corner textures, so that we can draw the sliced-in-half team colors at an angle that matches DrawPaintIcon
+						if _col then
+							bd = 4
+							c = 8-1
+							c_whole = 8
+							tex = tex_corner8
+							cornerw = (1/8)*c
+						end
+
+						if col_2 then
+							//there's no good way to get DrawPaintIcon to work with draw.RoundedBox, do this manually instead
+
+							surface.SetDrawColor(col)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(bd,bd, c,c, 0,0,cornerw,cornerw) //top left corner
+							surface.DrawTexturedRectUV(bd,h-bd-c, c,c, 0,cornerw,cornerw,0) //bottom left corner
+							surface.DrawRect(bd,bd+c,c,h-bd-bd-c-c) //left space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //left triangle
+								{x = bd+c, y = bd}, //upper left corner
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+
+							surface.SetDrawColor(col_2)
+							surface.SetTexture(tex)
+							surface.DrawTexturedRectUV(w-bd-c,bd, c,c, cornerw,0,0,cornerw) //top right corner
+							surface.DrawTexturedRectUV(w-bd-c,h-bd-c, c,c, cornerw,cornerw,0,0) //bottom right corner
+							surface.DrawRect(w-bd-c,bd+c,c,h-bd-bd-c-c) //right space between corners
+							draw.NoTexture()
+							surface.DrawPoly({ //right triangle
+								{x = w-bd-c, y = bd}, //upper right corner
+								{x = w-bd-c, y = h-bd}, //lower right corner
+								{x = bd+c, y = h-bd}, //lower left corner
+							})
+						elseif col then
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, col)
+						else
+							//custom appearance for "none" option
+							draw.RoundedBox(c_whole, bd,bd,w-bd-bd,h-bd-bd, tf.gui_colors.TanDarker)
+							surface.SetDrawColor(tf.gui_colors.LightRed)
+							surface.SetMaterial(tf.close_button_nocircle)
+							local w2 = w * 0.75
+							local h2 = h * 0.75
+							surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+						end
+					end
+					tf.AddTFButtonSounds(button)
+					//These buttons are too small to add labels to, so do mouseover tooltips instead (but tf2-themed)
+					tf.AddTFStyleTooltip(button, name or v)
+				end
+				icons:SetSize(((size+4)*6)+16, 16+((size+4)*(math.ceil(#drop.Choices/6))))
+				icons:InvalidateLayout()
+
+				local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
+				container.check_rb = check
+				check:SetText("Team Sparks")
+				check:DockMargin(0,16,0,0)
+				check:Dock(TOP)
+				check:SetChecked(self.data.crit.sparks_rb)
+				check.OnChange = function(_, val)
+					self.data.crit.enabled = true
+					self.data.crit.sparks_rb = val
+					pnl.OnSettingChanged()
+				end
+
+				local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
+				container.check_c = check
+				check:SetText("Colorable Sparks")
+				check:DockMargin(0,8,0,0)
+				check:Dock(TOP)
+				check:SetChecked(self.data.crit.sparks_c)
+				check.OnChange = function(_, val)
+					self.data.crit.enabled = true
+					self.data.crit.sparks_c = val
+					pnl.OnSettingChanged()
+				end
+
+				local col = tf.TFStyleVGUI("DColorMixer", container)
+				col:SetLabel("#tool.colour.color")
+				col.label:SetDark(false)
+				container.col = col
+				col:SetAlphaBar(false)
+				local _col = self.data.crit.col[self.data.team] or self.data.crit.col[false]
+				col:SetColor(Color(_col.x, _col.y, _col.z))
+				col.ValueChanged = function(_, _col)
+					if container.col.BeingUpdated then return end
+					_col = Vector(_col.r, _col.g, _col.b)
+					self.data.crit.enabled = true
+					self.data.crit.col = {[false] = _col}
+					drop.selected = nil //un-highlight the currently selected option
+					drop:SetText(tf.str_custom)
+					pnl.OnSettingChanged()
+				end
+				col:DockMargin(0,16,0,0)
+				col:InvalidateChildren(true)
+				col:Dock(TOP)
+
+				container:SizeToChildren(true, true)
+				container:SetHeight(text:GetTall() + 8 + icons:GetTall() + 16 + col:GetTall() + 16 + container.check_rb:GetTall() + 8 + container.check_c:GetTall() + 16 - 4) //why doesn't SizeToChildren do this right?
+				container:SetWide(container:GetWide() - 4) //no i don't know where the +4 bloat on either axis comes from
+				container:IsMouseInputEnabled(true)
+				container:InvalidateLayout()
+
+				local x, y = drop:LocalToScreen(drop:GetWide(), 0)
+				if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+				container:SetPos(x, y)
+			end
+		end
+
+		local submenu
+		local function SubmenuLoseFocus(pnl)
+			if IsValid(pnl) and pnl != submenu --[[and !pnl.m_bIsMenuComponent]] then
+				local par = pnl:GetParent()
+				if !IsValid(par) or SubmenuLoseFocus(par) then
+					return true
+				end
+			end
+		end
+		hook.Add("VGUIMousePressed", "TF2ItemBrowser_SubMenuLoseFocus", function(pnl, mcode)
+			if IsValid(submenu) and SubmenuLoseFocus(pnl) then
+				submenu:Remove()
+			end
+		end)
+		local function AddSubDropdown(container)
+			local drop2 = tf.TFStyleVGUI("DComboBox", container)
+			drop2:Dock(TOP)
+			//Copy of the default DComboBox:OpenMenu() but with two changes to allow our dropdown-within-dropdown nonsense to work
+			function drop2:OpenMenu(pControlOpener)
+				if ( pControlOpener && pControlOpener == self.TextEntry ) then
+					return
+				end
+
+				-- Don't do anything if there aren't any options..
+				if ( #self.Choices == 0 ) then return end
+
+				-- If the menu still exists and hasn't been deleted
+				-- then just close it and don't open a new one.
+				self:CloseMenu()
+
+				//Change 1 of 2: Make sure that opening this menu doesn't close the parent dropdown, and associate it with the hook above
+				if IsValid(submenu) then submenu:Remove() end
+				submenu = DermaMenu(true, container)
+				self.Menu = submenu
+
+				--[[if ( self:GetSortItems() ) then
+					local sorted = {}
+					for k, v in pairs( self.Choices ) do
+						local val = tostring( v ) --tonumber( v ) || v -- This would make nicer number sorting, but SortedPairsByMemberValue doesn't seem to like number-string mixing
+						if ( string.len( val ) > 1 && !tonumber( val ) && val:StartsWith( "#" ) ) then val = language.GetPhrase( val:sub( 2 ) ) end
+						table.insert( sorted, { id = k, data = v, label = val } )
+					end
+					for k, v in SortedPairsByMemberValue( sorted, "label" ) do
+						local option = self.Menu:AddOption( v.data, function() self:ChooseOption( v.data, v.id ) end )
+						if ( self.ChoiceIcons[ v.id ] ) then
+							option:SetIcon( self.ChoiceIcons[ v.id ] )
+						end
+						if ( self.Spacers[ v.id ] ) then
+							self.Menu:AddSpacer()
+						end
+					end
+				else]]
+					for k, v in pairs( self.Choices ) do
+						//Change 2 of 2: Prevent the option's OnMouseRelease function from auto-closing the parent dropdown (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dmenuoption.lua#L75-L86)
+						local option = self.Menu:AddOption( v )
+						option.DoClick = function()
+							option.m_MenuClicking = false
+							if IsValid(self) then
+								self:ChooseOption( v, k )
+								self:CloseMenu()
+							end
+						end
+						if ( self.ChoiceIcons[ k ] ) then
+							option:SetIcon( self.ChoiceIcons[ k ] )
+						end
+						if ( self.Spacers[ k ] ) then
+							self.Menu:AddSpacer()
+						end
+					end
+				//end
+
+				local x, y = self:LocalToScreen( 0, self:GetTall() )
+
+				self.Menu:SetMinimumWidth( self:GetWide())
+				self.Menu:Open( x, y, false, self )
+
+				self:OnMenuOpened( self.Menu )
+			end
+			return drop2
+		end
+
+		//Add unusual effect dropdown
+		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
+		local u_wep = i.particle_suffix
+		if u_hat or u_wep then
+			local drop = AddDropdown(string.Trim(tf.GetPhrase("#IT_UnusualTitle") or "Unusual effect:"), function(drop)
+				drop:AddChoice(tf.str_none, 0, self.data.pe_unusual == 0)
+				drop:AddSpacer()
+				if u_hat then
+					for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
+						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
+						if v.system:EndsWith("_teamcolor_blue") then continue end
+						drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
+					end
+				end
+				if u_wep then
+					for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
+						if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+						drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
+					end
+				end
+			end, function(data)
+				self.data.pe_unusual = data
+			end)
+			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					tf.LoadoutItemPopupBorder(0,0,w,h)
+				end
+				drop.container = container
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(tf.gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText())
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(tf.gui_colors.LightRed)
+					else
+						surface.SetDrawColor(tf.gui_colors.TanDark)
+					end
+					surface.SetMaterial(tf.close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				tf.AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
+
+				local categories = {}
+				for k, v in ipairs ({"Series 1", "Series 2", "Halloween 2011", "Halloween 2012", "Robotic Boogaloo", "Series 3", "Halloween 2013", "Halloween 2014", "End of the Line", "Invasion"}) do
+					categories[v] = {order = k, items = {}}
+				end
+				categories["Other"] = {order = 99999999, items = {}}
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					local tab = tf.TF2Items.attribute_controlled_attached_particles_all[data]
+					if tab and tab.system then
+						local name = tab.system
+						if name:EndsWith("_teamcolor_red") and self.data.team then
+							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
+						end
+						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
+
+						if data == 406 and name == "coin_spin" then continue end //not an unusual, don't add this one
+						
+						local pcfs = PEPlus_FindPCFsFromEffect(name)
+						if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
+						local has_been_categorized = false
+						local entry = {name = name, k = k, v = v}
+						for k2, v2 in ipairs (pcfs) do
+							local cat
+							if v2.pcf == "particles/item_fx.pcf" then
+								//All fx introduced before seasonal community updates are in this one pcf, so we have to hard-code their categories
+								if data <= 19 then
+									cat = "Series 1"
+								elseif data <= 36 then
+									cat = "Series 2"
+								elseif data <= 40 then
+									cat = "Halloween 2011"
+								elseif data <= 47 then
+									cat = "Halloween 2012"
+								elseif data <= 62 then //series 3 fx are defined before roboog despite being added a month later?
+									cat = "Series 3"
+								elseif data <= 72 then
+									cat = "Robotic Boogaloo"
+								elseif data <= 80 then
+									cat = "Halloween 2013"
+								elseif data <= 86 then
+									cat = "Halloween 2014"
+								elseif data <= 90 then
+									cat = "End of the Line"
+								elseif data <= 99 then
+									cat = "Invasion"
+								else //this shouldn't happen
+									cat = "Other"
+								end
+							elseif v2.pcf == "particles/invasion_unusuals.pcf" then
+								cat = "Invasion"
+							else
+								//Generate categories for seasonal update pcfs automatically using the file name
+								local season
+								if string.StartsWith(v2.pcf, "particles/summer") then
+									season = "summer"
+								elseif string.StartsWith(v2.pcf, "particles/halloween") then
+									season = "halloween"
+								elseif string.StartsWith(v2.pcf, "particles/smissmas") then
+									season = "smissmas"
+								end
+								if season and string.EndsWith(v2.pcf, "_unusuals.pcf") then
+									local pcf = string.TrimLeft(v2.pcf, "particles/" .. season)
+									pcf = string.TrimRight(pcf, "_unusuals.pcf")
+									//Get the year number from the file path
+									if #pcf != 4 then continue end //make sure the only part of the string left is the year; this will stop working in 8000 years
+									pcf = tonumber(pcf)
+									if !pcf then continue end
+
+									cat = string.NiceName(season) .. " " .. tostring(pcf)
+									if season == "summer" then
+										season = 1
+									elseif season == "halloween" then
+										season = 2
+									elseif season == "smissmas" then
+										season = 3
+									end
+									categories[cat] = categories[cat] or {order = (pcf*10)+season, items = {}}
+								end
+							end //Note: This will also need handling for taunt fx pcfs if taunts are ever properly implemented
+							if cat then
+								entry.pcf = v2.pcf
+								entry.path = v2.path
+								table.insert(categories[cat].items, entry)
+								has_been_categorized = true
+								continue
+							end
+						end
+						if !has_been_categorized then
+							entry.pcf = pcfs[1].pcf
+							entry.path = pcfs[1].path
+							table.insert(categories["Other"].items, entry)
+						end
+					end
+				end
+				//Sort the categories by display order, and discard empty categories
+				local cat2 = {}
+				for k, v in pairs (categories) do
+					if #v.items > 0 then 
+						cat2[v.order] = {name = k, items = v.items}
+					end
+				end
+				categories = cat2
+				local function GetDefaultCategory()
+					local default_category, fallback_default_category
+					//By default, select the category containing the currently selected option
+					for k, v in SortedPairs (categories) do
+						for _, entry in ipairs (v.items) do
+							local data = drop.Data[entry.k]
+							if self.data.pe_unusual == data then
+								default_category = k
+								break
+							end
+						end
+						if default_category then break end
+						if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
+					end
+					return default_category or fallback_default_category
+				end
+
+				local search_holder, icons
+				if table.Count(categories) > 1 then
+					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
+					search_holder.Paint = function() end
+					search_holder:SetHeight(20)
+					search_holder:Dock(TOP)
+					local drop2, search
+
+					drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
+					drop2:DockMargin(0,0,8,0)
+					drop2:Dock(LEFT)
+					drop2:SetSortItems(false)
+					local selected = GetDefaultCategory()
+					for k, v in SortedPairs (categories) do
+						local name = v.name
+						if string.StartsWith(name, "Summer") then
+							name = string.Replace(name, "Summer", tf.GetPhrase("#TF_SteamWorkshop_Tag_Summer") or "Summer")
+						elseif string.StartsWith(name, "Halloween") then
+							name = string.Replace(name, "Halloween", tf.GetPhrase("#TF_SteamWorkshop_Tag_Halloween") or "Halloween")
+						elseif string.StartsWith(name, "Smissmas") then
+							name = string.Replace(name, "Smissmas", tf.GetPhrase("#TF_SteamWorkshop_Tag_Smissmas") or "Smissmas")
+						elseif name == "Other" then
+							name = tf.GetPhrase("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
+						end
+						//No good localization strings for the other ones; there's a "Series" string used for crate series, but 
+						//it's not translated the same as unusual series in every language, and the community updates only have
+						//one for Invasion, which seems to be a generic community update string (#GameType_Community_Update)
+						drop2:AddChoice(name, k, k == selected)
+					end
+					function drop2.OnSelect(_, index, value, data)
+						search:SetText("")
+						icons.SelectCategory(data)
+					end
+
+					search = tf.TFStyleVGUI("DTextEntry", search_holder)
+					search:Dock(FILL)
+					search:SetPlaceholderText("#spawnmenu.search")
+					search:SetUpdateOnType(true)
+					search.OnValueChange = function(_, p)
+						timer.Create("TF2ItemBrowser_SearchDelay_UFilter", 0.5, 1, function()
+							if IsValid(icons) then
+								if #p == 0 then
+									//Search is empty, go back to using the category dropdown
+									//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+									local selected = GetDefaultCategory()
+									for k, v in pairs (drop2.Data) do
+										if v == selected then
+											drop2:ChooseOptionID(k)
+										end
+									end
+								else
+									//Search is populated, stop using categories and show all matching options
+									p = p:lower()
+									local tab = {}
+									for k, v in SortedPairs (categories) do
+										for _, entry in ipairs (v.items) do
+											if entry.v:lower():find(p, 1, true) then
+												table.insert(tab, entry)
+											end
+										end
+									end
+									icons.RebuildIcons(tab)
+									drop2:SetText("")
+								end
+							end
+						end)
+					end
+					function search_holder.PerformLayout(_, w, h)
+						drop2:SetWide((w/2)-4)
+					end
+				end
+
+				local icons_holder = vgui.Create("DPanel", container)
+				icons_holder.Paint = function() end
+				local scroll = tf.TFStyleVGUI("DScrollPanel",icons_holder)
+				if search_holder then
+					icons_holder:DockMargin(0,8,0,0)
+				end
+				icons_holder:Dock(TOP)
+				scroll:Dock(FILL)
+
+				local size = 128
+				icons = vgui.Create("DIconLayout", scroll)
+				icons:Dock(FILL)
+				icons:SetSpaceX(8)
+				icons:SetSpaceY(8)
+
+				local slider
+				if u_hat then
+					slider = tf.TFStyleVGUI("DNumSlider", container)
+					slider:SetText(tf.GetPhrase("#GameUI_ParticleHatUseHead") or "Adjust Unusual")
+					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
+					slider:SetDefaultValue(0)
+					slider:Dock(TOP)
+					slider:DockMargin(0,16,0,0)
+					slider:SetValue(self.data.pe_unusual_offset or 0)
+					slider:SetEnabled(self.data.pe_unusual_offset != nil)
+					function slider.OnValueChanged(_, val)
+						if self.data.pe_unusual_offset != val and self.data.pe_unusual_offset != nil then
+							self.data.pe_unusual_offset = val
+							pnl.OnSettingChanged()
+						end
+					end
+					slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the unusual effect menu, so just disable it for now.
+					
+					//we have a lot of horizontal space to work with, so just place the check to enable the slider to the left of it
+					check = tf.TFStyleVGUI("DCheckBox", slider)
+					check:DockMargin(0,0,6,0) //+6 on right emulates our custom DCheckBoxLabel style
+					check:Dock(LEFT)
+					check:SetZPos(-1) //dock this to the left of the slider's label
+					check:SetChecked(self.data.pe_unusual_offset != nil)
+					check.OnChange = function(_, val)
+						if val then
+							self.data.pe_unusual_offset = slider:GetValue()
+							slider:SetEnabled(true)
+						else
+							self.data.pe_unusual_offset = nil
+							slider:SetEnabled(false)
+						end
+						pnl.OnSettingChanged()
+					end
+				end
+
+				function icons.SelectCategory(cat)
+					icons.RebuildIcons(table.Copy(categories[cat].items))
+				end
+				function icons.RebuildIcons(tab)
+					icons:Clear()
+					//add "none" option to the start of every category or search
+					table.insert(tab, 1, {k = 1, v = drop.Choices[1], name = drop.Choices[1], pcf = ""})
+					for _, entry in ipairs (tab) do
+						//reuse PE+ spawnicons for particle previews because they nicely manage the fx already
+						local icon = vgui.Create("ContentIcon_PEPlus", icons)
+						icon:Setup(entry.pcf, entry.name, entry.path)
+						icon:SetSize(size, size)
+						icon.disable_autohide = true //prevent the particle effect from getting auto-removed when the spawnmenu is closed
+						icon.disable_icons = true //don't show corner icons for cpoint count or extra info, because they aren't useful here
+						icon.disable_defaultcontenticon = true //don't run the default contenticon draw function (draws frame around icon, text label at bottom), we're going to draw our own
+						function icon.DoRightClick() end
+						function icon:DoClick()
+							local pcf = PEPlus_GetGamePCF(self.pcf, self.path)
+
+							//If the icon's effect is currently being overridden by another pcf's effect of the same name, reload the pcf on click instead (copied from PE+ code)
+							if self:IsCurrentlyOverridden(pcf, self.name) then
+								surface.PlaySound("common/wpn_select.wav")
+								PEPlus_AddParticles(pcf, self.name) //crash prevention
+							else
+								drop:ChooseOption(entry.v, entry.k)
+							end
+						end
+						local override = unusual_icon_overrides[entry.name]
+						if override then
+							icon.view = PEPlus_BoundsToView(override[1], override[2])
+						end
+						local old_Paint = icon.Paint
+						function icon.Paint(_,w,h)
+							//custom background
+							local col = tf.gui_colors._unu_default
+							if icon.Depressed or self.data.pe_unusual == drop.Data[entry.k] then //highlight the currently selected option
+								col = tf.gui_colors._unu_depressed
+							elseif icon.Hovered then
+								col = tf.gui_colors._unu_hovered
+							end
+							draw.RoundedBox(12, 0,0,w,h, col)
+
+							old_Paint(icon,w,h)
+							icon:SetTooltip(nil) //icon's paint func sets the tooltip, so we have to override this here
+
+							//custom appearance for "none" option so it isn't just blank
+							if entry.pcf == "" then
+								surface.SetDrawColor(tf.gui_colors.LightRed)
+								surface.SetMaterial(tf.close_button_nocircle)
+								local w2 = w * 0.75
+								local h2 = h * 0.75
+								surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+							end
+						end
+						//custom text label; this is multiline so do the same textWrap approach as AddItemText
+						local tab = {}
+						for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
+							//do these in reverse order because we're docking them to the bottom
+							table.insert(tab, 1, v)
+						end
+						for k, v in ipairs (tab) do
+							local label = icon:Add("DLabel")
+							label:Dock(BOTTOM)
+							label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+							label:SetText(v)
+							label:SetTextColor(tf.gui_colors.TanLight)
+							label:SetAutoStretchVertical(true)
+							label:SetContentAlignment(5) //center
+						end
+						tf.AddTFButtonSounds(icon)
+					end
+					local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
+					icons:SetSize(w, h)
+					icons:InvalidateLayout()
+					icons_holder:SetSize(w, h)
+					icons_holder:InvalidateLayout()
+					scroll:InvalidateLayout()
+
+					//Resize and reposition container whenever the category is changed
+					local control_height = 0
+					if search_holder then control_height = search_holder:GetTall() + 8 end
+					if u_hat then control_height = control_height + 16 + slider:GetTall() end
+					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
+					if container:GetTall() > ScrH() then
+						local diff = container:GetTall() - ScrH()
+						icons_holder:SetTall(icons_holder:GetTall() - diff)
+						container:SetTall(container:GetTall() - diff)
+						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					end
+					container:SetWide(w + 16 + 8)
+
+					container:IsMouseInputEnabled(true)
+					container:InvalidateLayout()
+
+					local x, y = drop:LocalToScreen(drop:GetWide(), 0)
+					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+					container:SetPos(x, y)
+				end
+				icons.SelectCategory(GetDefaultCategory())
+			end
+		end
+
+		//Show toggle for default particle effects (cigar smoke, halo effect, earbud notes, etc.)
+		local pe_def = tf.GetItemDefaultParticleEffects(self.data)
+		if #pe_def > 0 then
+			local names = {}
+			for k, v in ipairs (pe_def) do
+				names[v._displayname or string.NiceName(v.system)] = true
+			end
+			local name
+			for k, v in pairs (names) do
+				if !name then
+					name = ""
+				else
+					name = name .. ", "
+				end
+				name = name .. k
+			end
+			local check = tf.TFStyleVGUI("DCheckBoxLabel", pnl)
+			check:SetText("Add default particle effects (" .. name .. ")")
+			check:Dock(TOP)
+			check:DockMargin(side_margins,0,side_margins,tf.betweenitems)
+			check:SetChecked(self.data.pe_def)
+			check.OnChange = function(_, val)
+				self.data.pe_def = val
+				pnl.OnSettingChanged()
+			end
+		end
+
+		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
+			local drop = AddDropdown((tf.GetPhrase("#TF_ItemPreview_ItemPaintkit") or "War Paint") .. ":", function(drop)
+				drop:AddChoice(tf.str_none, nil, self.data.wp.enabled == false)
+				drop:AddSpacer()
+				local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
+				for k, v in ipairs (tab) do
+					//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
+					drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
+				end
+			end, function(data)
+				if !data then
+					self.data.wp.enabled = false
+				else
+					self.data.wp.enabled = true
+					self.data.wp.id = data.id
+				end
+				pnl.OnSettingChanged()
+			end)
+			function drop.OpenMenu()
+				//If the menu still exists and hasn't been deleted, then just close it and don't open a new one.
+				//This doesn't use the standard drop.Menu value because that would cause the menu to auto-close
+				//when an option is selected.
+				if IsValid(drop.container) then
+					drop.container:Remove()
+					return
+				end
+
+				local container = vgui.Create("DPanel", TF2ItemBrowser:GetParent())
+				container:DockPadding(16,16,16,16)
+				function container:Paint(w,h)
+					tf.LoadoutItemPopupBorder(0,0,w,h)
+				end
+				drop.container = container
+
+				//Originally we placed container inside a DermaMenu(), like DProperty_VectorColor does (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/prop_vectorcolor.lua#L95-L98C51),
+				//but this didn't work well because col's textentries were impossible to give keyboard focus this way,
+				//so instead make the container behave like a DermaMenu.
+				CloseDermaMenus()
+				container:SetIsMenu(true)
+				function container:GetDeleteSelf() return true end
+				function container:OnRemove() 
+					//fix keyboard focus getting stuck on col's textentries if we remove container while focused
+					local chump = vgui.GetKeyboardFocus()
+					if IsValid(chump) then chump:KillFocus() end
+				end
+				RegisterDermaMenuForClose(container)
+
+				local text = vgui.Create("DLabel", container)
+				text:SetContentAlignment(7) //top left
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemName")
+				text:SetColor(tf.gui_colors.TanLight)
+				text:SetText(drop:GetParent().Label:GetText())
+				text:Dock(TOP)
+				text:DockMargin(0,0,0,8)
+				text:SizeToContents()
+
+				local close = vgui.Create("DButton", container)
+				close:SetText("")
+				close:SetSize(22,22)
+				function close:Paint(w,h)
+					close:SetPos(container:GetWide()-w-12, 12)
+					if self.Depressed then
+						surface.SetDrawColor(color_white)
+					elseif self.Hovered then
+						surface.SetDrawColor(tf.gui_colors.LightRed)
+					else
+						surface.SetDrawColor(tf.gui_colors.TanDark)
+					end
+					surface.SetMaterial(tf.close_button)
+					surface.DrawTexturedRect(0,0,w,h)
+				end
+				tf.AddTFButtonSounds(close)
+				function close:DoClick()
+					container:Remove()
+				end
+
+				//the pre-paintkit collections actually have very few paintkits per individual weapon, so collapse them 
+				//into a single category for each update. also collapse the single-paintkit collections containing dragon 
+				//slayer and smissmas sweater into one category, though this doesn't help much.
+				local category_remaps = {
+					Concealed_killer_collection		= "Operation_gun_mettle_master_collection",
+					Craftsmann_collection			= "Operation_gun_mettle_master_collection",
+					Teufort_collection			= "Operation_gun_mettle_master_collection",
+					Powerhouse_collection			= "Operation_gun_mettle_master_collection",
+					tough_break_drop_collection_01		= "operation_tough_break_master_collection",
+					tough_break_drop_collection_02		= "operation_tough_break_master_collection",
+					tough_break_case_collection_01_pyroland	= "operation_tough_break_master_collection",
+					tough_break_case_collection_02_warbirds	= "operation_tough_break_master_collection",
+					UniqueSkins_collection			= "Other",
+					UniqueFreeSkins_collection		= "Other",
+				}
+				local categories = {}
+				categories["Other"] = {order = 99999999, items = {}}
+				for k, v in ipairs (tf.paintkit_collections) do
+					if category_remaps[v] then v = category_remaps[v] end
+					categories[v] = categories[v] or {order = k, items = {}}
+				end
+				
+				for k, v in pairs (drop.Choices) do
+					local data = drop.Data[k]
+					if data then 
+						local cat = tf.paintkit_ids_to_collections[data.id] or "Other"
+						if category_remaps[cat] then cat = category_remaps[cat] end
+						table.insert(categories[cat].items, {k = k, v = v, data = data})
+					end
+				end
+				//Sort the categories by display order, and discard empty categories
+				local cat2 = {}
+				for k, v in pairs (categories) do
+					if #v.items > 0 then 
+						local name = k
+						if tf.TF2Items.item_collections[k] then
+							name = tf.GetPhrase(tf.TF2Items.item_collections[k].name) or k
+						elseif name == "Other" then
+							name = tf.GetPhrase("#AbuseReport_TypeOther") or "Other" //using this localization string for "Other" items is a stretch but it's the best we've got
+						end
+						cat2[v.order] = {name = name, items = v.items}
+					end
+				end
+				categories = cat2
+				local function GetDefaultCategory()
+					local default_category, fallback_default_category
+					//By default, select the category containing the currently selected option
+					for k, v in SortedPairs (categories) do
+						for _, entry in ipairs (v.items) do
+							if (self.data.wp.enabled and entry.data and entry.data.id == self.data.wp.id)
+							or (!self.data.wp.enabled and !entry.data) then
+								default_category = k
+								break
+							end
+						end
+						if default_category then break end
+						if !fallback_default_category then fallback_default_category = k end //if no category is selected, fall back to showing the first one
+					end
+					return default_category or fallback_default_category
+				end
+
+				local search_holder, icons
+				if table.Count(categories) > 1 then
+					search_holder = vgui.Create("DPanel", container) //we have enough horizontal space that we can put the category dropdown and search box next to each other
+					search_holder.Paint = function() end
+					search_holder:SetHeight(20)
+					search_holder:Dock(TOP)
+					local drop2, search
+
+					drop2 = AddSubDropdown(search_holder) //calling this "drop" causes issues with the parent drop
+					drop2:DockMargin(0,0,8,0)
+					drop2:Dock(LEFT)
+					drop2:SetSortItems(false)
+					local selected = GetDefaultCategory()
+					for k, v in SortedPairs (categories) do
+						drop2:AddChoice(v.name, k, k == selected)
+					end
+					function drop2.OnSelect(_, index, value, data)
+						search:SetText("")
+						icons.SelectCategory(data)
+					end
+
+					search = tf.TFStyleVGUI("DTextEntry", search_holder)
+					search:Dock(FILL)
+					search:SetPlaceholderText("#spawnmenu.search")
+					search:SetUpdateOnType(true)
+					search.OnValueChange = function(_, p)
+						timer.Create("TF2ItemBrowser_SearchDelay_WPFilter", 0.5, 1, function()
+							if IsValid(icons) then
+								if #p == 0 then
+									//Search is empty, go back to using the category dropdown
+									//This uses drop2.ChooseOptionID and not icons.SelectCategory in order to restore the text on the dropdown 
+									local selected = GetDefaultCategory()
+									for k, v in pairs (drop2.Data) do
+										if v == selected then
+											drop2:ChooseOptionID(k)
+										end
+									end
+								else
+									//Search is populated, stop using categories and show all matching options
+									p = p:lower()
+									local tab = {}
+									for k, v in SortedPairs (categories) do
+										for _, entry in ipairs (v.items) do
+											if entry.v:lower():find(p, 1, true) then
+												table.insert(tab, entry)
+											end
+										end
+									end
+									icons.RebuildIcons(tab)
+									drop2:SetText("")
+								end
+							end
+						end)
+					end
+					function search_holder.PerformLayout(_, w, h)
+						drop2:SetWide((w/2)-4)
+					end
+				end
+
+				local icons_holder = vgui.Create("DPanel", container)
+				icons_holder.Paint = function() end
+				local scroll = tf.TFStyleVGUI("DScrollPanel",icons_holder)
+				if search_holder then
+					icons_holder:DockMargin(0,8,0,0)
+				end
+				icons_holder:Dock(TOP)
+				scroll:Dock(FILL)
+
+				local size = 128
+				icons = vgui.Create("DIconLayout", scroll)
+				icons:Dock(FILL)
+				icons:SetSpaceX(8)
+				icons:SetSpaceY(8)
+
+				local entry = tf.TFStyleVGUI("DTextEntry", container, true)
+				local entrypnl = tf.AddTFLabelToVGUI(entry, "Seed")
+				entrypnl:Dock(TOP)
+				entrypnl:DockMargin(0,16,0,0)
+				entry:SetNumeric(true)
+				entry:SetText(self.data.wp.seed or "0")
+				entry.OnEnter = function()
+					local val = entry:GetText()
+					if val != self.data.wp.seed then 
+						self.data.wp.seed = val
+						pnl.OnSettingChanged()
+					end
+				end
+				entry.OnFocusChanged = function(_, b) 
+					if !b then entry:OnEnter() end
+				end
+				local button = tf.TFStyleVGUI("DButton", entrypnl)
+				button:SetText(tf.GetPhrase("#TF_ItemPreview_PaintkitSeed") or "Randomize")
+				button:SizeToContentsX(20)
+				button:Dock(RIGHT)
+				button:DockMargin(8,0,0,0)
+				button.DoClick = function()
+					local val = tostring(WP.RNG.RandomSeed())
+					entry:SetText(val)
+					self.data.wp.seed = val
+					pnl.OnSettingChanged()
+				end
+
+				local slider = tf.TFStyleVGUI("DNumSlider", container)
+				local wear_slider = slider
+				slider:SetText("Wear Level")
+				slider:SetMinMax(1, 5)
+				slider:SetDecimals(0)
+				slider:Dock(TOP)
+				slider:DockMargin(0,8,0,0)
+				slider:SetValue(self.data.wp.wear or 1)
+				function slider.OnValueChanged(_, val)
+					val = math.Round(val)
+					slider:SetValue(val) //snap to rounded value; if we don't do this, the displayed value will always be rounded *down* and can get out-of-sync with the actual value
+					if val != self.data.wp.wear then //only send updates on whole numbers
+						self.data.wp.wear = val
+						pnl.OnSettingChanged()
+					end
+				end
+				slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
+
+				//The rest of these paintkit settings are global convars, not saved to the entity, so categorize them separately
+
+				local combo = AddSubDropdown(container)
+				local combopnl = tf.AddTFLabelToVGUI(combo, "Texture Resolution (Global)")
+				combopnl:Dock(TOP)
+				combopnl:DockMargin(0,16,0,0)
+				combo:SetSortItems(false)
+				local cv = GetConVar("warpaint_rtt_resolution")
+				if cv then cv = cv:GetString() end
+				combo:AddChoice("512x512 (Fast)", "512", cv == "512")
+				combo:AddChoice("1024x1024 (Balanced)", "1024", cv == "1024")
+				combo:AddChoice("2048x2048 (High Quality)", "2048", cv == "2048")
+				function combo.OnSelect(_, index, value, data)
+					RunConsoleCommand("warpaint_rtt_resolution", tostring(data or value))
+					//wait a moment for the convar change to take effect, otherwise the updated skin it generates will use the old 
+					//setting. not sure if this is the right approach (are there circumstances where this isn't enough time?), is 
+					//there something else we should be using to ensure that the convar is updated before rebuilding?
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+
+				local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
+				local intensity_check = check
+				check:SetText("Increased Intensity Wears (Global)")
+				check:DockMargin(0,8,0,0)
+				check:Dock(TOP)
+				local cv = GetConVar("warpaint_increased_intensity")
+				if cv then cv = cv:GetBool() end
+				check:SetChecked(cv)
+				check.OnChange = function(_, val)
+					if val then val = "1" else val = "0" end
+					RunConsoleCommand("warpaint_increased_intensity", val)
+					container:UpdateSize()
+					//wait a moment for the convar change to take effect (see above)
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+				local help = vgui.Create("DLabel", container)
+				help:SetWrap(true)
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(tf.gui_colors.TanLight)
+				help:SetText("Non-TF2-accurate wear with higher visual intensity")
+				help:Dock(TOP)
+				help:DockMargin(22,0,32,0)
+				local intensity_help = help
+
+				local slider = tf.TFStyleVGUI("DNumSlider", container)
+				local intensity_slider = slider
+				slider:SetText("Intensity Multiplier")
+				slider:SetMinMax(1, 5)
+				slider:SetDefaultValue(1)
+				slider:Dock(TOP)
+				slider:SetConVar("warpaint_intensity_multiplier")
+				function slider.OnValueChanged(_, val)
+					val = math.Round(val, 2)
+					if val != slider.LastValue then
+						if slider.LastValue != nil then //OnValueChanged runs automatically when the slider is first created, don't update pnl unnecessarily when that happens
+							//wait a moment for the convar change to take effect (see above)
+							timer.Simple(0.1, function()
+								if IsValid(pnl) then pnl.OnSettingChanged() end
+							end)
+							//MsgN("val changed from ", slider.LastValue, " to ", val)
+						end
+						slider.LastValue = val
+					end
+				end
+				slider.DoRightClick = function() end //by default, this opens a dermamenu to copy the slider's value or reset it, but there's no easy way to prevent this from auto-closing the paintkit menu, so just disable it for now.
+
+				local check = tf.TFStyleVGUI("DCheckBoxLabel", container)
+				local scratch_check = check
+				check:SetText("Double Scratches")
+				check:Dock(TOP)
+				local cv = GetConVar("warpaint_double_scratch")
+				if cv then cv = cv:GetBool() end
+				check:SetChecked(cv)
+				check.OnChange = function(_, val)
+					if val then val = "1" else val = "0" end
+					RunConsoleCommand("warpaint_double_scratch", val)
+					container:UpdateSize()
+					//wait a moment for the convar change to take effect (see above)
+					timer.Simple(0.1, function()
+						if IsValid(pnl) then pnl.OnSettingChanged() end
+					end)
+				end
+				local help = vgui.Create("DLabel", container)
+				help:SetWrap(true)
+				//help:SetAutoStretchVertical(true) //won't work here, see container:UpdateSize()
+				help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+				help:SetColor(tf.gui_colors.TanLight)
+				help:SetText("Samples scratch texture twice at different UVs for denser wear patterns")
+				help:Dock(TOP)
+				help:DockMargin(22+32,0,32,0)
+				local scratch_help = help
+
+				function container:UpdateSize()
+					//Resize and reposition container whenever the category is changed or intensity controls are toggled
+					local control_height = 0
+					if search_holder then control_height = search_holder:GetTall() + 8 end
+					if intensity_check:GetChecked() then
+						intensity_slider:SetHeight(21)
+						intensity_slider:DockMargin(32,8,0,0)
+						scratch_check:SetHeight(20)
+						scratch_check:DockMargin(32,8,0,0)
+						//scratch_help:SetAutoStretchVertical(true)
+						//scratch_help:InvalidateLayout(true)
+						scratch_help:SetTall(20) //default height apparently; can't do AutoStretchVertical here because we can't get an accurate height if we haven't set the container's width yet
+						control_height = control_height + 8 + intensity_slider:GetTall() + 8 + scratch_check:GetTall() + scratch_help:GetTall()
+					else
+						intensity_slider:SetHeight(0)
+						intensity_slider:DockMargin(0,0,0,0)
+						scratch_check:SetHeight(0)
+						scratch_check:DockMargin(0,0,0,0)
+						//scratch_help:SetAutoStretchVertical(false)
+						scratch_help:SetTall(0)
+					end
+					local w, h = icons.CurW, icons.CurH
+					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + entrypnl:GetTall() + 8 + wear_slider:GetTall() + 16 + combopnl:GetTall() + 8 + intensity_check:GetTall() + intensity_help:GetTall() + 16 + 16) //why doesn't SizeToChildren do this right?
+					if container:GetTall() > ScrH() then
+						local diff = container:GetTall() - ScrH()
+						icons_holder:SetSize(w, h) //set this again to prevent the height from getting clobbered when the "increased intensity wears" check is toggled multiple times
+						icons_holder:SetTall(icons_holder:GetTall() - diff)
+						container:SetTall(container:GetTall() - diff)
+						w = w + scroll.VBar:GetWide() //SizeToChildren doesn't do this right either; calling it immediately never gets vbar width, while subsequent calls always get vbar width whether it's visible or not
+					end
+					container:SetWide(w + 16 + 8)
+					
+					container:IsMouseInputEnabled(true)
+					container:InvalidateLayout()
+
+					local x, y = drop:LocalToScreen(drop:GetWide(), 0)
+					if x + container:GetWide() > ScrW() then x = ScrW() - container:GetWide() end
+					if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
+					container:SetPos(x, y)
+				end
+
+				function icons.SelectCategory(cat)
+					local tab = {}
+					for _, entry in ipairs (categories[cat].items) do
+						table.insert(tab, entry)
+					end
+					icons.RebuildIcons(tab)
+				end
+				function icons.RebuildIcons(tab)
+					icons:Clear()
+					//add "none" option to the start of every category or search
+					table.insert(tab, 1, {k = 1, v = drop.Choices[1]})
+					for _, entry in ipairs (tab) do
+						local icon = vgui.Create("ContentIcon", icons)
+						icon:SetSize(size, size)
+						function icon.DoRightClick() end
+						function icon:DoClick()
+							drop:ChooseOption(entry.v, entry.k)
+						end
+						icon:SetTooltip(nil)
+						function icon.Paint(_,w,h)
+							//custom background
+							local col = tf.gui_colors._unu_default
+							local textcol = tf.gui_colors.TanLight
+							if (self.data.wp.enabled and entry.data and self.data.wp.id == entry.data.id)
+							or (!self.data.wp.enabled and !entry.data) or icon.Depressed then //highlight the currently selected option
+								col = tf.gui_colors._unu_depressed
+							elseif icon.Hovered then
+								col = tf.gui_colors._unu_hovered
+							elseif entry.data then
+								//Show quality color on text label, but revert to the default color when hovered/selected,
+								//because some colors are too hard to read as small text on some of these backgrounds
+								textcol = tf.rarity_colors[tf.paintkit_rarities[entry.data.id]] or textcol
+							end
+							draw.RoundedBox(12, 0,0,w,h, col)
+							for k, v in ipairs (icon.labels) do
+								v:SetTextColor(textcol)
+							end
+
+							icon.Image:PaintAt(0,0,w,h)
+
+							//custom appearance for "none" option so it isn't just blank
+							if !entry.data then
+								surface.SetDrawColor(tf.gui_colors.LightRed)
+								surface.SetMaterial(tf.close_button_nocircle)
+								local w2 = w * 0.75
+								local h2 = h * 0.75
+								surface.DrawTexturedRect((w-w2)/2, (h-h2)/2, w2, h2)
+							end
+						end
+						//custom text label; this is multiline so do the same textWrap approach as AddItemText
+						local tab = {}
+						icon.labels = {}
+						for k, v in ipairs (string.Explode("\n", textWrap(entry.v, "TF2ItemBrowser_ItemDesc_Smaller", size - 8))) do
+							//do these in reverse order because we're docking them to the bottom
+							table.insert(tab, 1, v)
+						end
+						for k, v in ipairs (tab) do
+							local label = icon:Add("DLabel")
+							label:Dock(BOTTOM)
+							label:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+							label:SetText(v)
+							label:SetTextColor(tf.gui_colors.TanLight)
+							label:SetAutoStretchVertical(true)
+							label:SetContentAlignment(5) //center
+							table.insert(icon.labels, label)
+						end
+						tf.AddTFButtonSounds(icon)
+						//grab cached spawnicon if it exists, otherwise tell the icon render queue to create one
+						local data = drop.Data[entry.k]
+						if data and data.id then
+							local iconmdl = mdl.models[1]:GetModel()
+							local configs = WP.WarpaintData.GetById(data.id)
+							for _, config in ipairs(configs) do
+								if config.weapon == "paintkit_tool" then
+									iconmdl = "models/items/paintkit_tool.mdl"
+									break
+								end
+							end
+							local iconpath = "tf2itembrowser_paintkiticons/" .. data.id .. "_" .. string.StripExtension(string.GetFileFromFilename(iconmdl)) .. ".png"
+							function icon.RebuildIconTexture()
+								local ent = ClientsideModel(iconmdl, RENDERGROUP_OTHER)
+								if IsValid(ent) then
+									ent:SetAngles(Angle(10,130,0)) //model angles from resource\ui\econ\itemmodelpanel.res; these make lighting subtly better
+									ent:SetNoDraw(true)
+								end
+								table.insert(TF2ItemBrowser.IconRenderQueue, {func = function()
+									//if ent is invalid, then remove from the queue
+									if !IsValid(ent) then
+										return true
+									end
+									//if icon no longer exists, then remove from the queue
+									if !IsValid(icon) then
+										ent:Remove()
+										return true
+									end
+									
+									//apply paintkit instance to ent; we do this in the render queue func and not 
+									//when spawning ent, so that if multiple icons are queued at once, we can 
+									//spread out the load times.
+									if !ent.WarpaintData then
+										local instance
+										local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
+
+										//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+										if weaponType then
+											-- Try to build a full multi-layer instance if we have a warpaint ID
+											instance = WP.WarpaintData.BuildInstance(
+												data.id,
+												weaponType,
+												"1", //always use the same seed
+												1, //factory new
+												0 //always use red team
+											)
+											if instance then
+												-- Set the matIndex since BuildInstance doesn't set it
+												instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
+											end
+										end
+										//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+										--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+										if !instance then
+											MsgN(i.name, " using warpaint fallback, not good")
+											local pattern
+											for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+												if v.id == self.data.wp.id then
+													pattern = v.primaryTexture
+													break
+												end
+											end
+											instance = WP.WarpaintInstance.New({
+												patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+												seed = self.data.wp.seed,
+												wearLevel = self.data.wp.wear,
+												wear = WP.RNG.GenerateWearFromSeed(self.data.wp.seed, self.data.wp.wear),
+												team = _team,
+												weaponType = weaponType,
+												matIndex = WP.Weapons.GetMatIndex(weaponType)
+											})
+										end]]
+										if instance then
+											//adapted from lua\autorun\client\cl_warpaint_init.lua's net.Receive("WP_Apply"), which is response to net msg sent by tool
+											WP.Materials.Apply(ent, instance)
+											ent.instance = instance
+										else
+											//if we failed to instantiate the material, bail out
+											return true
+										end
+									end
+
+									//Don't render the icon until the paintkit material is no longer a placeholder
+									local wp_state = WP.Materials.GetForEntity(ent)
+									if wp_state == nil then
+										//If WP.Materials.GetForEntity got stuck and can't retrieve 
+										//the material (usually caused by removing an ent with a WP 
+										//material), then reinstantiate it and try again
+										WP.Materials.Apply(ent, ent.instance)
+										return false
+									elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+										return false
+									end
+
+									//Render the icon texture
+									local models = {ent}
+									local cam = tf.DoItemModelCamera(models, self)
+									render.SetWriteDepthToDestAlpha(false)
+									render.Clear(0, 0, 0, 0, true, true)
+									tf.DrawItemModels(0, 0, size, size, models, {}, cam.ang, cam.pos, cam.fov)
+									local img = render.Capture({format = "png", x = 0, y = 0, w = size, h = size})
+									if !file.IsDir("tf2itembrowser_paintkiticons/", "DATA") then 
+										file.CreateDir("tf2itembrowser_paintkiticons/")
+									end
+									if file.Write(iconpath, img) then
+										icon:SetMaterial("data/" .. iconpath)
+									end
+									ent:Remove()
+									return true
+								end})
+								icon:SetMaterial(tf.spinner:GetName())
+							end
+							if file.Exists(iconpath, "DATA") then
+								icon:SetMaterial("data/" .. iconpath)
+							else
+								icon.RebuildIconTexture()
+							end
+							function icon.DoRightClick()
+								////TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
+								//local menu = DermaMenu()
+
+								//local opt = menu:AddOption("Re-render", function()
+									icon.RebuildIconTexture()
+								//end)
+								//opt:SetIcon("icon16/picture_save.png")
+
+								//menu:Open()
+							end
+						end
+					end
+					local w, h = (size+8)*4, (size+8)*(math.ceil(#tab/4))
+					icons:SetSize(w, h)
+					icons.CurW, icons.CurH = w, h //used by container:UpdateSize(); GetSize doesn't work there since it changes after invalidating layout; which results in the size changing as the "increased intensity wears" check is toggled
+					icons:InvalidateLayout()
+					icons_holder:SetSize(w, h)
+					icons_holder:InvalidateLayout()
+					scroll:InvalidateLayout()
+
+					container:UpdateSize()
+				end
+				icons.SelectCategory(GetDefaultCategory())
+			end
+		end
+	else
+		local h = 0 //gotta do it this way again to make the multiline item text set the correct height
+		h = h + self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
+		//use additemtext for the help text as well, because pnl won't set its height correctly if a DLabel with SetAutoStretchVertical is docked inside
+		h = h + self:AddItemText(name_container, "\nTo control which items can spawn, use the Filters to the left!\n\nFor example, setting \"Conflicts with equipped\" to the red \"X\" will filter out items that conflict with ones already on the character, letting you generate random loadouts that are always valid.\n\nAll chance sliders apply to items that can have the listed setting applied.", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
+		name_container:SetHeight(h)
+		name_container:DockMargin(0,0,0,tf.betweencategories)
+
+		function pnl.Refresh()
+			pnl:InvalidateLayout(true)
+			pnl:SizeToChildren(false,true)
+			self:PositionPopupPanel(pnl)
+		end
+
+		local function AddChanceSlider(label, key, default)
+			local slider = tf.TFStyleVGUI("DNumSlider", pnl)
+			slider:SetText(label)
+			slider:SetMinMax(0, 100)
+			slider:SetDecimals(0)
+			slider:SetDefaultValue(math.Round(default*100))
+			slider:SetValue(math.Round(self.random[key]*100))
+			slider:Dock(TOP)
+			slider:DockMargin(side_margins,0,side_margins,tf.betweenitems)
+			function slider.OnValueChanged(_, val)
+				self.random[key] = val/100
+			end
+			return slider
+		end
+		local function AddCheckBox(label, key)
+			local check = tf.TFStyleVGUI("DCheckBoxLabel", pnl)
+			check:SetText(label)
+			check:Dock(TOP)
+			check:DockMargin(side_margins,0,side_margins,tf.betweencategories)
+			check:SetChecked(self.random[key])
+			check.OnChange = function(_, val)
+				self.random[key] = val
+			end
+			return check
+		end
+
+		local drop = AddDropdown("Preferred class:", function(drop)
+			for k, v in ipairs (tf.classes) do //add all classes in order, except "(none)"
+				if k > 10 then continue end
+				drop:AddChoice(tf.GetPhrase(v.langstr) or string.NiceName(v.longname), k, self.random.class == k)
+				if k == 1 then drop:AddSpacer() end
+			end
+		end, function(data)
+			self.random.class = data
+		end)
+		drop:GetParent():DockMargin(side_margins,0,side_margins,tf.betweencategories)
+
+		AddChanceSlider("Paint chance", "paint_chance", 0.5)
+		AddCheckBox("Match paint color of other equipped items?", "paint_match")
+
+		AddChanceSlider("Unusual chance", "unusual_chance", 0.1)
+		AddCheckBox("Valid items only? (headgear or war painted)", "paint_match")
+
+		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
+		AddCheckBox("Random wear level?", "wp_randomwear")
+
+		AddChanceSlider("Festivizer chance", "festivizer_chance", 0.25)
+		AddChanceSlider("Australium chance", "aus_chance", 0.1)
 	end
 
 	local button = tf.TFStyleVGUI("DButton", pnl)
@@ -3515,14 +3620,18 @@ function PANEL:CreateSpawnPanel()
 	button:DockMargin(side_margins,tf.betweencategories-tf.betweenitems,side_margins,tf.betweencategories)
 	button:SetDoubleClickingEnabled(false) //make the button spam-clickable like spawnicons
 	button.DoClick = function()
-		if IsValid(self.entity) then
-			TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
-		elseif IsValid(TF2ItemBrowser:GetEntity()) then
-			TF2ItemBrowser:DoInput("attach_item_spawn", self.data, true)
+		if !self.random then
+			if IsValid(self.entity) then
+				TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
+			elseif IsValid(TF2ItemBrowser:GetEntity()) then
+				TF2ItemBrowser:DoInput("attach_item_spawn", self.data, true)
+			else
+				TF2ItemBrowser:DoInput("item_spawn", self.data)
+			end
+			surface.PlaySound(self.sound_drop)
 		else
-			TF2ItemBrowser:DoInput("item_spawn", self.data)
+			self:GenerateRandomItem()
 		end
-		surface.PlaySound(self.sound_drop)
 	end
 	
 	pnl:SetWide(tf.popup_w)
@@ -3554,14 +3663,19 @@ function PANEL:CreateSpawnPanel()
 	end
 
 	function pnl.OnRemove()
-		//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
-		if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
+		if !self.random then
+			//If this itemicon doesn't correspond to an entity, then revert any changes when we close the spawn panel
+			if !IsValid(self.entity) and IsValid(self) then self:SetDefaultData() end //don't run this when the itemicon is being deleted
 
-		//If any of the custom dropdown menus (i.e. paints, unusuals) are currently open, close them
-		for _, pnl2 in ipairs (pnl:GetChildren()) do
-			for _, pnl3 in ipairs (pnl2:GetChildren()) do
-				if IsValid(pnl3.container) then pnl3.container:Remove() end
+			//If any of the custom dropdown menus (i.e. paints, unusuals) are currently open, close them
+			for _, pnl2 in ipairs (pnl:GetChildren()) do
+				for _, pnl3 in ipairs (pnl2:GetChildren()) do
+					if IsValid(pnl3.container) then pnl3.container:Remove() end
+				end
 			end
+		else
+			//Reset random item settings (TODO: are we sure is this what we want? it matches all the other items, but might be worse for usability.)
+			self:SetupRandomItemIcon()
 		end
 	end
 
@@ -3635,6 +3749,7 @@ local BackpackItemGreyedOutBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 12
 //no need for BackpackItemGreyedOutSelectedBorder, it uses the same material as the standard one
 local col_GrayedOut = Color(46,43,42,255)
 //more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
+local mat_random = Material("vgui/class_sel_sm_random_red.vtf")
 
 TF2ItemBrowser_IconRTs = {}
 function PANEL:Paint(w, h)
@@ -3860,6 +3975,11 @@ function PANEL:Paint(w, h)
 			CleanUpModels()
 			return true
 		end})
+	elseif self.random then
+		surface.SetMaterial(mat_random)
+		//this texture is twice as tall as it is wide, and slightly off-center
+		local diff = (1-(h/w))/4
+		surface.DrawTexturedRectUV(w*0.04,0,w,h,0,0.27+diff,1,0.77-diff)
 	elseif !self.no_image then
 		//show loading icon
 		surface.SetMaterial(tf.spinner)
@@ -3926,38 +4046,48 @@ function PANEL:DoRightClick()
 	local menu = DermaMenu()
 
 	//quick-spawn options, to spawn/equip items quickly without customizing them first, or to unequip items more efficiently
+	local str, func
+	if self.random then
+		func = function() self:GenerateRandomItem() end
+	end
 	if IsValid(self.entity) then
-		menu:AddOption(string.NiceName(string.lower(tf.GetPhrase("#Store_Remove" or "Remove"))), function()
+		str = string.NiceName(string.lower(tf.GetPhrase("#Store_Remove" or "Remove")))
+		func = func or function()
 			TF2ItemBrowser:DoInput("attach_item_remove", self.entity)
 			surface.PlaySound(self.sound_drop)
-		end)
+		end
 	elseif IsValid(TF2ItemBrowser:GetEntity()) then
-		menu:AddOption(string.NiceName(string.lower(tf.GetPhrase("#Equip") or "EQUIP")), function()
+		str = string.NiceName(string.lower(tf.GetPhrase("#Equip") or "EQUIP"))
+		func = func or function()
 			TF2ItemBrowser:DoInput("attach_item_spawn", self.data, false)
 			surface.PlaySound(self.sound_drop)
-		end)
+		end
 	else
-		menu:AddOption(string.NiceName(string.lower(tf.GetPhrase("#MMenu_Create") or "CREATE")), function()
+		str = string.NiceName(string.lower(tf.GetPhrase("#MMenu_Create") or "CREATE"))
+		func = func or function()
 			TF2ItemBrowser:DoInput("item_spawn", self.data)
 			surface.PlaySound(self.sound_drop)
-		end)
+		end
 	end
+	menu:AddOption(str, func)
 
-	if isstring(self.data.id) and tf.PlayerCanEditCustomItems() then
-		menu:AddOption("Edit custom item", function()
-			TF2ItemBrowser_OpenCustomItemEditor(self.data.id)
-		end)
+	if !self.random then
+		if isstring(self.data.id) and tf.PlayerCanEditCustomItems() then
+			menu:AddOption("Edit custom item", function()
+				TF2ItemBrowser_OpenCustomItemEditor(self.data.id)
+			end)
+		end
+
+		//also put this debug option here
+		//if GetConVarNumber("developer") >= 1 then
+			menu:AddSpacer()
+			menu:AddOption("Print item data in console", function()
+				MsgN("\n\n\n")
+				MsgN(self.data.id, " ", tf.TF2Items.items[self.data.id].name)
+				PrintTable(tf.TF2Items.items[self.data.id])
+			end)
+		//end
 	end
-
-	//also put this debug option here
-	//if GetConVarNumber("developer") >= 1 then
-		menu:AddSpacer()
-		menu:AddOption("Print item data in console", function()
-			MsgN("\n\n\n")
-			MsgN(self.data.id, " ", tf.TF2Items.items[self.data.id].name)
-			PrintTable(tf.TF2Items.items[self.data.id])
-		end)
-	//end
 
 	self.menu = menu
 	menu:Open()
