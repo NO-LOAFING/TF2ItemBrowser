@@ -617,14 +617,14 @@ function PANEL:SetupRandomItemIcon()
 	if class > 10 then class = 1 end
 	self.random = {
 		class = class,
-		paint_chance = 0.5,
+		paint_chance = 0.35,
 		paint_match = true,
 		unusual_chance = 0.1,
 		unusual_validonly = true,
 		wp_chance = 0.5,
 		wp_randomwear = true,
-		festivizer_chance = 0.25,
-		aus_chance = 0.1,
+		festivizer_chance = 0.2,
+		aus_chance = 0.2,
 	}
 
 	self.quality = "unique"
@@ -671,6 +671,7 @@ function PANEL:GenerateRandomItem()
 	data.fx = fx
 
 	//select a random style; australium styles use a separate probability, so divide styles into australium and non-australium when selecting.
+	local did_australium
 	if i.visuals and i.visuals.styles then
 		local styles_normal, styles_aus = {}, {}
 		for k, v in SortedPairs (i.visuals.styles) do
@@ -682,6 +683,7 @@ function PANEL:GenerateRandomItem()
 		end
 		if (#styles_aus > 0 and math.random() <= self.random.aus_chance) or #styles_normal == 0 then
 			data.style = table.Random(styles_aus)
+			did_australium = true //don't apply paintkits to australiums
 		else
 			data.style = table.Random(styles_normal)
 		end
@@ -729,9 +731,18 @@ function PANEL:GenerateRandomItem()
 		end
 	end
 
+	if !did_australium and i._paintkit and WP.Weapons.IsSupported(i.model_player) and math.random() <= self.random.wp_chance then
+		//Select a random paintkit id for this item
+		local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
+		data.wp.id = tab[math.random(#tab)].id
+		data.wp.enabled = true
+		if self.random.wp_randomwear then
+			data.wp.wear = math.random(1, 5)
+		end
+	end
+
 	//TODO:
 	//unusual_chance, unusual_validonly
-	//wp_chance, wp_randomwear
 
 	tf.SanitizeItemDataTable(data)
 	if IsValid(TF2ItemBrowser:GetEntity()) then
@@ -3612,7 +3623,7 @@ function PANEL:CreateSpawnPanel()
 		end)
 		drop:GetParent():DockMargin(side_margins,0,side_margins,tf.betweencategories)
 
-		AddChanceSlider("Paint chance", "paint_chance", 0.5)
+		AddChanceSlider("Paint chance", "paint_chance", 0.35)
 		AddCheckBox("Match paint color of other equipped items?", "paint_match")
 
 		AddChanceSlider("Unusual chance", "unusual_chance", 0.1)
@@ -3621,8 +3632,8 @@ function PANEL:CreateSpawnPanel()
 		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
 		AddCheckBox("Random wear level?", "wp_randomwear")
 
-		AddChanceSlider("Festivizer chance", "festivizer_chance", 0.25)
-		AddChanceSlider("Australium chance", "aus_chance", 0.1)
+		AddChanceSlider("Festivizer chance", "festivizer_chance", 0.2)
+		AddChanceSlider("Australium chance", "aus_chance", 0.2)
 	end
 
 	local button = tf.TFStyleVGUI("DButton", pnl)
