@@ -1280,6 +1280,34 @@ function tf.GetItemDefaultParticleEffects(data)
 
 end
 
+function tf.GetItemUnusualEffects(id)
+
+	local i = tf.TF2Items.items[id] or {}
+	local tab, type = nil, nil
+
+	//hat unusuals
+	if i.item_slot == "misc" or i.item_slot == "head" then //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
+		for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
+			if k == 20 or k == 28 or k == 406 then continue end //map stamps, genteel smoke and coin_spin are not unusuals
+			if v.system:EndsWith("_teamcolor_blue") then continue end
+			tab = tab or {}
+			table.insert(tab, {k = k, v = v})
+		end
+		type = "hat"
+	//wep unusuals
+	elseif i.particle_suffix then
+		for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
+			if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+			tab = tab or {}
+			table.insert(tab, {k = k, v = v})
+		end
+		type = "wep"
+	end
+	if tab and #tab > 0 then
+		return tab, type
+	end
+end
+
 function tf.GetDefaultItemDataTable(id)
 
 	local i = tf.TF2Items.items[id] or {}

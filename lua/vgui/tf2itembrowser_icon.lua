@@ -617,9 +617,9 @@ function PANEL:SetupRandomItemIcon()
 	if class > 10 then class = 1 end
 	self.random = {
 		class = class,
-		paint_chance = 0.35,
+		paint_chance = 0.5,
 		paint_match = true,
-		unusual_chance = 0.1,
+		unusual_chance = 0.2,
 		unusual_validonly = true,
 		wp_chance = 0.5,
 		wp_randomwear = true,
@@ -741,8 +741,14 @@ function PANEL:GenerateRandomItem()
 		end
 	end
 
-	//TODO:
-	//unusual_chance, unusual_validonly
+	if math.random() <= self.random.unusual_chance then
+		local unu_tab, unu_type = tf.GetItemUnusualEffects(id)
+		if unu_tab and (!self.random.unusual_validonly 
+		or (unu_type == "hat" and i.equip_regions and (i.equip_regions.hat or i.equip_regions.whole_head)) 
+		or (unu_type == "wep" and data.wp.enabled)) then
+			data.pe_unusual = unu_tab[math.random(#unu_tab)].k
+		end
+	end
 
 	tf.SanitizeItemDataTable(data)
 	if IsValid(TF2ItemBrowser:GetEntity()) then
@@ -2513,24 +2519,13 @@ function PANEL:CreateSpawnPanel()
 		end
 
 		//Add unusual effect dropdown
-		local u_hat = i.item_slot == "misc" or i.item_slot == "head" //originally i considered limiting this to "hat" and "whole_head" equip regions, and then manually adding overrides for items that can be unusual because they had these regions in the past, but this would require upkeep as regions get changed in the future. instead, just make all cosmetics unusual-able, no matter how absurd. here's the list of items i had, for reference: (Bonk Boy, Soldier's Stash, Exquisite Rack, Coldfront Curbstompers, Pyromancer's Mask, HazMat Headcase, Coffin Kit, Large Luchador, Hunter Heavy, Sleeveless in Siberia, Mining Light, Pencil Pusher, Brainiac Hairpiece, Blighted Beak, Das Hazmattenhatten,  Master's Yellow Belt, Villain's Veil, Soldered Sensei, Le Party Phantom, Noh Mercy, Antlers, Virtual Viewfinder, Polar Pullover, Captain Space Mann)
-		local u_wep = i.particle_suffix
-		if u_hat or u_wep then
+		local unu_tab, unu_type = tf.GetItemUnusualEffects(self.data.id)
+		if unu_tab then
 			local drop = AddDropdown(string.Trim(tf.GetPhrase("#IT_UnusualTitle") or "Unusual effect:"), function(drop)
 				drop:AddChoice(tf.str_none, 0, self.data.pe_unusual == 0)
 				drop:AddSpacer()
-				if u_hat then
-					for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.cosmetic_unusual_effects) do
-						if k == 20 or k == 28 then continue end //map stamps and genteel smoke are not unusuals
-						if v.system:EndsWith("_teamcolor_blue") then continue end
-						drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
-					end
-				end
-				if u_wep then
-					for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
-						if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
-						drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. k) or v.system, k, self.data.pe_unusual == k)
-					end
+				for _, tab in ipairs (unu_tab) do
+					drop:AddChoice(tf.GetPhrase("#Attrib_Particle" .. tab.k) or tab.v.system, tab.k, self.data.pe_unusual == tab.k)
 				end
 			end, function(data)
 				self.data.pe_unusual = data
@@ -2608,8 +2603,6 @@ function PANEL:CreateSpawnPanel()
 							name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
 						end
 						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
-
-						if data == 406 and name == "coin_spin" then continue end //not an unusual, don't add this one
 						
 						local pcfs = PEPlus_FindPCFsFromEffect(name)
 						if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
@@ -2801,7 +2794,7 @@ function PANEL:CreateSpawnPanel()
 				icons:SetSpaceY(8)
 
 				local slider
-				if u_hat then
+				if unu_type == "hat" then
 					slider = tf.TFStyleVGUI("DNumSlider", container)
 					slider:SetText(tf.GetPhrase("#GameUI_ParticleHatUseHead") or "Adjust Unusual")
 					slider:SetMinMax(-8, 8) //yes, these are the min/max values (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/tf/vgui/class_loadout_panel.cpp#L307)
@@ -2917,7 +2910,7 @@ function PANEL:CreateSpawnPanel()
 					//Resize and reposition container whenever the category is changed
 					local control_height = 0
 					if search_holder then control_height = search_holder:GetTall() + 8 end
-					if u_hat then control_height = control_height + 16 + slider:GetTall() end
+					if unu_type == "hat" then control_height = control_height + 16 + slider:GetTall() end
 					container:SetTall(text:GetTall() + 8 + control_height + h + 16 + 16) //why doesn't SizeToChildren do this right?
 					if container:GetTall() > ScrH() then
 						local diff = container:GetTall() - ScrH()
@@ -3623,11 +3616,11 @@ function PANEL:CreateSpawnPanel()
 		end)
 		drop:GetParent():DockMargin(side_margins,0,side_margins,tf.betweencategories)
 
-		AddChanceSlider("Paint chance", "paint_chance", 0.35)
+		AddChanceSlider("Paint chance", "paint_chance", 0.5)
 		AddCheckBox("Match paint color of other equipped items?", "paint_match")
 
-		AddChanceSlider("Unusual chance", "unusual_chance", 0.1)
-		AddCheckBox("Valid items only? (headgear or war painted)", "paint_match")
+		AddChanceSlider("Unusual chance", "unusual_chance", 0.2)
+		AddCheckBox("Must be headgear or war painted?", "unusual_validonly")
 
 		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
 		AddCheckBox("Random wear level?", "wp_randomwear")
