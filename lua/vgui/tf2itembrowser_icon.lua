@@ -492,34 +492,8 @@ function PANEL:SetData(data)
 		//this can be called with no arg just to make the panel acknowledge changes made to the data table
 		data = self.data
 	end
+	tf.SanitizeItemDataTable(data)
 	local i = tf.TF2Items.items[data.id] or {}
-
-	//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
-	local vis = tf.GetItemModelVisuals(data)
-	if !vis.models.item then data.models.item = nil end
-	if !vis.models.wearable then data.models.wearable = nil end
-	if !vis.models.wearable_2 then data.models.wearable_2 = nil end
-	if !vis.models.taunt_prop then data.models.taunt_prop = nil
-	elseif !vis.models.item then data.models.taunt_prop = true end
-	if !vis.models.attached_festive then data.models.attached_festive = nil end
-	if !vis.models.stat_clock then data.models.stat_clock = nil end
-
-	if #tf.GetItemDefaultParticleEffects(data) == 0 then data.pe_def = false end
-
-	if !self.default_paint and i.attributes and i.attributes["set item tint RGB"] then
-		tab = {}
-		local col = ProxyentPaintColor_PackedRGBToTab(i.attributes["set item tint RGB"].value)
-		tab[false] = Vector(col[1], col[2], col[3])
-		if i.attributes["set item tint RGB 2"] then
-			col = ProxyentPaintColor_PackedRGBToTab(i.attributes["set item tint RGB 2"].value)
-			tab[true] = Vector(col[1], col[2], col[3])
-		end
-		self.default_paint = tab
-	end
-	if self.default_paint and !data.paint.enabled then
-		data.paint.enabled = true
-		data.paint.col = table.Copy(self.default_paint)
-	end
 
 	local img_override
 	if i.visuals and i.visuals.styles then
@@ -624,69 +598,15 @@ function PANEL:SetDefaultData()
 	if istable(id) then id = self.data.id end
 	local i = tf.TF2Items.items[id] or {}
 
+	local data = tf.GetDefaultItemDataTable(id)
+
 	local _, class = TF2ItemBrowser.filters.class:GetSelected()
-	if class == 1 then
-		//go through classes in order, default to the first one that can use this item
-		for k, v in ipairs (tf.classes) do 
-			if i.used_by_classes[v.longname] then
-				class = k
-				break
-			end
-		end
-	end
-
-	local team = TF2ItemBrowser.attopts.team.Value
-
-	local style = 0
-	if i.visuals and i.visuals.styles then
-		//default to the first style listed; i THINK this is always 0 but let's make extra sure
-		for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
-			style = k
-			break
-		end
-	end
-
+	if i.used_by_classes[tf.classes[class].longname] then data.class = class end
+	data.team = TF2ItemBrowser.attopts.team.Value
 	local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
+	data.fx = fx
 
-	self:SetData({
-		id = id, 
-		class = class, 
-		team = team,
-		style = style,
-
-		models = {
-			item = true,
-			wearable = true,
-			wearable_2 = false,
-			taunt_prop = false,
-			attached_festive = false,
-			stat_clock = false,
-		},
-
-		fx = fx,
-		paint = {
-			enabled = false,
-			col = {[false] = Vector(255,255,255)},
-			override = {[false] = 0},
-		},
-		crit = {
-			enabled = false,
-			col = {[false] = Vector(1,1,1)},
-			sparks_rb = false,
-			sparks_c = false,
-		},
-
-		pe_def = true,
-		pe_unusual = 0,
-		pe_unusual_offset = nil,
-
-		wp = {
-			enabled = false,
-			id = 0,
-			wear = 1,
-			seed = tostring(WP.RNG.RandomSeed()),
-		}
-	})
+	self:SetData(data)
 
 end
 
@@ -726,8 +646,68 @@ end
 
 function PANEL:GenerateRandomItem()
 
-	//TODO
-	surface.PlaySound("replay/replaydialog_warn.wav")
+	if !TF2ItemBrowser.icons_to_add or #TF2ItemBrowser.icons_to_add == 0 then
+		//no items to randomly pick from, so play a buzzer and stop here
+		surface.PlaySound("replay/replaydialog_warn.wav")
+		return
+	end
+
+	local id = TF2ItemBrowser.icons_to_add[math.random(#TF2ItemBrowser.icons_to_add)]
+	local i = tf.TF2Items.items[id]
+
+	local data = tf.GetDefaultItemDataTable(id)
+
+	//if the class setting is set to a class that can equip this item, then use that class' version of the item. otherwise, use a random one.
+	if i.used_by_classes[tf.classes[self.random.class].longname] then 
+		data.class = self.random.class
+	else
+		local _, class = table.Random(i.used_by_classes) //second arg is the randomly selected table key
+		data.class = tf.class_longname_to_id[class]
+	end
+
+	//team and fx just use the value from the browser; i *guess* we could implement a random team, but who would use that?
+	data.team = TF2ItemBrowser.attopts.team.Value
+	local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
+	data.fx = fx
+
+	//select a random style; australium styles use a separate probability, so divide styles into australium and non-australium when selecting.
+	if i.visuals and i.visuals.styles then
+		local styles_normal, styles_aus = {}, {}
+		for k, v in SortedPairs (i.visuals.styles) do
+			if v.aus_prefix then
+				table.insert(styles_aus, k)
+			else
+				table.insert(styles_normal, k)
+			end
+		end
+		if (#styles_aus > 0 and math.random() <= self.random.aus_chance) or #styles_normal == 0 then
+			data.style = table.Random(styles_aus)
+		else
+			data.style = table.Random(styles_normal)
+		end
+	end
+
+	//festivizer; don't worry about whether the item has this or not, SanitizeItemDataTable will take care of it
+	data.models.attached_festive = math.random() <= self.random.festivizer_chance
+
+	//TODO:
+	//paint_chance, paint_match
+	//unusual_chance, unusual_validonly
+	//wp_chance, wp_randomwear
+
+	tf.SanitizeItemDataTable(data)
+	if IsValid(TF2ItemBrowser:GetEntity()) then
+		TF2ItemBrowser:DoInput("attach_item_spawn", data, false) //don't open the new item's window, keep the random item window open
+	else
+		TF2ItemBrowser:DoInput("item_spawn", data)
+	end
+	timer.Simple(FrameTime(), function()
+		//if the item model hasn't been loaded yet, then the game will stutter when loading the model,
+		//so wait until the next frame so that the sound doesn't play and then immediately get cut off.
+		//the timing is a little tricky here because it won't load until the server receives the spawn input 
+		//from the client, but using FrameTime() here works for singleplayer without having a noticeable delay.
+		surface.PlaySound(i.drop_sound or "ui/item_default_drop.wav")
+	end)
 
 end
 
@@ -923,7 +903,7 @@ function PANEL:UpdateItemDescription()
 	end
 
 	//Paint name, based on CEconItemDescription::Generate_Painted (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L2402)
-	if self.data.paint.enabled and self.data.paint.override[false] == 0 and !(self.default_paint and self.data.paint.col[false] == self.default_paint[false]) then
+	if self.data.paint.enabled and self.data.paint.override[false] == 0 and !(i._default_paint and self.data.paint.col[false] == i._default_paint[false]) then
 		local paint = tf.str_custom
 		for k, v in ipairs (paints) do
 			if v[1] == self.data.paint.col[false] and v[2] == self.data.paint.col[true] then
@@ -1911,7 +1891,7 @@ function PANEL:CreateSpawnPanel()
 
 		if i.capabilities and i.capabilities.paintable == 1 then
 			local drop = AddDropdown(string.Trim(string.Replace(tf.GetPhrase("#Econ_Paint_Name") or "Paint Color:", "%s1", "")), function(drop)
-				drop:AddChoice(tf.str_none, nil, !self.data.paint.enabled or (self.default_paint and self.data.paint.col[false] == self.default_paint[false]))
+				drop:AddChoice(tf.str_none, nil, !self.data.paint.enabled or (i._default_paint and self.data.paint.col[false] == i._default_paint[false]))
 				drop:AddSpacer()
 				for k, v in ipairs (paints) do
 					local is_selected = self.data.paint.enabled and (self.data.paint.override[false] == v.override or (self.data.paint.col[false] == v[1] and self.data.paint.col[true] == v[2]))
@@ -1920,9 +1900,9 @@ function PANEL:CreateSpawnPanel()
 				if drop:GetText() == "" then drop:SetText(tf.str_custom) end
 			end, function(data)
 				if !data then
-					if self.default_paint then
+					if i._default_paint then
 						self.data.paint.enabled = true
-						self.data.paint.col = table.Copy(self.default_paint)
+						self.data.paint.col = table.Copy(i._default_paint)
 					else
 						self.data.paint.enabled = false
 						self.data.paint.col = {[false] = Vector(255,255,255)}

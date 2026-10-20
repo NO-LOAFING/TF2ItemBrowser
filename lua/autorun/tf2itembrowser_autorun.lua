@@ -916,6 +916,23 @@ end
 
 tf.TF2Items = s
 
+//Make items with default paint colors (i.e. tournament medals) store them somewhere more easily accessible
+//This has to be done on a timer so that we can be sure that Hat Painter's ProxyentPaintColor_PackedRGBToTab function exists
+timer.Simple(0, function()
+	for k, v in pairs (tf.TF2Items.items) do
+		if v.attributes and v.attributes["set item tint RGB"] then
+			tab = {}
+			local col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB"].value)
+			tab[false] = Vector(col[1], col[2], col[3])
+			if v.attributes["set item tint RGB 2"] then
+				col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB 2"].value)
+				tab[true] = Vector(col[1], col[2], col[3])
+			end
+			v._default_paint = tab
+		end
+	end
+end)
+
 
 //Load custom items - items saved by the player will be in the data/ folder, while addons can include their own items in their data_static/ folder.
 //These are determined by the server, not clients, because they need to be consistent between all users - if we want this feature to be useful in 
@@ -1260,6 +1277,94 @@ function tf.GetItemDefaultParticleEffects(data)
 	end
 
 	return pe_def
+
+end
+
+function tf.GetDefaultItemDataTable(id)
+
+	local i = tf.TF2Items.items[id] or {}
+
+	//go through classes in order, default to the first one that can use this item
+	local class = 1
+	for k, v in ipairs (tf.classes) do 
+		if i.used_by_classes[v.longname] then
+			class = k
+			break
+		end
+	end
+
+	local style = 0
+	if i.visuals and i.visuals.styles then
+		//default to the first style listed; i THINK this is always 0 but let's make extra sure
+		for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+			style = k
+			break
+		end
+	end
+
+	local data = {
+		id = id, 
+		class = class, 
+		team = false,
+		style = style,
+
+		models = {
+			item = true,
+			wearable = true,
+			wearable_2 = false,
+			taunt_prop = false,
+			attached_festive = false,
+			stat_clock = false,
+		},
+
+		fx = tf.EFFECT_NONE,
+		paint = {
+			enabled = false,
+			col = {[false] = Vector(255,255,255)},
+			override = {[false] = 0},
+		},
+		crit = {
+			enabled = false,
+			col = {[false] = Vector(1,1,1)},
+			sparks_rb = false,
+			sparks_c = false,
+		},
+
+		pe_def = true,
+		pe_unusual = 0,
+		pe_unusual_offset = nil,
+
+		wp = {
+			enabled = false,
+			id = 0,
+			wear = 1,
+			seed = tostring(WP.RNG.RandomSeed()),
+		}
+	}
+	//tf.SanitizeItemDataTable(data) //every func that uses the data table ends up running Sanitize on it anyway, so don't bother running it twice
+	return data
+
+end
+
+function tf.SanitizeItemDataTable(data)
+
+	//submodels that aren't used by this item are set to nil instead of false, so that we know not to add controls for them
+	local vis = tf.GetItemModelVisuals(data)
+	if !vis.models.item then data.models.item = nil end
+	if !vis.models.wearable then data.models.wearable = nil end
+	if !vis.models.wearable_2 then data.models.wearable_2 = nil end
+	if !vis.models.taunt_prop then data.models.taunt_prop = nil
+	elseif !vis.models.item then data.models.taunt_prop = true end
+	if !vis.models.attached_festive then data.models.attached_festive = nil end
+	if !vis.models.stat_clock then data.models.stat_clock = nil end
+
+	if #tf.GetItemDefaultParticleEffects(data) == 0 then data.pe_def = false end
+
+	local i = tf.TF2Items.items[data.id] or {}
+	if i._default_paint and !data.paint.enabled then
+		data.paint.enabled = true
+		data.paint.col = table.Copy(i._default_paint)
+	end
 
 end
 
