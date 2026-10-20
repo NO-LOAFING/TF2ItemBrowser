@@ -690,8 +690,46 @@ function PANEL:GenerateRandomItem()
 	//festivizer; don't worry about whether the item has this or not, SanitizeItemDataTable will take care of it
 	data.models.attached_festive = math.random() <= self.random.festivizer_chance
 
+	if i.capabilities and i.capabilities.paintable == 1 and math.random() <= self.random.paint_chance then
+		local col
+		if self.random.paint_match then
+			local ent = TF2ItemBrowser:GetEntity()
+			if IsValid(ent) then
+				//Go through items attached to the browser's selected entity, and grab the first available paint color
+				for k, v in pairs (TF2ItemBrowser.atticons.Panels) do
+					if !v.data or !istable(v.data) or !v.data.paint.enabled then continue end
+					local i2 = tf.TF2Items.items[v.data.id] or {}
+					if !(i2._default_paint and v.data.paint.col[false] == i2._default_paint[false]) or v.data.paint.override[false] != 0 then
+						col = {[1] = Vector(v.data.paint.col[false])}
+						if v.data.paint.col[true] then
+							col[2] = Vector(v.data.paint.col[true])
+						end
+						if v.data.paint.override[false] != 0 then
+							col.override = v.data.paint.override[false]
+							col.override_2 = v.data.paint.override[true]
+						end
+						break
+					end
+				end
+			end
+		end
+		//Select a random paint color
+		if !col then
+			col = paints[math.random(#paints)]
+		end
+
+		data.paint.enabled = true
+		if col.override then
+			data.paint.override = {[false] = col.override, [true] = col.override_2}
+		else
+			data.paint.override = {[false] = 0}
+		end
+		if col[1] then
+			data.paint.col = {[false] = col[1], [true] = col[2]}
+		end
+	end
+
 	//TODO:
-	//paint_chance, paint_match
 	//unusual_chance, unusual_validonly
 	//wp_chance, wp_randomwear
 

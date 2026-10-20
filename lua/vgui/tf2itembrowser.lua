@@ -899,6 +899,7 @@ function PANEL:Think(...)
 				local row = math.floor(k/self.iconlist.columns)
 				item:SetPos(col*(tf.item_icon_sizes[icon_size].w+tf.item_icon_sizes[icon_size].gap_w), row*(tf.item_icon_sizes[icon_size].h+tf.item_icon_sizes[icon_size].gap_h))
 				item.data = v //this will be populated with the default data table for this item once the icon renders
+				self.icons[v] = item
 				item.item_conflict = self:GetItemHasConflict(v)
 			else
 				//We've gone through the whole table, so we're done here
