@@ -746,7 +746,13 @@ function PANEL:GenerateRandomItem()
 		if unu_tab and (!self.random.unusual_validonly 
 		or (unu_type == "hat" and i.equip_regions and (i.equip_regions.hat or i.equip_regions.whole_head)) 
 		or (unu_type == "wep" and data.wp.enabled)) then
-			data.pe_unusual = unu_tab[math.random(#unu_tab)].k
+			local tab = unu_tab[math.random(#unu_tab)]
+			data.pe_unusual = tab.k
+			if unu_type == "hat" and tab.v.attach_to_rootbone then
+				//some combinations of hat and unusual effect will want to use "adjust unusual" by default in order to appear 
+				//on the head instead of some bad model origin; tell the serverside spawn code to do a special check for this
+				data.pe_unusual_offset = 1337 //special value to tell the serverside spawn function to run this check
+			end
 		end
 	end
 

@@ -2889,14 +2889,46 @@ if SERVER then
 					end
 					constraint.TF2ItemBrowser_Item_SubModel(e, p, "peplus", nil, ply)
 				end
-				if data.pe_def then
+				if data.pe_unusual > 0 then
+					local tab = tf.TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
+					if tab then 
+						if data.pe_unusual_offset == 1337 then
+							//If this item is a hat with a randomly assigned unusual effect, then check to 
+							//make sure that it has a valid attachment or won't attach to a bad root bone, 
+							//otherwise enable "adjust unusual" by default so that it won't look bad.
+							if tab.attach_to_rootbone then
+								local should_use_offset = true
+								local attachment = -1
+								if tab.attachment then attachment = e2:LookupAttachment(tab.attachment) end
+								if attachment > 0 then
+									should_use_offset = false
+								else
+									local bone = e2:GetBoneName(0)
+									if bone == "bip_head" or bone == "prp_helmet" or bone == "prp_hat" then
+										should_use_offset = false
+									end
+								end
+								MsgN(i.name, " has randomly assigned unusual effect ", name, "; should_use_offset = ", should_use_offset)
+								if should_use_offset then
+									data.pe_unusual_offset = 0
+								else
+									data.pe_unusual_offset = nil
+								end
+							else
+								data.pe_unusual_offset = nil
+							end
+							//Update the item data table saved to the entity as well
+							if e2.EntityMods and e2.EntityMods.TF2ItemBrowser_Item then
+								e2.EntityMods.TF2ItemBrowser_Item.pe_unusual_offset = data.pe_unusual_offset
+							end
+						end
+						AddEffect(tab)
+					end
+				end
+				if data.pe_def then //do this second to make sure we don't spawn a default effect with the 1337 offset
 					for k, v in ipairs (tf.GetItemDefaultParticleEffects(data)) do
 						AddEffect(v)
 					end
-				end
-				if data.pe_unusual > 0 then
-					local tab = tf.TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
-					if tab then AddEffect(tab) end
 				end
 			end
 
