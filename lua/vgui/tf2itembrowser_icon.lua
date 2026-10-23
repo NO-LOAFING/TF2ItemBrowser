@@ -610,12 +610,12 @@ function PANEL:SetDefaultData()
 
 end
 
-function PANEL:SetupRandomItemIcon()
+function PANEL:SetupRandomItemIcon(random_settings) //optional arg to set the random settings to a pre-existing table instead of defaults
 
 	//default to the currently selected class in the filters, except for "none"
 	local _, class = TF2ItemBrowser.filters.class:GetSelected()
 	if class > 10 then class = 1 end
-	self.random = {
+	self.random = random_settings or {
 		class = class,
 		paint_chance = 0.5,
 		paint_match = true,

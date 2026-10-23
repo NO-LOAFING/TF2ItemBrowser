@@ -37,8 +37,8 @@ function PANEL:Init()
 			load_text = "Retrieving custom items..."
 			load_progress = 0
 		elseif self.icons_to_add_showloader then
-			load_text = tostring(self.icons_to_add_key-1) .. " / " .. tostring(#self.icons_to_add)
-			load_progress = (self.icons_to_add_key-1)/#self.icons_to_add
+			load_text = tostring(self.icons_to_add_key-1) .. " / " .. tostring(self.icons_to_add_showloader)
+			load_progress = (self.icons_to_add_key-1)/self.icons_to_add_showloader
 		end
 		if !load_text then return end
 		surface.SetFont("TF2ItemBrowser_ItemDesc")
@@ -593,7 +593,6 @@ function PANEL:Init()
 		end)
 		self:RebuildIconList()
 		//Reset all the item icons inside atticons, so that they're rebuilt at the new size
-		local icons = {}
 		atticons:Clear()
 		net.Start("TF2ItemBrowser_AttachedItems_GetFromSv", true)
 			net.WriteEntity(self:GetEntity())
@@ -656,11 +655,15 @@ function PANEL:Init()
 
 end
 
+//this one is global so it carries over between windows
+TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
+local iconsperframe = 100
+
 function PANEL:RebuildIconList()
 
 	if TF2ItemBrowser_RequestCustomItems or self.filters.equip_region.IsRebuilding or self.filters.item_set.IsRebuilding then return end
 
-	self.icons = {}
+	self.iconlist.icons = {}
 	self.icons_to_add = {}
 	self.icons_to_add_key = 1
 	local item_slot_types = {
@@ -726,6 +729,7 @@ function PANEL:RebuildIconList()
 
 	end
 
+	local icons_to_add_by_id = {}
 	for k, v in SortedPairsMixed (tf.TF2Items.items) do
 		//this filter is on by default and catches >75% of items, so check this first
 		if DoIncludeExcludeFilter(self.filters.tm:GetValue(), v._tm) then continue end
@@ -840,11 +844,55 @@ function PANEL:RebuildIconList()
 		or DoIncludeExcludeFilter(self.filters.custom:GetValue(), isstring(k)) //custom items use id strings, while normal items use id numbers
 		then continue end
 
-		table.insert(self.icons_to_add, k)
+		icons_to_add_by_id[k] = table.insert(self.icons_to_add, k)
 	end
-	//If there's enough icons to add that creating them will cause a substantial FPS drop (i.e. filters are set to 
-	//allow tournament medals), then display a loading progress bar so that the player can tell what's going on.
-	self.icons_to_add_showloader = (#self.icons_to_add >= 4000)
+	//Try to scroll back to an item that was previously visible on-screen, so that using something like the "conflicts with equipped"
+	//filter maintains continuity between updates instead of always scrolling back to the top.
+	local new_scroll_id
+	local _, r_a = self.right_scroll:LocalToScreen(0,0)
+	local _, r_b = self.right_scroll:LocalToScreen(0, self.right_scroll:GetTall())
+	for _, icon in ipairs (self.iconlist:GetChildren()) do
+		local _, a = icon:LocalToScreen(0,0)
+		local _, b = icon:LocalToScreen(0, icon:GetTall())
+		if a <= r_b and b >= r_a then //if top of icon is above bottom of scrollpanel, and bottom of icon is below top of scrollpanel
+			local id = icon.data
+			if istable(id) then id = id.id end
+			if icon.random or icons_to_add_by_id[id] then
+				new_scroll_id = id
+				break
+			end
+		end
+	end
+	if IsValid(self.SpawnPanel) and self.SpawnPanel.Owner:GetParent() == self.iconlist then
+		//If an icon is currently selected, just use that one (do this after the icon-on-screen check, 
+		//so that if the random button is currently selected, it can override new_scroll_id to nil)
+		local icon = self.SpawnPanel.Owner
+		local id = icon.data
+		if istable(id) then id = id.id end
+		if icon.random or icons_to_add_by_id[id] then
+			new_scroll_id = id
+		end
+		//Also, reopen the spawnpanel to the same settings when the icon is recreated
+		self.icon_to_reselect = {
+			id = id,
+			data = icon.data,
+			random = icon.random,
+		}
+	else
+		self.icon_to_reselect = nil
+	end
+	//Check if we want to display a loading progress bar on top of the iconlist
+	if #self.icons_to_add >= 4000 then
+		//If there's enough icons to add that creating them will cause a substantial FPS drop
+		//(i.e. filters are set to allow tournament medals), then display the loading bar 
+		//until EVERY icon is added, so that the player can tell what's causing the lag.
+		self.icons_to_add_showloader = #self.icons_to_add
+	elseif new_scroll_id and icons_to_add_by_id[new_scroll_id] > iconsperframe then
+		//Otherwise, if we're scrolling down to an icon that won't be added right away, 
+		//then display the loading bar temporarily until that icon is added, 
+		//so that the player doesn't just see a blank window for a moment.
+		self.icons_to_add_showloader = icons_to_add_by_id[new_scroll_id]
+	end
 	//Clear the icon list, and resize it to the height of the new list
 	self.iconlist:Clear()
 	local icon_size = tf.cv_icon_size:GetInt()
@@ -861,10 +909,20 @@ function PANEL:RebuildIconList()
 	self.iconlist.columns = columns
 	local rows = math.floor((#self.icons_to_add)/columns)+1
 	self.iconlist:SetHeight((rows*tf.item_icon_sizes[icon_size].h) + ((rows-1)*tf.item_icon_sizes[icon_size].gap_h))
-	//Update scrollbar; scroll back to the top, and prevent scrolling or clicking on list items if there's a loading bar
-	self.right_scroll:InvalidateLayout()
-	self.right_scroll.VBar:SetScroll(0)
-	self.right_scroll:SetMouseInputEnabled(!self.icons_to_add_showloader)
+	//Update scrollbar; set the new scroll height, and prevent scrolling or clicking on list items if there's a loading bar
+	self.right_scroll:InvalidateLayout(true) //make sure SetScroll below doesn't clamp to the previous height of the iconlist
+	if new_scroll_id then
+		//MsgN("new scroll id = ", (tf.TF2Items.items[new_scroll_id] or {}).name)
+		local row = math.floor(icons_to_add_by_id[new_scroll_id]/self.iconlist.columns)
+		local icon_size = tf.cv_icon_size:GetInt()
+		//scroll down until the previous top item appears at the top appears at the top of the list
+		self.right_scroll.VBar:SetScroll( row*(tf.item_icon_sizes[icon_size].h+tf.item_icon_sizes[icon_size].gap_h) )
+		////alt: only scroll down far enough to make the previous top item appear at the bottom of the list
+		//self.right_scroll.VBar:SetScroll( (row+1)*(tf.item_icon_sizes[icon_size].h+tf.item_icon_sizes[icon_size].gap_h) - self.right_scroll:GetTall() )
+	else
+		self.right_scroll.VBar:SetScroll(0)
+	end
+	self.right_scroll:SetMouseInputEnabled(self.icons_to_add_showloader == nil)
 	//if #self.icons_to_add != 1 thens
 		//self.ItemCountText:SetText("(" .. tostring(#self.icons_to_add) .. " items)")
 		self.ItemCountText:SetText("(" .. string.Replace(tf.GetPhrase("#Store_CartItems") or "%s1 Items", "%s1", tostring(#self.icons_to_add)) .. ")")
@@ -873,10 +931,6 @@ function PANEL:RebuildIconList()
 	//end
 
 end
-
-//this one is global so it carries over between windows
-TF2ItemBrowser_ImageQueuedBefore = TF2ItemBrowser_ImageQueuedBefore or {}
-local iconsperframe = 100
 
 function PANEL:Think(...)
 
@@ -888,28 +942,39 @@ function PANEL:Think(...)
 		//Add random item button to start of iconlist; do this here and not in RebuildIconList so console doesn't complain about adding vgui child during layout
 		if self.icons_to_add_key == 1 --[[and #self.icons_to_add > 0]] then //gotta add this to empty lists as well, so that it doesn't awkwardly disappear when updating filters during use
 			local item = self.iconlist:Add("TF2ItemBrowser_Icon")
-			item:SetupRandomItemIcon()
+			if self.icon_to_reselect and self.icon_to_reselect.random then
+				item:SetupRandomItemIcon(self.icon_to_reselect.random)
+				item:CreateSpawnPanel()
+				self.icon_to_reselect = nil
+			else
+				item:SetupRandomItemIcon()
+			end
 		end
 		local icon_size = tf.cv_icon_size:GetInt()
 		for k = self.icons_to_add_key, self.icons_to_add_key + iconsperframe - 1 do
 			local v = self.icons_to_add[k]
+			if self.icons_to_add_showloader and (self.icons_to_add_showloader <= k or !v) then
+				//Allow the list to be scrolled and clicked on now that it's done loading
+				self.icons_to_add_showloader = nil
+				self.right_scroll:SetMouseInputEnabled(true)
+			end
 			if v then
 				local item = self.iconlist:Add("TF2ItemBrowser_Icon")
 				local col = k%self.iconlist.columns
 				local row = math.floor(k/self.iconlist.columns)
 				item:SetPos(col*(tf.item_icon_sizes[icon_size].w+tf.item_icon_sizes[icon_size].gap_w), row*(tf.item_icon_sizes[icon_size].h+tf.item_icon_sizes[icon_size].gap_h))
 				item.data = v //this will be populated with the default data table for this item once the icon renders
-				self.icons[v] = item
+				self.iconlist.icons[v] = item
 				item.item_conflict = self:GetItemHasConflict(v)
+				if self.icon_to_reselect and self.icon_to_reselect.id == v then
+					item:SetData(self.icon_to_reselect.data)
+					item:CreateSpawnPanel()
+					self.icon_to_reselect = nil
+				end
 			else
 				//We've gone through the whole table, so we're done here
 				//Don't remove self.icons_to_add, this is also used by the random item button
 				self.icons_to_add_key = nil
-				if self.icons_to_add_showloader then
-					self.icons_to_add_showloader = nil
-					//Allow the list to be scrolled and clicked on now that it's fully loaded
-					self.right_scroll:SetMouseInputEnabled(true)
-				end
 				break
 			end
 		end
@@ -1070,8 +1135,8 @@ function PANEL:UpdateItemConflicts()
 	if self.filters and self.filters.conflicting and self.filters.conflicting:GetValue() != 0 then //can be nil if the window is being closed
 		//If we have a filter set to hide conflicting/non-conflicting icons, then rebuild the icon list instead
 		self:RebuildIconList()
-	else
-		for k, v in pairs (self.icons) do
+	elseif self.iconlist and self.iconlist.icons then //can be nil if the window is being closed
+		for k, v in pairs (self.iconlist.icons) do
 			local conflicting = self:GetItemHasConflict(v)
 			if v.item_conflict != conflicting then
 				v.item_conflict = conflicting
