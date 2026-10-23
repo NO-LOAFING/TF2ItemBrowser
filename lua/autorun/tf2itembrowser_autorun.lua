@@ -2908,7 +2908,7 @@ if SERVER then
 										should_use_offset = false
 									end
 								end
-								MsgN(i.name, " has randomly assigned unusual effect ", name, "; should_use_offset = ", should_use_offset)
+								//MsgN(i.name, " has randomly assigned unusual effect ", name, "; should_use_offset = ", should_use_offset)
 								if should_use_offset then
 									data.pe_unusual_offset = 0
 								else

@@ -778,7 +778,13 @@ function PANEL:UpdateItemName()
 	//this is probably way overengineered for our use case, but oh well!
 
 	local i = tf.TF2Items.items[self.data.id]
-	if !i then return "Unknown Item" end
+	if !i then
+		if !isstring(self.data.id) then
+			return "Unknown Item " .. self.data.id
+		else
+			return "Unknown Custom Item \"" .. self.data.id .. "\""
+		end
+	end
 
 	local useProperName = true
 	local ignoreWear = false
@@ -789,7 +795,14 @@ function PANEL:UpdateItemName()
 	end
 	
 	// Start with the base name.
-	local itemName = tf.GetPhrase(i.item_name) or i.item_name or "Unknown Item" //i don't *think* item_name is nil on any item defs? this is the tf2 code's failsafe for bad item defs
+	local itemName = tf.GetPhrase(i.item_name) or i.item_name
+	if !itemName then
+		if !isstring(self.data.id) then
+			itemName = i.name or "Item " .. self.data.id //i don't *think* item_name is nil on any item defs? tf2 code here just displays "Unknown Item", but we want to show the id number, and also make a distinction between totally invalid itemdefs and ones that are just missing a name.
+		else
+			itemName = self.data.id //custom items, on the other hand, can very easily just have the name field left empty, so use the filename as a fallback
+		end
+	end
 
 	//tf2 code here sets killstreak values, but this addon won't be doing those unless rubat implements $sheenmap someday
 
@@ -868,10 +881,10 @@ function PANEL:UpdateItemName()
 		format = string.Replace(format, "%s4", "") //crate series
 		format = string.Replace(format, "%s5", "") //tool target name
 		format = string.Replace(format, "%s6", "") //dynamic recipe output name
-		return format
 	else
-		return "Unknown Item" //yeah, again, this is how tf2 code does it, if it can't find the localization pattern then it just defaults to "Unknown Item" even if it found a real name earlier (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1013-L1030)
+		format = itemName //in the tf2 code, if it can't find the localization pattern, it just defaults to "Unknown Item" again, but that behavior sucks, we can just use itemName as a fallback (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_description.cpp#L1013-L1030)
 	end
+	return format
 
 end
 
