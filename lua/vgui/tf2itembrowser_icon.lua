@@ -639,7 +639,7 @@ function PANEL:SetupRandomItemIcon(random_settings) //optional arg to set the ra
 	end
 	self.itemdesc = {
 		{str = format or "", col = tf.desc_colors.level},
-		{str = "Randomly choose an item to spawn.", col = tf.desc_colors.neutral}
+		{str = "Spawn an item at random from the current list.\nUse the filter options to the left to narrow down the list of items to pick from!", col = tf.desc_colors.neutral}
 	}
 
 end
@@ -717,7 +717,7 @@ function PANEL:GenerateRandomItem()
 		end
 		//Select a random paint color
 		if !col then
-			col = paints[math.random(#paints)]
+			col = paints[math.random(#paints-1)] //don't pick the last paint, which is the unused halloween spell
 		end
 
 		data.paint.enabled = true
@@ -732,7 +732,6 @@ function PANEL:GenerateRandomItem()
 	end
 
 	if !did_australium and i._paintkit and WP.Weapons.IsSupported(i.model_player) and math.random() <= self.random.wp_chance then
-		//Select a random paintkit id for this item
 		local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
 		data.wp.id = tab[math.random(#tab)].id
 		data.wp.enabled = true
@@ -3588,7 +3587,7 @@ function PANEL:CreateSpawnPanel()
 		local h = 0 //gotta do it this way again to make the multiline item text set the correct height
 		h = h + self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
 		//use additemtext for the help text as well, because pnl won't set its height correctly if a DLabel with SetAutoStretchVertical is docked inside
-		h = h + self:AddItemText(name_container, "\nTo control which items can spawn, use the Filters to the left!\n\nFor example, setting \"Conflicts with equipped\" to the red \"X\" will filter out items that conflict with ones already on the character, letting you generate random loadouts that are always valid.\n\nAll chance sliders apply to items that can have the listed setting applied.", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
+		h = h + self:AddItemText(name_container, "\nAll settings here apply to items that support that option - setting paint chance to 100% will paint any random items that are paintable, not filter out items that are unpaintable. For that, use the filter options to the left!", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
 		name_container:SetHeight(h)
 		name_container:DockMargin(0,0,0,tf.betweencategories)
 
@@ -3624,7 +3623,7 @@ function PANEL:CreateSpawnPanel()
 			return check
 		end
 
-		local drop = AddDropdown("Preferred class:", function(drop)
+		local drop = AddDropdown("Prefer class model:", function(drop)
 			for k, v in ipairs (tf.classes) do //add all classes in order, except "(none)"
 				if k > 10 then continue end
 				drop:AddChoice(tf.GetPhrase(v.langstr) or string.NiceName(v.longname), k, self.random.class == k)
