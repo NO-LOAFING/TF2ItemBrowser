@@ -1101,26 +1101,49 @@ function PANEL:UpdateItemConflicts()
 	//Get all equip regions occupied by equipped items, and track how many items are occupying each region
 	local regions = {}
 	for k, v in pairs (self.atticons.icons) do
-		local i = tf.TF2Items.items[v.data.id]
-		if !i or !i.equip_regions then continue end
-		for k2, v2 in pairs (i.equip_regions) do
-			regions[k2] = (regions[k2] or 0) + 1
-			//If this region has an equip_conflicts table, add all of those too 
-			//(i.e. if a whole_head item is equipped, occupy the hat region too)
-			if tf.TF2Items.equip_conflicts[k2] then
-				for k3, v3 in pairs (tf.TF2Items.equip_conflicts[k2]) do
-					regions[k3] = (regions[k3] or 0) + 1
-				end
-			end
-			//If this region is inside another region's equip_conflicts table, add that region too
-			//(i.e. if a hat item is equipped, occupy the whole_head region too)
-			for k3, v3 in pairs (tf.TF2Items.equip_conflicts) do
-				for k4, v4 in pairs (v3) do
-					if i.equip_regions[k4] then
+		local i = tf.TF2Items.items[v.data.id] or {}
+		if i.equip_regions then
+			for k2, v2 in pairs (i.equip_regions) do
+				regions[k2] = (regions[k2] or 0) + 1
+				//If this region has an equip_conflicts table, add all of those too 
+				//(i.e. if a whole_head item is equipped, occupy the hat region too)
+				if tf.TF2Items.equip_conflicts[k2] then
+					for k3, v3 in pairs (tf.TF2Items.equip_conflicts[k2]) do
 						regions[k3] = (regions[k3] or 0) + 1
 					end
 				end
+				//If this region is inside another region's equip_conflicts table, add that region too
+				//(i.e. if a hat item is equipped, occupy the whole_head region too)
+				for k3, v3 in pairs (tf.TF2Items.equip_conflicts) do
+					for k4, v4 in pairs (v3) do
+						if i.equip_regions[k4] then
+							regions[k3] = (regions[k3] or 0) + 1
+						end
+					end
+				end
 			end
+		end
+		//Also treat loadout slots as equip regions, so that the random item button can be used to create random loadouts
+		local slot = i.item_slot
+		if slot and slot != "head" and slot != "misc" then //obviously don't do this for cosmetic items
+			//wacky per-class item slot, used by shotgun and base jumper;
+			//this can get a little messy when switching between classes or spawning random items, because the item has a 
+			//hidden class var that isn't visible or changable anywhere, but players aren't likely to run into issues with this.
+			if i.used_by_classes and v.data.class then 
+				local class_slot = i.used_by_classes[tf.classes[v.data.class].longname]
+				if class_slot and !isnumber(class_slot) then slot = class_slot end
+			end
+			//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
+			//for our purposes, move revolvers from secondary to primary, and sappers from building to secondary,
+			//so that we can do silly randomizer loadouts with this that make intuitive sense.
+			if v.data.class == 10 then //spy
+				if slot == "secondary" then
+					slot = "primary"
+				elseif slot == "building" then
+					slot = "secondary"
+				end
+			end
+			regions["_"..slot] = (regions["_"..slot] or 0) + 1
 		end
 	end
 	self.EquipRegionConflicts = regions
@@ -1163,19 +1186,52 @@ function PANEL:GetItemHasConflict(item, is_equipped)
 		if !id then return end
 	end
 
-	local i = tf.TF2Items.items[id]
-	if !i or !i.equip_regions then return end
 	local conflicting
-	for k, v in pairs (i.equip_regions) do
-		//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict.
-		//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict.
-		if self.EquipRegionConflicts[k] and (!is_equipped or self.EquipRegionConflicts[k] > 1) then
-			conflicting = true
-			break
+	local i = tf.TF2Items.items[id] or {}
+	if i.equip_regions then
+		for k, v in pairs (i.equip_regions) do
+			//For equipped items, if a region is occupied by *multiple* equipped items, then display a conflict.
+			//For unequipped items, if a region is occupied by *any* equipped items, then display a conflict.
+			if self.EquipRegionConflicts[k] and (!is_equipped or self.EquipRegionConflicts[k] > 1) then
+				conflicting = true
+				break
+			end
+		end
+	end
+	if !conflicting then
+		//Also treat loadout slots as equip regions, so that the random item button can be used to create random loadouts
+		local slot = i.item_slot
+		if slot and slot != "head" and slot != "misc" then //obviously don't do this for cosmetic items
+			//if we're calling this function for an item id number instead of a panel, then we'll have to make an item data table
+			local data
+			if ispanel(item) then data = item.data end
+			if !data or isnumber(data) then
+				data = tf.GetDefaultItemDataTable(id)
+				//tf.SanitizeItemDataTable(data) //this doesn't matter here
+			end
+			//wacky per-class item slot, used by shotgun and base jumper;
+			//this can get a little messy when switching between classes or spawning random items, because the item has a 
+			//hidden class var that isn't visible or changable anywhere, but players aren't likely to run into issues with this.
+			if i.used_by_classes and data.class then 
+				local class_slot = i.used_by_classes[tf.classes[data.class].longname]
+				if class_slot and !isnumber(class_slot) then slot = class_slot end
+			end
+			//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
+			//for our purposes, move revolvers from secondary to primary, and sappers from building to secondary,
+			//so that we can do silly randomizer loadouts with this that make intuitive sense.
+			if data.class == 10 then //spy
+				if slot == "secondary" then
+					slot = "primary"
+				elseif slot == "building" then
+					slot = "secondary"
+				end
+			end
+			if self.EquipRegionConflicts["_"..slot] and (!is_equipped or self.EquipRegionConflicts["_"..slot] > 1) then
+				conflicting = true
+			end
 		end
 	end
 	return conflicting
-
 end
 
 function PANEL:DoInput(input, ...)

@@ -598,15 +598,7 @@ function PANEL:SetDefaultData()
 	if istable(id) then id = self.data.id end
 	local i = tf.TF2Items.items[id] or {}
 
-	local data = tf.GetDefaultItemDataTable(id)
-
-	local _, class = TF2ItemBrowser.filters.class:GetSelected()
-	if i.used_by_classes[tf.classes[class].longname] then data.class = class end
-	data.team = TF2ItemBrowser.attopts.team.Value
-	local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
-	data.fx = fx
-
-	self:SetData(data)
+	self:SetData(tf.GetDefaultItemDataTable(id))
 
 end
 
@@ -664,11 +656,6 @@ function PANEL:GenerateRandomItem()
 		local _, class = table.Random(i.used_by_classes) //second arg is the randomly selected table key
 		data.class = tf.class_longname_to_id[class]
 	end
-
-	//team and fx just use the value from the browser; i *guess* we could implement a random team, but who would use that?
-	data.team = TF2ItemBrowser.attopts.team.Value
-	local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
-	data.fx = fx
 
 	//select a random style; australium styles use a separate probability, so divide styles into australium and non-australium when selecting.
 	local did_australium

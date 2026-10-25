@@ -1310,31 +1310,11 @@ end
 
 function tf.GetDefaultItemDataTable(id)
 
-	local i = tf.TF2Items.items[id] or {}
-
-	//go through classes in order, default to the first one that can use this item
-	local class = 1
-	for k, v in ipairs (tf.classes) do 
-		if i.used_by_classes[v.longname] then
-			class = k
-			break
-		end
-	end
-
-	local style = 0
-	if i.visuals and i.visuals.styles then
-		//default to the first style listed; i THINK this is always 0 but let's make extra sure
-		for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
-			style = k
-			break
-		end
-	end
-
 	local data = {
 		id = id, 
-		class = class, 
-		team = false,
-		style = style,
+		class = 11, //default to "none"
+		team = TF2ItemBrowser.attopts.team.Value,
+		style = 0,
 
 		models = {
 			item = true,
@@ -1345,7 +1325,7 @@ function tf.GetDefaultItemDataTable(id)
 			stat_clock = false,
 		},
 
-		fx = tf.EFFECT_NONE,
+		//fx
 		paint = {
 			enabled = false,
 			col = {[false] = Vector(255,255,255)},
@@ -1369,6 +1349,34 @@ function tf.GetDefaultItemDataTable(id)
 			seed = tostring(WP.RNG.RandomSeed()),
 		}
 	}
+
+	local i = tf.TF2Items.items[id] or {}
+
+	local _, class = TF2ItemBrowser.filters.class:GetSelected()
+	if i.used_by_classes[tf.classes[class].longname] then
+		//default to the selected class filter, if applicable
+		data.class = class
+	else
+		//go through classes in order, default to the first one that can use this item
+		for k, v in ipairs (tf.classes) do 
+			if i.used_by_classes[v.longname] then
+				data.class = k
+				break
+			end
+		end
+	end
+
+	local _, fx = TF2ItemBrowser.attopts.fx:GetSelected()
+	data.fx = fx
+
+	if i.visuals and i.visuals.styles then
+		//default to the first style listed; i THINK this is always 0 but let's make extra sure
+		for k, v in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
+			data.style = k
+			break
+		end
+	end
+
 	//tf.SanitizeItemDataTable(data) //every func that uses the data table ends up running Sanitize on it anyway, so don't bother running it twice
 	return data
 
