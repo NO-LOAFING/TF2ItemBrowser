@@ -1131,7 +1131,7 @@ function PANEL:UpdateItemDescription()
 			table.insert(desc, {str = str, col = tf.desc_colors.level})
 		end
 		//Do class list here too, so that players can tell which classes can use unfamiliar items
-		if i.used_by_classes and !i.used_by_classes.none then
+		if !i.used_by_classes.none then
 			local str
 			if table.Count(i.used_by_classes) == 9 then
 				str = (tf.GetPhrase("#Store_ItemDesc_UsedBy") or "Used by:") .. " " .. (tf.GetPhrase("#Store_ItemDesc_AllClasses") or "All Classes")
@@ -1149,6 +1149,45 @@ function PANEL:UpdateItemDescription()
 			end
 			if !done_spacer then table.insert(desc, {str = "", col = tf.desc_colors.level}) done_spacer = true end
 			table.insert(desc, {str = str, col = tf.desc_colors.level})
+		end
+		//And item slot
+		if i.item_slot then
+			local str, class_slots
+			for k, v in pairs (i.used_by_classes) do
+				if !isnumber(v) then
+					class_slots = class_slots or {}
+					class_slots[v] = class_slots[v] or {}
+					class_slots[v][k] = true
+				end
+			end
+			if class_slots then
+				for slot, classes in pairs (class_slots) do
+					if !str then
+						str = ""
+					else
+						str = str .. ", "
+					end
+					str = str .. (tf.GetPhrase("#LoadoutSlot_" .. slot) or slot) .. " ("
+					local class_addcomma
+					for k, v in ipairs (tf.classes) do
+						if classes[v.longname] then
+							if class_addcomma then
+								str = str .. ", "
+							end
+							class_addcomma = true
+							str = str .. (tf.GetPhrase(v.langstr) or string.NiceName(v.longname))
+						end
+					end
+					str = str .. ")"
+				end
+			else
+				str = i.item_slot
+				if str == "head" then str = "misc"
+				elseif str == "taunt" then str = "tauntslot" end //the string for LoadoutSlot_Taunt is "Taunt 1"; this is slightly better
+				str = tf.GetPhrase("#LoadoutSlot_" .. str) or str
+			end
+			if !done_spacer then table.insert(desc, {str = "", col = tf.desc_colors.level}) done_spacer = true end
+			table.insert(desc, {str = (tf.GetPhrase("#Store_ItemDesc_Slot") or "Slot:") .. " " .. str, col = tf.desc_colors.level})
 		end
 		//Also list equip regions, to make it clear why items conflict with each other
 		if i.equip_regions then
@@ -1830,33 +1869,39 @@ function PANEL:CreateSpawnPanel()
 			//Hide the class selector if all classes use the same model (i.e. medals)
 			//Also compare the bodygroups because of use_per_class_bodygroups.
 			local should_show_class = false
-			if i.used_by_classes then
-				for k, v in pairs (i.used_by_classes) do
-					if k != tf.classes[self.data.class].longname then
-						local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[k], team = self.data.team, style = self.data.style})
-						if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
-							for k, v in pairs (vis2.item_bg) do
-								//make sure this is changing a bodygroup that actually exists; a whole bunch of 
-								//badges like the dueling badges have useless bodygroup setters for some reason
-								if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
+			for k, v in pairs (i.used_by_classes) do
+				if k != tf.classes[self.data.class].longname then
+					//If the item is being equipped to a character and it has class-based item slots, then
+					//re-enable the class selector even if the models are the same, just to avoid unintuitive
+					//behavior with item slot conflicts (i.e. let the player tell (and change) if they have a
+					//primary or secondary shotgun equipped)
+					if IsValid(TF2ItemBrowser:GetEntity()) and v != i.used_by_classes[tf.classes[self.data.class].longname] then
+						should_show_class = true
+						break
+					end
+					local vis2 = tf.GetItemModelVisuals({id = self.data.id, class = tf.class_longname_to_id[k], team = self.data.team, style = self.data.style})
+					if IsValid(mdl.models[1]) then //this will be checking the wrong model if there's no base item, but whatever, no items with bodygroup changes have wearables currently
+						for k, v in pairs (vis2.item_bg) do
+							//make sure this is changing a bodygroup that actually exists; a whole bunch of 
+							//badges like the dueling badges have useless bodygroup setters for some reason
+							if mdl.models[1]:FindBodygroupByName(k) != -1 and vis.item_bg[k] != vis2.item_bg[k] then
+								should_show_class = true
+								break
+							end
+						end
+						if should_show_class then break end
+					end
+					for k, v in pairs (vis2.models) do
+						if istable(v) then
+							for k2, v2 in pairs (v) do
+								if vis.models[k][k2] != v2 then
 									should_show_class = true
 									break
 								end
 							end
-							if should_show_class then break end
-						end
-						for k, v in pairs (vis2.models) do
-							if istable(v) then
-								for k2, v2 in pairs (v) do
-									if vis.models[k][k2] != v2 then
-										should_show_class = true
-										break
-									end
-								end
-							elseif vis.models[k] != v then
-								should_show_class = true
-								break
-							end
+						elseif vis.models[k] != v then
+							should_show_class = true
+							break
 						end
 					end
 				end
@@ -1880,7 +1925,10 @@ function PANEL:CreateSpawnPanel()
 		function pnl.OnSettingChanged()
 			self:SetData()
 			pnl.Refresh()
-			if IsValid(self.entity) then TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data) end
+			if IsValid(self.entity) then
+				TF2ItemBrowser:UpdateItemConflicts() //for class-based item slot conflicts
+				TF2ItemBrowser:DoInput("attach_item_modify", self.entity, self.data)
+			end
 		end	
 
 		local checks = vgui.Create("Panel", pnl) //container for submodel controls
@@ -1929,7 +1977,7 @@ function PANEL:CreateSpawnPanel()
 
 		pnl.class = AddDropdown(tf.GetPhrase("#TF_ImportFile_Models") or "Class:", function(drop)
 			for k, v in ipairs (tf.classes) do //add class options in class order
-				if i.used_by_classes and i.used_by_classes[v.longname] then
+				if i.used_by_classes[v.longname] then
 					drop:AddChoice(tf.GetPhrase(v.langstr) or string.NiceName(v.longname), k, self.data.class == k)
 				end
 			end

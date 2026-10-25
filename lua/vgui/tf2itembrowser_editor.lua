@@ -680,7 +680,6 @@ function PANEL:OpenEditor(id)
 	end
 	editor.controls[editor.classes] = {
 		Load = function(i)
-			if !i.used_by_classes then return end
 			for class, _ in pairs (i.used_by_classes) do
 				if editor.classes.checks[class] then
 					editor.classes.checks[class]:SetValue(true)

@@ -1127,13 +1127,9 @@ function PANEL:UpdateItemConflicts()
 		local slot = i.item_slot
 		if slot and slot != "head" and slot != "misc" then //obviously don't do this for cosmetic items
 			//wacky per-class item slot, used by shotgun and base jumper;
-			//this can get a little messy when switching between classes or spawning random items, because the item has a 
-			//hidden class var that isn't visible or changable anywhere, but players aren't likely to run into issues with this.
-			if i.used_by_classes and v.data.class then 
-				local class_slot = i.used_by_classes[tf.classes[v.data.class].longname]
-				if class_slot and !isnumber(class_slot) then slot = class_slot end
-			end
-			//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
+			local class_slot = i.used_by_classes[tf.classes[v.data.class].longname]
+			if class_slot and !isnumber(class_slot) then slot = class_slot end
+			--[[//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
 			//for our purposes, move revolvers from secondary to primary, and sappers from building to secondary,
 			//so that we can do silly randomizer loadouts with this that make intuitive sense.
 			if v.data.class == 10 then //spy
@@ -1142,7 +1138,7 @@ function PANEL:UpdateItemConflicts()
 				elseif slot == "building" then
 					slot = "secondary"
 				end
-			end
+			end]] //ehh, this isn't worth it, this will just cause confusion with listed item slots and custom items
 			regions["_"..slot] = (regions["_"..slot] or 0) + 1
 		end
 	end
@@ -1205,18 +1201,14 @@ function PANEL:GetItemHasConflict(item, is_equipped)
 			//if we're calling this function for an item id number instead of a panel, then we'll have to make an item data table
 			local data
 			if ispanel(item) then data = item.data end
-			if !data or isnumber(data) then
+			if !data or !istable(data) then
 				data = tf.GetDefaultItemDataTable(id)
 				//tf.SanitizeItemDataTable(data) //this doesn't matter here
 			end
-			//wacky per-class item slot, used by shotgun and base jumper;
-			//this can get a little messy when switching between classes or spawning random items, because the item has a 
-			//hidden class var that isn't visible or changable anywhere, but players aren't likely to run into issues with this.
-			if i.used_by_classes and data.class then 
-				local class_slot = i.used_by_classes[tf.classes[data.class].longname]
-				if class_slot and !isnumber(class_slot) then slot = class_slot end
-			end
-			//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
+			//wacky per-class item slot, used by shotgun and base jumper
+			local class_slot = i.used_by_classes[tf.classes[data.class].longname]
+			if class_slot and !isnumber(class_slot) then slot = class_slot end
+			--[[//spy is the only class whose actual internal loadout slots don't match what they appear to be in-game.
 			//for our purposes, move revolvers from secondary to primary, and sappers from building to secondary,
 			//so that we can do silly randomizer loadouts with this that make intuitive sense.
 			if data.class == 10 then //spy
@@ -1225,7 +1217,7 @@ function PANEL:GetItemHasConflict(item, is_equipped)
 				elseif slot == "building" then
 					slot = "secondary"
 				end
-			end
+			end]] //ehh, this isn't worth it, this will just cause confusion with listed item slots and custom items
 			if self.EquipRegionConflicts["_"..slot] and (!is_equipped or self.EquipRegionConflicts["_"..slot] > 1) then
 				conflicting = true
 			end
