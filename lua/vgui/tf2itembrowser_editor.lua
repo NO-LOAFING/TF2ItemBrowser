@@ -2239,7 +2239,6 @@ function PANEL:OpenEditor(id)
 	local button = tf.TFStyleVGUI("DButton", holder.columns[3])
 	button:SetText("Add Style")
 	button:Dock(TOP)
-	button:DockMargin(0,8,0,0)
 	button:SetZPos(1) //keep this below all the styles we create
 	function button:DoClick()
 		local style = self:AddStyle()
@@ -2257,6 +2256,7 @@ function PANEL:OpenEditor(id)
 		//guess we have to apply the padding to all the controls manually, bah!
 		local _a, _b, side_margin, _c = box:GetDockPadding()
 		box:DockPadding(_a, _b, 0, _c)
+		if i == 1 then box:DockMargin(0,0,0,0) end //make sure we don't add space above the first style
 		
 
 		local text_holder = vgui.Create("Panel", box)
@@ -2290,12 +2290,20 @@ function PANEL:OpenEditor(id)
 			box:Remove()
 			for i, style in ipairs (editor.styles) do
 				style.label:SetText(tf.GetNumberedStyleString(i) .. ":")
+				if i == 1 then style:DockMargin(0,0,0,0) end //make sure we don't add space above the first style
 			end
 			//update backpack icon style selector
 			editor.bp_style:UpdateVisibility()
 			//update backpack icon, just in case we removed the style it was using
 			editor.bp_mdl:UpdateVisibility()
 			editor.bp:Refresh()
+			//don't add space above the "add style" button if there's no style above it
+			if table.Count(editor.styles) == 0 then
+				button:DockMargin(0,0,0,0)
+			end
+			//update visibility of help text that should only appear if there's 1 style
+			editor.style_help:Dock(TOP)
+			editor.style_help:SetVisible(table.Count(editor.styles) == 1)
 		end
 
 
@@ -2479,6 +2487,13 @@ function PANEL:OpenEditor(id)
 		//update backpack icon style selector
 		editor.bp_style:UpdateVisibility()
 
+		//add space above the "add style" button if there's a style above it
+		button:DockMargin(0,8,0,0)
+
+		//update visibility of help text that should only appear if there's 1 style
+		editor.style_help:Dock(TOP)
+		editor.style_help:SetVisible(table.Count(editor.styles) == 1)
+
 		return box
 
 	end
@@ -2582,6 +2597,18 @@ function PANEL:OpenEditor(id)
 			end
 		end,
 	}
+
+	local help = vgui.Create("DLabel", holder.columns[3])
+	help:SetWrap(true)
+	help:SetAutoStretchVertical(true)
+	help:SetFont("TF2ItemBrowser_ItemDesc")
+	help:SetColor(tf.gui_colors.LightRed)
+	help:SetText("NOTE: Items must have at least TWO styles in order to pick between them!")
+	help:Dock(TOP)
+	help:DockMargin(0,tf.betweenitems,0,0)
+	help:SetZPos(1)
+	help:SetVisible(false)
+	editor.style_help = help
 
 
 	//load each control; controls that need to load in a certain order (i.e. backpack icon preview) 
