@@ -680,9 +680,11 @@ function PANEL:OpenEditor(id)
 	end
 	editor.controls[editor.classes] = {
 		Load = function(i)
-			for class, _ in pairs (i.used_by_classes) do
-				if editor.classes.checks[class] then
-					editor.classes.checks[class]:SetValue(true)
+			if i.used_by_classes then //this will be nil when starting with a blank item, but should always be present in saved items
+				for class, _ in pairs (i.used_by_classes) do
+					if editor.classes.checks[class] then
+						editor.classes.checks[class]:SetValue(true)
+					end
 				end
 			end
 		end,
@@ -699,29 +701,78 @@ function PANEL:OpenEditor(id)
 	}
 
 	//Selector for item_slot - this is also used to enable/disable controls that are only used for certain slots
-	local combo = AddDropdown(box, tf.GetPhrase("#TF_ImportFile_TypeLabel") or "Item Type", nil, "item_slot", {
+	local combo = AddDropdown(box, "Item Slot", nil, "item_slot", { //not localized; the closest we have is just "Slot:" which doesn't fit here
 		{
 			Label = tf.GetPhrase("#LoadoutSlot_Misc") or "Cosmetic",
 			Value = "misc",
 		},
 		{
-			Label = tf.GetPhrase("#TF_SteamWorkshop_Tag_Weapon") or "Weapon",
-			Value = "_custom_weapon", //assign custom weapons to a generic "slot" instead of primary/etc to declutter these options just a bit
+			PrependSpacer = true,
+			Label = tf.GetPhrase("#TR_Primary") or "Primary",
+			Value = "primary"
 		},
-	})
+		{
+			Label = tf.GetPhrase("#TR_Secondary") or "Secondary",
+			Value = "secondary"
+		},
+		{
+			Label = tf.GetPhrase("#TR_Melee") or "Melee",
+			Value = "melee"
+		},
+		{
+			Label = tf.GetPhrase("#LoadoutSlot_pda") or "Primary PDA",
+			Value = "pda"
+		},
+		{
+			Label = tf.GetPhrase("#LoadoutSlot_pda2") or "Secondary PDA",
+			Value = "pda2"
+		},
+		{
+			Label = (tf.GetPhrase("#LoadoutSlot_Building") or "Building") .. " (toolbox, " .. string.lower(tf.GetPhrase("#TF_Weapon_Spy_Sapper") or "Sapper") .. ")",
+			Value = "building"
+		},
+		{
+			PrependSpacer = true,
+			Label = tf.GetPhrase("#LoadoutSlot_Action") or "Action",
+			Value = "action"
+		},
+		{
+			Label = (tf.GetPhrase("#LoadoutSlot_Utility") or "Utility") .. " (" .. (tf.GetPhrase("#GameType_Passtime") or "PASS Time") .. " JACK)",
+			Value = "utility"
+		},
+		{
+			Label = tf.str_none,
+			Load = function(i)
+				if !i.item_slot and table.Count(i) > 0 then return true end  //don't default to nil if we're starting from a blank table
+			end,
+			Save = function(i)
+				i.item_slot = nil
+			end
+		},
+	}, 1) //default to cosmetic
 	combo:GetParent():DockMargin(0,tf.betweencategories,0,0)
 	function combo:OnSelect(index, value, data)
 		local val = combo.options[index].Value
 		editor.paintable:SetVisible(val == "misc")
 		editor.genteel_smoke:SetVisible(val == "misc")
-		editor.anim:GetParent():SetVisible(val == "_custom_weapon")
+		editor.anim:GetParent():SetVisible(val != "misc" and val != nil)
 		holder:InvalidateLayout(true)
 	end
 
 	//Selector for weapon anim_slot as well as some relevant pose parameters
-	editor.anim = AddDropdown(box, "Animation slot", nil, "anim_slot", {
+	editor.anim = AddDropdown(box, tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation", nil, "anim_slot", {
 		{
-			Label = tf.str_none,
+			Label = "Use slot default",
+			Load = function(i)
+				if !i.anim_slot then return true end  //TODO: will this work?
+			end,
+			Save = function(i)
+				i.anim_slot = nil
+			end
+		},
+		{
+			PrependSpacer = true,
+			Label = string.NiceName(string.lower(tf.GetPhrase("#tf_zi_ui_passive") or "PASSIVE")), //tf.str_none,
 			Value = "FORCE_NOT_USED"
 		},
 		{
@@ -821,7 +872,7 @@ function PANEL:OpenEditor(id)
 			Value = "passtime_ball"
 		}
 		//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
-	}, 2) //default to "primary" instead of "none" because it'll probably draw the user toward it more
+	})
 
 	//Dropdowns for equip region - this creates as many dropdowns as needed, 
 	//adding an empty one to the list when the existing ones are all filled

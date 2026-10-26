@@ -673,10 +673,10 @@ function PANEL:RebuildIconList()
 		pda = "weapon",
 		pda2 = "weapon",
 		building = "weapon",
-		_custom_weapon = "weapon",
 		head = "cosmetic", 
 		misc = "cosmetic",
 		//taunt = "taunt"
+		//other uncategorized slots are "action" and "utility", along with slotless items like crates
 	}
 	local function DoIncludeExcludeFilter(f, criteria)
 		return (f == 1 and !criteria) or (f == -1 and criteria)
@@ -785,9 +785,6 @@ function PANEL:RebuildIconList()
 				//Add item slots, so players can search for "heavy primary" and so on
 				if v.item_slot then
 					str = str .. " " .. v.item_slot
-				end
-				if v.anim_slot and v.anim_slot != v.item_slot then
-					str = str .. " " .. v.anim_slot
 				end
 				//Add equip regions, so players can search something like "beard" and it works intuitively
 				if v.equip_regions then

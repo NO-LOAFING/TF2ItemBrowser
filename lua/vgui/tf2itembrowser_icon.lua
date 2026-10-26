@@ -2242,7 +2242,7 @@ function PANEL:CreateSpawnPanel()
 		end
 
 		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
-		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true, _custom_weapon = true}
+		local wep_slots = {primary = true, secondary = true, melee = true, utility = true, pda = true, pda2 = true, building = true}
 		if (wep_slots[i.item_slot] and i.anim_slot != "FORCE_NOT_USED" and !i.act_as_wearable and self.data.models.item != nil) or (i.item_slot == "action" and i.act_as_weapon) then
 			local drop = AddDropdown("Crit Glow Color:", function(drop) //no tf localization string for this
 				drop:AddChoice(tf.str_none, nil, !self.data.crit.enabled)
