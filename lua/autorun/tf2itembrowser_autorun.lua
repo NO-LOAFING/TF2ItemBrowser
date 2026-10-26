@@ -1654,12 +1654,19 @@ if CLIENT then
 			pnl.DropButton:Remove()
 			function pnl:Paint(w,h)
 				local col = tf.gui_colors.TanLight
+				if !self:IsEnabled() then col = tf.gui_colors.TanDark end //copy how we do disabled checkboxes; the authentic tf2 behavior is to just blank out the box which isn't as readable
+				self:SetColor(col)
 				surface.SetDrawColor(col)
 				surface.DrawOutlinedRect(0,0,w,h,1)
 
 				surface.SetFont("TF2ItemBrowser_GUISymbols")
 				local _w, _h = surface.GetTextSize("u")
 				draw.SimpleText("u", "TF2ItemBrowser_GUISymbols", w-_w, 0, col) //down-pointing arrow
+
+				local par = self:GetParent()
+				if IsValid(par) and IsValid(par.Label) then
+					par.Label:SetTextColor(col)
+				end
 			end
 			function pnl:PerformLayout() end
 			function pnl:OnMenuOpened(menu)

@@ -442,7 +442,7 @@ function PANEL:OpenEditor(id)
 					combo:ChooseOptionID(sel)
 				end,
 				Save = function(i)
-					if !_pnl:IsVisible() or table.Count(combo.options) == 0 then return end
+					if !_pnl:IsVisible() or !combo:IsEnabled() or table.Count(combo.options) == 0 then return end
 					local _, opt = combo:GetSelected()
 					if combo.options[opt].Value then
 						if subtable then
@@ -743,7 +743,7 @@ function PANEL:OpenEditor(id)
 		{
 			Label = tf.str_none,
 			Load = function(i)
-				if !i.item_slot and table.Count(i) > 0 then return true end  //don't default to nil if we're starting from a blank table
+				if !i.item_slot and table.Count(i) > 0 then return true end //don't default to nil if we're starting from a blank table
 			end,
 			Save = function(i)
 				i.item_slot = nil
@@ -752,10 +752,17 @@ function PANEL:OpenEditor(id)
 	}, 1) //default to cosmetic
 	combo:GetParent():DockMargin(0,tf.betweencategories,0,0)
 	function combo:OnSelect(index, value, data)
-		local val = combo.options[index].Value
-		editor.paintable:SetVisible(val == "misc")
-		editor.genteel_smoke:SetVisible(val == "misc")
-		editor.anim:GetParent():SetVisible(val != "misc" and val != nil)
+		local not_wep = combo.options[index].Value == "misc" or !combo.options[index].Value
+		editor.paintable:SetEnabled(not_wep)
+		editor.paintable:SetChecked(not_wep and editor.paintable:GetChecked())
+		editor.genteel_smoke:SetEnabled(not_wep)
+		editor.genteel_smoke:SetChecked(not_wep and editor.genteel_smoke:GetChecked())
+		//Toggle visibility of "disable genteel smoke" checkboxes in styles
+		for _, style in pairs (editor.styles) do
+			style:UpdateVisibility()
+		end
+		editor.anim:SetEnabled(!not_wep)
+		if !editor.anim:IsEnabled() then editor.anim:ChooseOptionID(1) end
 		holder:InvalidateLayout(true)
 	end
 
@@ -764,7 +771,7 @@ function PANEL:OpenEditor(id)
 		{
 			Label = "Use slot default",
 			Load = function(i)
-				if !i.anim_slot then return true end  //TODO: will this work?
+				if !i.anim_slot then return true end
 			end,
 			Save = function(i)
 				i.anim_slot = nil
@@ -1204,7 +1211,7 @@ function PANEL:OpenEditor(id)
 			if i.capabilities and i.capabilities.paintable then check:SetChecked(true) end
 		end,
 		Save = function(i)
-			if check:IsVisible() and check:GetChecked() then
+			if check:IsEnabled() and check:GetChecked() then
 				i.capabilities = i.capabilities or {}
 				i.capabilities.paintable = 1
 			end
@@ -1230,7 +1237,7 @@ function PANEL:OpenEditor(id)
 			i.attributes["attach particle effect static"].value == 28 then check:SetChecked(true) end
 		end,
 		Save = function(i)
-			if check:IsVisible() and check:GetChecked() then
+			if check:IsEnabled() and check:GetChecked() then
 				i.attributes = i.attributes or {}
 				i.attributes["attach particle effect static"] = {
 					attribute_class = "set_attached_particle_static",
