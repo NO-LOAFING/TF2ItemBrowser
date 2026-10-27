@@ -13,6 +13,7 @@ local rtmat = CreateMaterial("TF2ItemBrowser_EditorIconRT", "UnlitGeneric", {
 
 local PANEL = {}
 local tf = TF2ItemBrowser_Globals
+if !tf then return end
 DEFINE_BASECLASS("DFrame")
 
 function PANEL:OpenEditor(id)

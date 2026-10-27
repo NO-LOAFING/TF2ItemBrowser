@@ -157,6 +157,11 @@ tf.jarate_colors = {
 //Read and process the TF2 item schema - we also modify some data to make it more convenient for the the addon's usage
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
+if !_s then
+	MsgN("ERROR: TF2ItemBrowser couldn't find TF2's items_game.txt, is TF2 not mounted?")
+	TF2ItemBrowser_Globals = nil
+	return
+end
 local s = util.KeyValuesToTable(_s, false, true)
 local s2 = util.KeyValuesToTablePreserveOrder(_s, false, true)
 
@@ -351,7 +356,7 @@ local function InheritPrefabValues(k, v, ptab, ptabname)
 		//Note: Prefabs are read in reverse order (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/econ/econ_item_schema.cpp#L2940-L2968);
 		//see the many, many hats with prefab "no_craft hat", which override hat's craft_class "hat" with no_craft's craft_class ""
 		for k2, v2 in ipairs (table.Reverse(string.Explode(" ", ptab.prefab))) do
-			if !s.prefabs[v2] then MsgN("TF2ItemSchema: ", k, " ", v.name, " ", ptabname, " tried to get invalid prefab \"", v2, "\"") continue end
+			if !s.prefabs[v2] then MsgN("TF2ItemBrowser: ", k, " ", v.name, " ", ptabname, " tried to get invalid prefab \"", v2, "\"") continue end
 			InheritPrefabValues(k, v, s.prefabs[v2], ptabname .. " " .. v2)
 		end
 	end

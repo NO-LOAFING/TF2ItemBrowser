@@ -8,6 +8,7 @@ local icon_blu = Material("vgui/store/store_blueteam.vmt")
 
 local PANEL = {}
 local tf = TF2ItemBrowser_Globals
+if !tf then return end
 DEFINE_BASECLASS("DFrame")
 
 function PANEL:Init()

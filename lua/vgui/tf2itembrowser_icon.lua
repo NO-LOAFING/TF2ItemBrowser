@@ -474,6 +474,7 @@ local unusual_icon_overrides = { //used with PEPlus_BoundsToView to set custom c
 
 local PANEL = {}
 local tf = TF2ItemBrowser_Globals
+if !tf then return end
 
 function PANEL:Init()
 
@@ -1228,7 +1229,7 @@ function PANEL:AddItemText(pnl, text, font, col)
 		//This happens with: 528 The Short Circuit, 13217 Holographic Harvest Lahsuniya Ratna 2022
 		local _w, _ = surface.GetTextSize(v)
 		if _w > max_w then
-			MsgN("got overlong description string: ", v)
+			MsgN("TF2ItemBrowser: got overlong description string: ", v)
 			//Find the LAST space in the string to get the word that goes over the limit, and move it into the next line
 			local _end, loops = 0, 0
 			while true do
@@ -2658,7 +2659,7 @@ function PANEL:CreateSpawnPanel()
 						if tab.use_suffix_name then name = name .. "_" .. i.particle_suffix end
 						
 						local pcfs = PEPlus_FindPCFsFromEffect(name)
-						if !pcfs then MsgN("no pcfs for effect ", name, "?") continue end
+						if !pcfs then MsgN("TF2ItemBrowser: no pcfs for effect ", name, "?") continue end
 						local has_been_categorized = false
 						local entry = {name = name, k = k, v = v}
 						for k2, v2 in ipairs (pcfs) do
