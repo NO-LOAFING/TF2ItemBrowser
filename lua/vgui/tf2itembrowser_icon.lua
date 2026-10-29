@@ -1598,7 +1598,7 @@ function PANEL:CreateItemParticles(models, bailfunc, data)
 			//crit spark particles
 			if data.crit.enabled then
 				//if spawning an effect right now could potentially cause a crash, bail out and try again later
-				if (data.crit.sparks_rb or data.crit.sparks_c) and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+				if (data.crit.sparks_rb or data.crit.sparks_c) and (tf.GetDependency("pe+") and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0) then
 					if bailfunc then bailfunc() end
 					return
 				end
@@ -1689,18 +1689,20 @@ function PANEL:CreateItemParticles(models, bailfunc, data)
 					//try to add to pe+ crashcheck list; if there's multiple pcfs to associate with this effect,
 					//then which one to blame is basically just a guess, but it's better than nothing, since all
 					//these fx should only have 1 pcf unless there's a conflict with another game/addon going on
-					local pcfs = PEPlus_FindPCFsFromEffect(name)
-					if pcfs and pcfs[1] then
-						local pcf = PEPlus_GetGamePCF(pcfs[1].pcf, pcfs[1].path)
-						PEPlus_AddParticles_CrashCheck[pcf] = PEPlus_AddParticles_CrashCheck[pcf] or {}
-						PEPlus_AddParticles_CrashCheck[pcf][part] = true
+					if tf.GetDependency("pe+") then
+						local pcfs = PEPlus_FindPCFsFromEffect(name)
+						if pcfs and pcfs[1] then
+							local pcf = PEPlus_GetGamePCF(pcfs[1].pcf, pcfs[1].path)
+							PEPlus_AddParticles_CrashCheck[pcf] = PEPlus_AddParticles_CrashCheck[pcf] or {}
+							PEPlus_AddParticles_CrashCheck[pcf][part] = true
+						end
 					end
 				end
 			end
 			if data.pe_def then
 				for k, v in ipairs (tf.GetItemDefaultParticleEffects(data)) do
 					//if spawning an effect right now could potentially cause a crash, bail out and try again later
-					if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+					if tf.GetDependency("pe+") and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
 						if bailfunc then bailfunc() end
 						return
 					end
@@ -1711,7 +1713,7 @@ function PANEL:CreateItemParticles(models, bailfunc, data)
 				local tab = tf.TF2Items.attribute_controlled_attached_particles_all[data.pe_unusual]
 				if tab then
 					//if spawning an effect right now could potentially cause a crash, bail out and try again later
-					if table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
+					if tf.GetDependency("pe+") and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0 then
 						if bailfunc then bailfunc() end
 						return
 					end
@@ -2984,6 +2986,7 @@ function PANEL:CreateSpawnPanel()
 				end
 				icons.SelectCategory(GetDefaultCategory())
 			end
+			drop:SetEnabled(tf.GetDependency("pe+"))
 		end
 
 		//Show toggle for default particle effects (cigar smoke, halo effect, earbud notes, etc.)
@@ -3011,6 +3014,20 @@ function PANEL:CreateSpawnPanel()
 				self.data.pe_def = val
 				pnl.OnSettingChanged()
 			end
+			check:SetEnabled(tf.GetDependency("pe+"))
+		end
+
+		if !tf.GetDependency("pe+") and (unu_tab or #pe_def > 0) then
+			local help = vgui.Create("DLabel", pnl)
+			//help:SetWrap(true)
+			//help:SetAutoStretchVertical(true)
+			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			help:SetColor(tf.gui_colors.LightRed)
+			help:SetText("Required addon \"Particle Effects+\" not found.\nYou won't be able to add particle effects.")
+			help:Dock(TOP)
+			help:DockMargin(side_margins,-tf.betweenitems/2,side_margins,tf.betweenitems)
+			help:InvalidateLayout(true)
+			help:SizeToContentsY()
 		end
 
 		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
@@ -3623,7 +3640,7 @@ function PANEL:CreateSpawnPanel()
 		local h = 0 //gotta do it this way again to make the multiline item text set the correct height
 		h = h + self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
 		//use additemtext for the help text as well, because pnl won't set its height correctly if a DLabel with SetAutoStretchVertical is docked inside
-		h = h + self:AddItemText(name_container, "\nAll settings here apply to items that support that option - setting paint chance to 100% will paint any random items that are paintable, not filter out items that are unpaintable. For that, use the filter options to the left!", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
+		h = h + self:AddItemText(name_container, "\nAll settings here apply to items that support that option - setting paint chance to 100% will paint any random items that are paintable, not filter out items that aren't paintable. For that, use the filter options to the left!", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
 		name_container:SetHeight(h)
 		name_container:DockMargin(0,0,0,tf.betweencategories)
 
@@ -3673,8 +3690,23 @@ function PANEL:CreateSpawnPanel()
 		AddChanceSlider("Paint chance", "paint_chance", 0.5)
 		AddCheckBox("Match paint color of other equipped items?", "paint_match")
 
-		AddChanceSlider("Unusual chance", "unusual_chance", 0.2)
-		AddCheckBox("Must be headgear or war painted?", "unusual_validonly")
+		local slider = AddChanceSlider("Unusual chance", "unusual_chance", 0.2)
+		local check = AddCheckBox("Must be headgear or war painted?", "unusual_validonly")
+		if !tf.GetDependency("pe+") then
+			slider:SetEnabled(false)
+			slider.Label:SetColor(tf.gui_colors.TanDark)
+			check:SetEnabled(false)
+			local help = vgui.Create("DLabel", pnl)
+			//help:SetWrap(true)
+			//help:SetAutoStretchVertical(true)
+			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
+			help:SetColor(tf.gui_colors.LightRed)
+			help:SetText("Required addon \"Particle Effects+\" not found.\nYou won't be able to add particle effects.")
+			help:Dock(TOP)
+			help:DockMargin(side_margins,(-tf.betweencategories)+tf.betweenitems,side_margins,tf.betweencategories)
+			help:InvalidateLayout(true)
+			help:SizeToContentsY()
+		end
 
 		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
 		AddCheckBox("Random wear level?", "wp_randomwear")

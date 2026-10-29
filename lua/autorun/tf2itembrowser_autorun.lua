@@ -146,6 +146,15 @@ tf.jarate_colors = {
 }
 
 
+function tf.GetDependency(name)
+
+	if name == "pe+" then
+		return PEPlus_FindPCFsFromEffect != nil
+	end
+
+end
+
+
 
 
 
@@ -1255,14 +1264,14 @@ function tf.GetItemDefaultParticleEffects(data)
 
 	if i.visuals and i.visuals.attached_particlesystems then
 		for k, v in pairs(i.visuals.attached_particlesystems) do
-			if PEPlus_FindPCFsFromEffect(v.system) then
+			if !tf.GetDependency("pe+") or PEPlus_FindPCFsFromEffect(v.system) then //note: if pe+ is uninstalled, then we can't check the validity of fx - default to adding them all to the list, so that we can display a warning that the item should have fx but isn't able to add them. this means items with invalid fx (eureka effect) will mistakenly show an unusable checkbox for default fx that won't appear when pe+ is installed, but this is harmless.
 				table.insert(pe_def, v)
 			end
 		end
 	end
 	if i.attributes and i.attributes["attach particle effect static"] then
 		local tab = tf.TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect static"].value]
-		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
+		if tab and (!tf.GetDependency("pe+") or PEPlus_FindPCFsFromEffect(tab.system)) then
 			if CLIENT then
 				tab = table.Copy(tab)
 				tab._displayname = tf.GetPhrase("#Attrib_Particle" .. i.attributes["attach particle effect static"].value) //can be nil; uses the effect name if so
@@ -1272,7 +1281,7 @@ function tf.GetItemDefaultParticleEffects(data)
 	end
 	if i.attributes and i.attributes["attach particle effect"] then
 		local tab = tf.TF2Items.attribute_controlled_attached_particles_all[i.attributes["attach particle effect"].value]
-		if tab and PEPlus_FindPCFsFromEffect(tab.system) then
+		if tab and (!tf.GetDependency("pe+") or PEPlus_FindPCFsFromEffect(tab.system)) then
 			if CLIENT then
 				tab = table.Copy(tab)
 				tab._displayname = tf.GetPhrase("#Attrib_Particle" .. i.attributes["attach particle effect"].value) //can be nil; uses the effect name if so
@@ -1302,7 +1311,7 @@ function tf.GetItemUnusualEffects(id)
 	//wep unusuals
 	elseif i.particle_suffix then
 		for k, v in pairs (tf.TF2Items.attribute_controlled_attached_particles.weapon_unusual_effects) do
-			if v.use_suffix_name and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix) then continue end
+			if v.use_suffix_name and (tf.GetDependency("pe+") and !PEPlus_FindPCFsFromEffect(v.system .. "_" .. i.particle_suffix)) then continue end
 			tab = tab or {}
 			table.insert(tab, {k = k, v = v})
 		end
@@ -1343,7 +1352,7 @@ function tf.GetDefaultItemDataTable(id)
 			sparks_c = false,
 		},
 
-		pe_def = true,
+		pe_def = tf.GetDependency("pe+"),
 		pe_unusual = 0,
 		pe_unusual_offset = nil,
 
@@ -2833,6 +2842,8 @@ if SERVER then
 				end
 
 				local function AddEffect(tab)
+					if !tf.GetDependency("pe+") then return end
+
 					local name = tab.system
 					if name:EndsWith("_teamcolor_red") and data.team then
 						name = string.Replace(name, "_teamcolor_red", "_teamcolor_blue")
