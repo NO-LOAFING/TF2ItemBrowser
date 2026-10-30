@@ -558,11 +558,11 @@ function PANEL:SetData(data)
 	if data.paint.enabled and !self.mat_overlay then //don't show paint icons for tools that display paint color in the image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3143-L3144)
 		//note: in tf2 code, this icon is also used to show decal tool image (https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/item_model_panel.cpp#L3138-L3141)
 		local tab = {icon = icon_paint, paint = self.data.paint.col[false]}
-		if self.data.paint.override[true] then
+		if self.data.paint.override[true] and tf.GetDependency("hatpainter") then
 			tab.paint = {}
 			tab.override = self.data.paint.override[false]
 			tab.override_2 = self.data.paint.override[true]
-		elseif self.data.paint.override[false] > 0 then
+		elseif self.data.paint.override[false] > 0 and tf.GetDependency("hatpainter") then
 			tab.override = self.data.paint.override[false]
 		elseif self.data.paint.col[true] then
 			tab.paint = {self.data.paint.col[false], self.data.paint.col[true]}
@@ -1492,32 +1492,34 @@ function PANEL:CreateItemModels(data, disable_fallback_model) //data is a separa
 			end
 			if mat then ent:SetMaterial(mat) end
 
-			//paint matproxy
-			if data.paint.enabled then
-				local col = data.paint.col[data.team] or data.paint.col[false]
-				local override = data.paint.override[data.team] or data.paint.override[false]
-				if override == 0 then override = nil end
-				ent.ProxyentPaintColor = {
-					IsValid = function() return true end, 
-					Color = Vector(col[1]/255, col[2]/255, col[3]/255),
-					Override = override //used by tf.DrawItemModels to update the override color
-				}
-			end
+			if tf.GetDependency("hatpainter") then
+				//paint matproxy
+				if data.paint.enabled then
+					local col = data.paint.col[data.team] or data.paint.col[false]
+					local override = data.paint.override[data.team] or data.paint.override[false]
+					if override == 0 then override = nil end
+					ent.ProxyentPaintColor = {
+						IsValid = function() return true end, 
+						Color = Vector(col[1]/255, col[2]/255, col[3]/255),
+						Override = override //used by tf.DrawItemModels to update the override color
+					}
+				end
 
-			//critglow and tf.EFFECT_JARATE matproxy
-			local col
-			if data.crit.enabled and (v.role == "item" or v.role == "attached" 
-			or v.role == "attached_festive" or v.role == "stat_clock") then
-				col = data.crit.col[data.team] or data.crit.col[false]
-			end
-			if data.fx == tf.EFFECT_JARATE then
-				col = (col or Vector(1,1,1)) * tf.jarate_colors[data.team]
-			end
-			if col then
-				ent.ProxyentCritGlow = {
-					IsValid = function() return true end, 
-					Color = col
-				}
+				//critglow and tf.EFFECT_JARATE matproxy
+				local col
+				if data.crit.enabled and (v.role == "item" or v.role == "attached" 
+				or v.role == "attached_festive" or v.role == "stat_clock") then
+					col = data.crit.col[data.team] or data.crit.col[false]
+				end
+				if data.fx == tf.EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * tf.jarate_colors[data.team]
+				end
+				if col then
+					ent.ProxyentCritGlow = {
+						IsValid = function() return true end, 
+						Color = col
+					}
+				end
 			end
 
 			//war paint
@@ -1596,7 +1598,7 @@ function PANEL:CreateItemParticles(models, bailfunc, data)
 	for _, ent in ipairs (models) do
 		if ent.ShouldAddParticles then
 			//crit spark particles
-			if data.crit.enabled then
+			if data.crit.enabled and tf.GetDependency("hatpainter") then
 				//if spawning an effect right now could potentially cause a crash, bail out and try again later
 				if (data.crit.sparks_rb or data.crit.sparks_c) and (tf.GetDependency("pe+") and table.Count(PEPlus_AddParticles_CrashCheck_ThrottledPCFs) > 0) then
 					if bailfunc then bailfunc() end
@@ -2242,6 +2244,7 @@ function PANEL:CreateSpawnPanel()
 				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 				container:SetPos(x, y)
 			end
+			drop:SetEnabled(tf.GetDependency("hatpainter"))
 		end
 
 		//Show critglow option for items that are equipped as non-passive weapons in TF2, and have a valid model to apply it to
@@ -2491,6 +2494,7 @@ function PANEL:CreateSpawnPanel()
 				if y + container:GetTall() > ScrH() then y = ScrH() - container:GetTall() end
 				container:SetPos(x, y)
 			end
+			drop:SetEnabled(tf.GetDependency("hatpainter"))
 		end
 
 		local submenu
@@ -3015,19 +3019,6 @@ function PANEL:CreateSpawnPanel()
 				pnl.OnSettingChanged()
 			end
 			check:SetEnabled(tf.GetDependency("pe+"))
-		end
-
-		if !tf.GetDependency("pe+") and (unu_tab or #pe_def > 0) then
-			local help = vgui.Create("DLabel", pnl)
-			//help:SetWrap(true)
-			//help:SetAutoStretchVertical(true)
-			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			help:SetColor(tf.gui_colors.LightRed)
-			help:SetText("Required addon \"Particle Effects+\" not found.\nYou won't be able to add particle effects.")
-			help:Dock(TOP)
-			help:DockMargin(side_margins,-tf.betweenitems/2,side_margins,tf.betweenitems)
-			help:InvalidateLayout(true)
-			help:SizeToContentsY()
 		end
 
 		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
@@ -3687,25 +3678,26 @@ function PANEL:CreateSpawnPanel()
 		end)
 		drop:GetParent():DockMargin(side_margins,0,side_margins,tf.betweencategories)
 
-		AddChanceSlider("Paint chance", "paint_chance", 0.5)
-		AddCheckBox("Match paint color of other equipped items?", "paint_match")
+		local slider = AddChanceSlider("Paint chance", "paint_chance", 0.5)
+		local check = AddCheckBox("Match paint color of other equipped items?", "paint_match")
+		if !tf.GetDependency("pe+") then
+			slider:SetValue(0)
+			slider:SetEnabled(false)
+			slider.Label:SetColor(tf.gui_colors.TanDark)
+			check:SetChecked(false)
+			check:SetEnabled(false)
+			self.random.paint_chance = 0
+		end
 
 		local slider = AddChanceSlider("Unusual chance", "unusual_chance", 0.2)
 		local check = AddCheckBox("Must be headgear or war painted?", "unusual_validonly")
 		if !tf.GetDependency("pe+") then
+			slider:SetValue(0)
 			slider:SetEnabled(false)
 			slider.Label:SetColor(tf.gui_colors.TanDark)
+			check:SetChecked(false)
 			check:SetEnabled(false)
-			local help = vgui.Create("DLabel", pnl)
-			//help:SetWrap(true)
-			//help:SetAutoStretchVertical(true)
-			help:SetFont("TF2ItemBrowser_ItemDesc_Smaller")
-			help:SetColor(tf.gui_colors.LightRed)
-			help:SetText("Required addon \"Particle Effects+\" not found.\nYou won't be able to add particle effects.")
-			help:Dock(TOP)
-			help:DockMargin(side_margins,(-tf.betweencategories)+tf.betweenitems,side_margins,tf.betweencategories)
-			help:InvalidateLayout(true)
-			help:SizeToContentsY()
+			self.random.unusual_chance = 0
 		end
 
 		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
@@ -4101,7 +4093,7 @@ function PANEL:Paint(w, h)
 		local ypos = 2 * tf.item_icon_sizes[icon_size].scale
 		for k, v in ipairs (self.icons) do
 			surface.SetMaterial(v.icon)
-			//update spell colors if applicable
+			//update spell colors if applicable (note: these shouldn't be populated if hatpainter addon isn't found)
 			if v.override_2 then
 				v.paint[1] = ProxyentPaintColor_GetOverrideColor(v.override)
 				v.paint[2] = ProxyentPaintColor_GetOverrideColor(v.override_2)

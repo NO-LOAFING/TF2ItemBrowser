@@ -150,6 +150,8 @@ function tf.GetDependency(name)
 
 	if name == "pe+" then
 		return PEPlus_FindPCFsFromEffect != nil
+	elseif name == "hatpainter" then
+		return ProxyentPaintColor_PackedRGBToTab != nil
 	end
 
 end
@@ -167,7 +169,16 @@ end
 
 local _s = file.Read("scripts/items/items_game.txt", "tf")
 if !_s then
-	MsgN("ERROR: TF2ItemBrowser couldn't find TF2's items_game.txt, is TF2 not mounted?")
+	if CLIENT then
+		hook.Add("InitPostEntity", "TF2ItemBrowser_MountError", function()
+			timer.Simple(1, function()
+				notification.AddLegacy("ERROR: TF2 Item Browser couldn't find TF2's items_game.txt, is TF2 not mounted?", NOTIFY_ERROR, 10)
+				chat.AddText("ERROR: TF2 Item Browser couldn't find TF2's items_game.txt, is TF2 not mounted?")
+			end)
+		end)
+	else
+		MsgN("ERROR: TF2 Item Browser couldn't find TF2's items_game.txt, is TF2 not mounted?")
+	end
 	TF2ItemBrowser_Globals = nil
 	return
 end
@@ -933,16 +944,18 @@ tf.TF2Items = s
 //Make items with default paint colors (i.e. tournament medals) store them somewhere more easily accessible
 //This has to be done on a timer so that we can be sure that Hat Painter's ProxyentPaintColor_PackedRGBToTab function exists
 timer.Simple(0, function()
-	for k, v in pairs (tf.TF2Items.items) do
-		if v.attributes and v.attributes["set item tint RGB"] then
-			tab = {}
-			local col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB"].value)
-			tab[false] = Vector(col[1], col[2], col[3])
-			if v.attributes["set item tint RGB 2"] then
-				col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB 2"].value)
-				tab[true] = Vector(col[1], col[2], col[3])
+	if tf.GetDependency("hatpainter") then
+		for k, v in pairs (tf.TF2Items.items) do
+			if v.attributes and v.attributes["set item tint RGB"] then
+				tab = {}
+				local col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB"].value)
+				tab[false] = Vector(col[1], col[2], col[3])
+				if v.attributes["set item tint RGB 2"] then
+					col = ProxyentPaintColor_PackedRGBToTab(v.attributes["set item tint RGB 2"].value)
+					tab[true] = Vector(col[1], col[2], col[3])
+				end
+				v._default_paint = tab
 			end
-			v._default_paint = tab
 		end
 	end
 end)
@@ -2109,7 +2122,7 @@ if CLIENT then
 		render.ClearDepth(false)
 
 		for k, v in ipairs (models) do
-			//Update color of halloween spell paints
+			//Update color of halloween spell paints (note: this shouldn't be populated if hatpainter addon isn't found)
 			if v.ProxyentPaintColor and v.ProxyentPaintColor.Override then
 				v.ProxyentPaintColor.Color = ProxyentPaintColor_GetOverrideColor(v.ProxyentPaintColor.Override)/255
 			end
@@ -2788,44 +2801,46 @@ if SERVER then
 				duplicator.ClearEntityModifier(e2, "material")
 			end
 
-			//paint matproxy
-			if data.paint.enabled then
-				local col = data.paint.col[data.team] or data.paint.col[false]
-				GiveMatproxyTF2ItemPaint(ply, e, {
-					ColorR = col.x,
-					ColorG = col.y,
-					ColorB = col.z,
-					Override = data.paint.override[data.team] or data.paint.override[false]
-				})
-			elseif e.ProxyentPaintColor then
-				if IsValid(e.ProxyentPaintColor) then e.ProxyentPaintColor:Remove() end
-				e.ProxyentPaintColor = nil
-				duplicator.ClearEntityModifier(e, "MatproxyTF2ItemPaint")
-			end
+			if tf.GetDependency("hatpainter") then
+				//paint matproxy
+				if data.paint.enabled then
+					local col = data.paint.col[data.team] or data.paint.col[false]
+					GiveMatproxyTF2ItemPaint(ply, e, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						Override = data.paint.override[data.team] or data.paint.override[false]
+					})
+				elseif e.ProxyentPaintColor then
+					if IsValid(e.ProxyentPaintColor) then e.ProxyentPaintColor:Remove() end
+					e.ProxyentPaintColor = nil
+					duplicator.ClearEntityModifier(e, "MatproxyTF2ItemPaint")
+				end
 
-			//critglow and tf.EFFECT_JARATE matproxy
-			local col
-			if data.crit.enabled and (role == "item" or role == "attached" 
-			or role == "attached_festive" or role == "stat_clock") then
-				col = data.crit.col[data.team] or data.crit.col[false]
-			end
-			if data.fx == tf.EFFECT_JARATE then
-				col = (col or Vector(1,1,1)) * tf.jarate_colors[data.team]
-			end
-			if col then
-				local function bool_to_num(a) if !a then return 0 else return 1 end end
-				GiveMatproxyTF2CritGlow(ply, e, {
-					ColorR = col.x,
-					ColorG = col.y,
-					ColorB = col.z,
-					RedSparks = bool_to_num(role == "item" and !data.team and data.crit.sparks_rb),
-					BluSparks = bool_to_num(role == "item" and data.team and data.crit.sparks_rb),
-					ColorableSparks = bool_to_num(role == "item" and data.crit.sparks_c),
-				})
-			elseif e.ProxyentCritGlow then
-				if IsValid(e.ProxyentCritGlow) then e.ProxyentCritGlow:Remove() end
-				e.ProxyentCritGlow = nil
-				duplicator.ClearEntityModifier(e, "MatproxyTF2CritGlow")
+				//critglow and tf.EFFECT_JARATE matproxy
+				local col
+				if data.crit.enabled and (role == "item" or role == "attached" 
+				or role == "attached_festive" or role == "stat_clock") then
+					col = data.crit.col[data.team] or data.crit.col[false]
+				end
+				if data.fx == tf.EFFECT_JARATE then
+					col = (col or Vector(1,1,1)) * tf.jarate_colors[data.team]
+				end
+				if col then
+					local function bool_to_num(a) if !a then return 0 else return 1 end end
+					GiveMatproxyTF2CritGlow(ply, e, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						RedSparks = bool_to_num(role == "item" and !data.team and data.crit.sparks_rb),
+						BluSparks = bool_to_num(role == "item" and data.team and data.crit.sparks_rb),
+						ColorableSparks = bool_to_num(role == "item" and data.crit.sparks_c),
+					})
+				elseif e.ProxyentCritGlow then
+					if IsValid(e.ProxyentCritGlow) then e.ProxyentCritGlow:Remove() end
+					e.ProxyentCritGlow = nil
+					duplicator.ClearEntityModifier(e, "MatproxyTF2CritGlow")
+				end
 			end
 
 			//particle effects
@@ -3294,23 +3309,25 @@ if SERVER then
 			end
 
 			//matproxy stuff for tf.EFFECT_JARATE
-			if fx == tf.EFFECT_JARATE then
-				local team = ent:GetSkin() % 2 != 0
-				local col = tf.jarate_colors[team]
-				GiveMatproxyTF2CritGlow(ply, ent, {
-					ColorR = col.x,
-					ColorG = col.y,
-					ColorB = col.z,
-					RedSparks = 0,
-					BluSparks = 0,
-					ColorableSparks = 0,
-					JarateSparks = 1,
-					JarateColorableSparks = 0,
-				})
-			elseif ent.ProxyentCritGlow then
-				if IsValid(ent.ProxyentCritGlow) then ent.ProxyentCritGlow:Remove() end
-				ent.ProxyentCritGlow = nil
-				duplicator.ClearEntityModifier(ent, "MatproxyTF2CritGlow")
+			if tf.GetDependency("hatpainter") then
+				if fx == tf.EFFECT_JARATE then
+					local team = ent:GetSkin() % 2 != 0
+					local col = tf.jarate_colors[team]
+					GiveMatproxyTF2CritGlow(ply, ent, {
+						ColorR = col.x,
+						ColorG = col.y,
+						ColorB = col.z,
+						RedSparks = 0,
+						BluSparks = 0,
+						ColorableSparks = 0,
+						JarateSparks = 1,
+						JarateColorableSparks = 0,
+					})
+				elseif ent.ProxyentCritGlow then
+					if IsValid(ent.ProxyentCritGlow) then ent.ProxyentCritGlow:Remove() end
+					ent.ProxyentCritGlow = nil
+					duplicator.ClearEntityModifier(ent, "MatproxyTF2CritGlow")
+				end
 			end
 
 		end

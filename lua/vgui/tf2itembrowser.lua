@@ -13,6 +13,27 @@ DEFINE_BASECLASS("DFrame")
 
 function PANEL:Init()
 
+	if !TF2ItemBrowser_DoneDependencyWarning then
+		local strs = {}
+		if !tf.GetDependency("pe+") then
+			table.insert(strs, "\n\"Particle Effects+\" addon not found. You won't be able to add unusuals or other particle effects.")
+		end
+		if !tf.GetDependency("hatpainter") then
+			table.insert(strs, "\n\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow or jarate effects.")
+		end
+
+		if #strs > 0 then
+			//Display these as nice notifications, but also print them in chat and console so that players 
+			//can go back and read them if they missed them, i.e. to check which addons they're missing
+			for _, str in ipairs (strs) do
+				notification.AddLegacy(string.TrimLeft(str, "\n"), NOTIFY_ERROR, 10)
+			end
+			chat.AddText("TF2 Item Browser:", unpack(strs))
+		end
+		surface.PlaySound("ui/chat_display_text.wav")
+		TF2ItemBrowser_DoneDependencyWarning = true //we only need to show this once per session
+	end
+
 	local right_holder = vgui.Create("DPanel", self)
 	right_holder.Paint = function() end
 	self.Right = right_holder
