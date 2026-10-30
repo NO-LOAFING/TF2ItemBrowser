@@ -719,7 +719,7 @@ function PANEL:GenerateRandomItem()
 		end
 	end
 
-	if !did_australium and i._paintkit and WP.Weapons.IsSupported(i.model_player) and math.random() <= self.random.wp_chance then
+	if !did_australium and i._paintkit and tf.GetDependency("wp") and WP.Weapons.IsSupported(i.model_player) and math.random() <= self.random.wp_chance then
 		local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
 		data.wp.id = tab[math.random(#tab)].id
 		data.wp.enabled = true
@@ -842,7 +842,7 @@ function PANEL:UpdateItemName()
 	qualityformat = string.Replace(qualityformat, "%s5", "") //duck journal rank
 	quality = qualityformat
 
-	if self.data.wp.enabled then
+	if self.data.wp.enabled and tf.GetDependency("wp") then
 		local paintKitStr = WP.Proto.Schema.GetPaintkitByDefindex(self.data.wp.id)
 		if paintKitStr and paintKitStr.header then
 			paintKitStr = WP.Proto.Localization.GetWarpaintName(paintKitStr.header.name, paintKitStr.locDesctoken)
@@ -1523,7 +1523,7 @@ function PANEL:CreateItemModels(data, disable_fallback_model) //data is a separa
 			end
 
 			//war paint
-			if data.wp.enabled and v.role == "item"  then
+			if data.wp.enabled and tf.GetDependency("wp") and v.role == "item" then
 				local instance
 				local weaponType = WP.Weapons.GetFromModel(ent:GetModel())
 				local _team = 0
@@ -3021,14 +3021,16 @@ function PANEL:CreateSpawnPanel()
 			check:SetEnabled(tf.GetDependency("pe+"))
 		end
 
-		if i._paintkit and WP.Weapons.IsSupported(i.model_player) then
+		if i._paintkit and (!tf.GetDependency("wp") or WP.Weapons.IsSupported(i.model_player)) then
 			local drop = AddDropdown((tf.GetPhrase("#TF_ItemPreview_ItemPaintkit") or "War Paint") .. ":", function(drop)
 				drop:AddChoice(tf.str_none, nil, self.data.wp.enabled == false)
 				drop:AddSpacer()
-				local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
-				for k, v in ipairs (tab) do
-					//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
-					drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
+				if tf.GetDependency("wp") then
+					local tab = WP.WarpaintData.GetForWeaponType(WP.Weapons.GetFromModel(i.model_player))
+					for k, v in ipairs (tab) do
+						//MsgN(v.id, ", ", v.name, ", ", WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), ", ", WP.Proto.Items.GetCollection(v.id, true), ", ", WP.Proto.Items.GetCollectionCategory(v.id))
+						drop:AddChoice(WP.Proto.Localization.GetWarpaintName(v.name, v.locToken), v, self.data.wp.enabled and self.data.wp.id == v.id)
+					end
 				end
 			end, function(data)
 				if !data then
@@ -3238,9 +3240,18 @@ function PANEL:CreateSpawnPanel()
 				entrypnl:Dock(TOP)
 				entrypnl:DockMargin(0,16,0,0)
 				entry:SetNumeric(true)
-				entry:SetText(self.data.wp.seed or "0")
+				entry:SetText(self.data.wp.seed or "1")
 				entry.OnEnter = function()
 					local val = entry:GetText()
+					//Using one of these seed values makes the war paint generate with a random seed, but that isn't
+					//immediately obvious to the user, and causes unintuitive behavior where the seed gets randomized
+					//again every time the WP is reapplied, so instead replace it with an actual visible random seed.
+					//(I'm fairly sure these are the only bad seed values, see WP.RNG.NormalizeSeed)
+					if val == "" or val == "0" then
+						entry:SetText(tostring(WP.RNG.RandomSeed()))
+						entry:OnEnter()
+						return
+					end
 					if val != self.data.wp.seed then 
 						self.data.wp.seed = val
 						pnl.OnSettingChanged()
@@ -3626,6 +3637,7 @@ function PANEL:CreateSpawnPanel()
 				end
 				icons.SelectCategory(GetDefaultCategory())
 			end
+			drop:SetEnabled(tf.GetDependency("wp"))
 		end
 	else
 		local h = 0 //gotta do it this way again to make the multiline item text set the correct height
@@ -3700,8 +3712,16 @@ function PANEL:CreateSpawnPanel()
 			self.random.unusual_chance = 0
 		end
 
-		AddChanceSlider("War Paint chance", "wp_chance", 0.5)
-		AddCheckBox("Random wear level?", "wp_randomwear")
+		local slider = AddChanceSlider("War Paint chance", "wp_chance", 0.5)
+		local check = AddCheckBox("Random wear level?", "wp_randomwear")
+		if !tf.GetDependency("wp") then
+			slider:SetValue(0)
+			slider:SetEnabled(false)
+			slider.Label:SetColor(tf.gui_colors.TanDark)
+			check:SetChecked(false)
+			check:SetEnabled(false)
+			self.random.wp_chance = 0
+		end
 
 		AddChanceSlider("Festivizer chance", "festivizer_chance", 0.2)
 		AddChanceSlider("Australium chance", "aus_chance", 0.2)
@@ -4035,7 +4055,7 @@ function PANEL:Paint(w, h)
 			if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return false end
 
 			//Don't render the icon until the paintkit material is no longer a placeholder
-			if self.data.wp.enabled then
+			if self.data.wp.enabled and tf.GetDependency("wp") then
 				local wp_state = WP.Materials.GetForEntity(models[1])
 				if wp_state == nil then
 					//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 

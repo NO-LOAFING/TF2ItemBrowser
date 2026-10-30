@@ -152,6 +152,8 @@ function tf.GetDependency(name)
 		return PEPlus_FindPCFsFromEffect != nil
 	elseif name == "hatpainter" then
 		return ProxyentPaintColor_PackedRGBToTab != nil
+	elseif name == "wp" then
+		return istable(WP) and istable(WP.RNG) and istable(WP.Weapons) //"WP" is a pretty generic name, make extra sure it's the one we want
 	end
 
 end
@@ -1373,7 +1375,7 @@ function tf.GetDefaultItemDataTable(id)
 			enabled = false,
 			id = 0,
 			wear = 1,
-			seed = tostring(WP.RNG.RandomSeed()),
+			seed = "1",
 		}
 	}
 
@@ -1402,6 +1404,10 @@ function tf.GetDefaultItemDataTable(id)
 			data.style = k
 			break
 		end
+	end
+
+	if tf.GetDependency("wp") then
+		data.wp.seed = tostring(WP.RNG.RandomSeed())
 	end
 
 	//tf.SanitizeItemDataTable(data) //every func that uses the data table ends up running Sanitize on it anyway, so don't bother running it twice
@@ -2518,7 +2524,7 @@ function tf.WriteItemDataTable(data)
 	if data.wp.enabled then
 		net.WriteUInt(data.wp.id, 10) //max 1023; as of summer 2026 the highest paintkit id is 442, so very unlikely we'll ever need more
 		net.WriteUInt(data.wp.wear, 3)
-		net.WriteString(data.wp.seed)
+		net.WriteString(tostring(data.wp.seed))
 	end
 end
 
@@ -2604,8 +2610,11 @@ function tf.ReadItemDataTable()
 			enabled = false,
 			id = 0,
 			wear = 1,
-			seed = tostring(WP.RNG.RandomSeed()),
+			seed = "1",
 		}
+		if tf.GetDependency("wp") then
+			tab.wp.seed = tostring(WP.RNG.RandomSeed())
+		end
 	end
 
 	return tab
@@ -2979,52 +2988,54 @@ if SERVER then
 			end
 
 			//war paint
-			if data.wp.enabled and role == "item" then
-				local instance
-				local weaponType = WP.Weapons.GetFromModel(e:GetModel())
-				local _team = 0
-				if data.team then _team = 1 end
+			if tf.GetDependency("wp") then
+				if data.wp.enabled and role == "item" then
+					local instance
+					local weaponType = WP.Weapons.GetFromModel(e:GetModel())
+					local _team = 0
+					if data.team then _team = 1 end
 
-				//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
-				if weaponType then
-					-- Try to build a full multi-layer instance if we have a warpaint ID
-					instance = WP.WarpaintData.BuildInstance(
-						data.wp.id,
-						weaponType,
-						data.wp.seed,
-						data.wp.wear,
-						_team
-					)
-					if instance then
-						-- Set the matIndex since BuildInstance doesn't set it
-						instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
-					end
-				end
-				//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
-				--[[-- Fallback to simple instance if multi-layer failed or wasn't available
-				if !instance then
-					MsgN(i.name, " using warpaint fallback, not good")
-					local pattern
-					for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
-						if v.id == data.wp.id then
-							pattern = v.primaryTexture
-							break
+					//war paint instance-building code adapted from lua\weapons\gmod_tool\stools\warpaint.lua's TOOL:LeftClick()
+					if weaponType then
+						-- Try to build a full multi-layer instance if we have a warpaint ID
+						instance = WP.WarpaintData.BuildInstance(
+							data.wp.id,
+							weaponType,
+							data.wp.seed,
+							data.wp.wear,
+							_team
+						)
+						if instance then
+							-- Set the matIndex since BuildInstance doesn't set it
+							instance.matIndex = WP.Weapons.GetMatIndex(weaponType)
 						end
 					end
-					instance = WP.WarpaintInstance.New({
-						patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
-						seed = data.wp.seed,
-						wearLevel = data.wp.wear,
-						wear = WP.RNG.GenerateWearFromSeed(data.wp.seed, data.wp.wear),
-						team = _team,
-						weaponType = weaponType,
-						matIndex = WP.Weapons.GetMatIndex(weaponType)
-					})
-				end]]
-				local success = WP.Server.ApplyWarpaint(e, instance, ply)
-				if success then e:SetSkin(0) end
-			elseif e.WarpaintData then
-				WP.Server.RemoveWarpaint(e)
+					//the fallback looks nothing like how the war paint will ever look in tf2, don't bother	
+					--[[-- Fallback to simple instance if multi-layer failed or wasn't available
+					if !instance then
+						MsgN(i.name, " using warpaint fallback, not good")
+						local pattern
+						for k, v in pairs (WP.WarpaintData.GetUniqueWarpaints()) do
+							if v.id == data.wp.id then
+								pattern = v.primaryTexture
+								break
+							end
+						end
+						instance = WP.WarpaintInstance.New({
+							patternId = pattern or "color/white", //adapted from lua\warpaint\ui\cl_pattern_browser.lua's WP.UI.PopulateWarpaintTree(); don't waste reseurces constantly networking a separate var to hold onto the pattern value for this fallback, instead just grab it when it's needed
+							seed = data.wp.seed,
+							wearLevel = data.wp.wear,
+							wear = WP.RNG.GenerateWearFromSeed(data.wp.seed, data.wp.wear),
+							team = _team,
+							weaponType = weaponType,
+							matIndex = WP.Weapons.GetMatIndex(weaponType)
+						})
+					end]]
+					local success = WP.Server.ApplyWarpaint(e, instance, ply)
+					if success then e:SetSkin(0) end
+				elseif e.WarpaintData then
+					WP.Server.RemoveWarpaint(e)
+				end
 			end
 		end
 

@@ -21,6 +21,9 @@ function PANEL:Init()
 		if !tf.GetDependency("hatpainter") then
 			table.insert(strs, "\n\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow or jarate effects.")
 		end
+		if !tf.GetDependency("wp") then
+			table.insert(strs, "\n\"TF2 Warpaint Tool\" addon not found. You won't be able to add war paints.")
+		end
 
 		if #strs > 0 then
 			//Display these as nice notifications, but also print them in chat and console so that players 
@@ -859,7 +862,7 @@ function PANEL:RebuildIconList()
 		or DoIncludeExcludeFilter(self.filters.multi_class:GetValue(), table.Count(v.used_by_classes) > 1)
 		or DoIncludeExcludeFilter(self.filters.holiday:GetValue(), v.holiday_restriction)
 		or DoIncludeExcludeFilter(self.filters.paint:GetValue(), v.capabilities and v.capabilities.paintable == 1)
-		or DoIncludeExcludeFilter(self.filters.warpaint:GetValue(), v._paintkit and WP.Weapons.IsSupported(v.model_player))
+		or DoIncludeExcludeFilter(self.filters.warpaint:GetValue(), v._paintkit and (!tf.GetDependency("wp") or WP.Weapons.IsSupported(v.model_player)))
 		or DoIncludeExcludeFilter(self.filters.custom:GetValue(), isstring(k)) //custom items use id strings, while normal items use id numbers
 		then continue end
 
