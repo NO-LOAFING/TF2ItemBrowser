@@ -1993,13 +1993,14 @@ function PANEL:CreateSpawnPanel()
 		if i.visuals and i.visuals.styles and table.Count(i.visuals.styles) > 1 then
 			local name = (tf.GetPhrase("#Context_Style") or "Style") .. ":"
 			if i._call_styles_animations then name = (tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation") .. ":" end
-			AddDropdown(name, function(drop)
+			local drop = AddDropdown(name, function(drop)
 				for k, _ in SortedPairs (i.visuals.styles) do //this starts from 0 so we can't do ipairs
 					drop:AddChoice(tf.GetItemStyleName(self.data.id, k), k, self.data.style == k)
 				end
 			end, function(data)
 				self.data.style = data
 			end)
+			if i._call_styles_animations then drop:SetEnabled(tf:GetDependency("animprop")) end
 		end
 
 		if i.capabilities and i.capabilities.paintable == 1 then

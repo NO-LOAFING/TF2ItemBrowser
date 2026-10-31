@@ -24,6 +24,9 @@ function PANEL:Init()
 		if !tf.GetDependency("wp") then
 			table.insert(strs, "\n\"TF2 Warpaint Tool\" addon not found. You won't be able to add war paints.")
 		end
+		if !tf.GetDependency("animprop") then
+			table.insert(strs, "\n\"Animated Props\" addon not found. You won't be able to set item animations.") //this is, like, four items. is this still worth the warning?
+		end
 
 		if #strs > 0 then
 			//Display these as nice notifications, but also print them in chat and console so that players 

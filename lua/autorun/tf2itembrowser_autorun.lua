@@ -154,6 +154,8 @@ function tf.GetDependency(name)
 		return ProxyentPaintColor_PackedRGBToTab != nil
 	elseif name == "wp" then
 		return istable(WP) and istable(WP.RNG) and istable(WP.Weapons) //"WP" is a pretty generic name, make extra sure it's the one we want
+	elseif name == "animprop" then
+		return (SERVER and (ConvertEntityToAnimprop != nil)) or (CLIENT and (OpenAnimpropEditor != nil)) //the latter function isn't used in this addon (the only animprop code this addon uses is serverside), but we've got to use *something* for the clientside check
 	end
 
 end
@@ -3100,7 +3102,7 @@ if SERVER then
 				//off (which is what would happen if you were to spawn the thermal thruster with just the non-animated taunt prop, 
 				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
 				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
-				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] then
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") then
 					anim = i.visuals.styles[data.style]._anim
 					if anim then
 						anim = {anim = anim[v.role] or "", undo = k == 1}
@@ -3193,7 +3195,7 @@ if SERVER then
 				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
 				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
 				local anim
-				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] then
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop")  then
 					anim = i.visuals.styles[data.style]._anim
 					if anim then
 						anim = {anim = anim[v.role] or "", undo = k == 1}
