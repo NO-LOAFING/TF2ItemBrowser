@@ -15,11 +15,23 @@ function PANEL:Init()
 
 	if !TF2ItemBrowser_DoneDependencyWarning then
 		local strs = {}
-		if !tf.GetDependency("pe+") then
-			table.insert(strs, "\n\"Particle Effects+\" addon not found. You won't be able to add unusuals or other particle effects.")
+		if !tf.GetDependency("advbone") then
+			if tf.GetDependency("animprop") and tf.GetDependency("easybone") and tf.GetDependency("pe+") then
+				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. Unusuals won't be adjustable, and may not attach properly.\nYou also won't be able to set animations on attached items.")
+			elseif tf.GetDependency("animprop") and tf.GetDependency("easybone") then
+				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. You won't be able to set animations on attached items.")
+			elseif tf.GetDependency("pe+") then
+				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. Unusuals won't be adjustable, and may not attach properly.")
+			end
+			if !tf.GetDependency("easybone") then
+				table.insert(strs, "\n\"Advanced Bonemerge Tool\" and \"Easy Bonemerge Tool\" addons both not found. You won't be able to attach items.")
+			end
 		end
 		if !tf.GetDependency("hatpainter") then
 			table.insert(strs, "\n\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow or jarate effects.")
+		end
+		if !tf.GetDependency("pe+") then
+			table.insert(strs, "\n\"Particle Effects+\" addon not found. You won't be able to add unusuals or other particle effects.")
 		end
 		if !tf.GetDependency("wp") then
 			table.insert(strs, "\n\"TF2 Warpaint Tool\" addon not found. You won't be able to add war paints.")
@@ -31,8 +43,8 @@ function PANEL:Init()
 		if #strs > 0 then
 			//Display these as nice notifications, but also print them in chat and console so that players 
 			//can go back and read them if they missed them, i.e. to check which addons they're missing
-			for _, str in ipairs (strs) do
-				notification.AddLegacy(string.TrimLeft(str, "\n"), NOTIFY_ERROR, 10)
+			for _, str in ipairs (table.Reverse(strs)) do //make these appear in the same order as in the chat
+				notification.AddLegacy(string.TrimLeft(str, "\n"), NOTIFY_ERROR, 6*#strs)
 			end
 			chat.AddText("TF2 Item Browser:", unpack(strs))
 		end
@@ -596,10 +608,11 @@ function PANEL:Init()
 		end
 	end
 
+	local easybone_id, advbone_id
 	local drop = AddDropdownFilter("Attach with", function(drop)
 		local b = GetConVar("cl_tf2itembrowser_advbone"):GetBool()
-		drop:AddChoice("Easy Bonemerge", "0", !b)
-		drop:AddChoice("Adv. Bonemerge", "1", b)
+		easybone_id = drop:AddChoice("Easy Bonemerge", "0", !b)
+		advbone_id = drop:AddChoice("Adv. Bonemerge", "1", b)
 	end)
 	drop:GetParent():SetParent(attopts)
 	drop:GetParent():Dock(TOP)
@@ -669,6 +682,20 @@ function PANEL:Init()
 		end
 		attopts:InvalidateLayout(true)
 		attopts:SizeToChildren(false,true)
+	end
+
+	//if one bonemerge tool is uninstalled, force the selected tool to the one remaining. 
+	//if both are uninstalled, blank it out, and hide the text explaining how to select ents for attachment.
+	if !tf.GetDependency("advbone") and !tf.GetDependency("easybone") then
+		deselect_holder:SetVisible(false)
+		drop:SetEnabled(false)
+		drop:SetText("")
+	elseif !tf.GetDependency("advbone") then
+		drop:SetEnabled(false)
+		drop:ChooseOptionID(easybone_id)
+	elseif !tf.GetDependency("easybone") then
+		drop:SetEnabled(false)
+		drop:ChooseOptionID(advbone_id)
 	end
 
 	filters:InvalidateLayout(true)
@@ -1058,6 +1085,7 @@ AccessorFunc(PANEL, "m_Entity", "Entity")
 
 function PANEL:SetEntity(ent)
 
+	if !tf.GetDependency("advbone") and !tf.GetDependency("easybone") then ent = NULL end //just in case
 	self.m_Entity = ent
 	self.atticons:Clear()
 	if IsValid(self.SpawnPanel) then self.SpawnPanel:Remove() end

@@ -2000,7 +2000,7 @@ function PANEL:CreateSpawnPanel()
 			end, function(data)
 				self.data.style = data
 			end)
-			if i._call_styles_animations then drop:SetEnabled(tf:GetDependency("animprop")) end
+			if i._call_styles_animations then drop:SetEnabled(tf.GetDependency("animprop") and (tf.GetDependency("advbone") or !IsValid(TF2ItemBrowser:GetEntity()))) end
 		end
 
 		if i.capabilities and i.capabilities.paintable == 1 then
@@ -2887,6 +2887,12 @@ function PANEL:CreateSpawnPanel()
 							slider:SetEnabled(false)
 						end
 						pnl.OnSettingChanged()
+					end
+
+					if !tf.GetDependency("advbone") then
+						slider:SetEnabled(false)
+						slider.Label:SetColor(tf.gui_colors.TanDark)
+						check:SetEnabled(false)
 					end
 				end
 

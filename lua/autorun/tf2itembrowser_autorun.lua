@@ -155,7 +155,11 @@ function tf.GetDependency(name)
 	elseif name == "wp" then
 		return istable(WP) and istable(WP.RNG) and istable(WP.Weapons) //"WP" is a pretty generic name, make extra sure it's the one we want
 	elseif name == "animprop" then
-		return (SERVER and (ConvertEntityToAnimprop != nil)) or (CLIENT and (OpenAnimpropEditor != nil)) //the latter function isn't used in this addon (the only animprop code this addon uses is serverside), but we've got to use *something* for the clientside check
+		return (SERVER and (ConvertEntityToAnimprop != nil)) or duplicator.FindEntityClass("prop_animated") != nil //the latter isn't used in this addon (the only animprop code this addon uses is serverside), but we've got to use *something* for the clientside check
+	elseif name == "advbone" then
+		return (SERVER and (CreateAdvBonemergeEntity != nil)) or duplicator.FindEntityClass("ent_advbonemerge") != nil //^
+	elseif name == "easybone" then
+		return (SERVER and (rb655_ApplyBonemerge != nil)) or (CLIENT and file.Exists("weapons/gmod_tool/stools/rb655_easy_bonemerge.lua", "LUA")) //^; this addon really has nothing better to check for clientside
 	end
 
 end
@@ -1638,12 +1642,16 @@ if CLIENT then
 			function pnl:Paint(w,h)
 				local x, y = w/2, h/2
 				local col = tf.gui_colors.TransparentBlack
-				if !self:IsEnabled() then col = tf.gui_colors.TanDark end //override used in testitembotcontrols.res
+				//if !self:IsEnabled() then col = tf.gui_colors.TanDark end //override used in testitembotcontrols.res //actually this looks awful
 				surface.SetDrawColor(col)
 				surface.DrawRect(0,0,w,h)
 
 				col = tf.gui_colors.Yellow
-				if self.NegativeCheck then col = tf.gui_colors.LightRed end
+				if self.NegativeCheck then
+					col = tf.gui_colors.LightRed
+				elseif !self:IsEnabled() then
+					col = tf.gui_colors.TanDark //custom, match the appearance of other disabled vgui elements
+				end
 				surface.SetDrawColor(col)
 				surface.DrawOutlinedRect(0,0,w,h,2)
 				
@@ -2433,6 +2441,7 @@ properties.Add("tf2itembrowser_select", {
 	
 	Filter = function(self, ent, ply)
 		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
+		if !tf.GetDependency("advbone") and !tf.GetDependency("easybone") then return false end //if both bonemerge tools are uninstalled, then we can't attach items, so don't let us select an ent to attach items to
 		if !(ent:LookupBone("bip_pelvis") or (IsValid(ent.AttachedEntity) and ent.AttachedEntity:LookupBone("bip_pelvis"))) then return false end //make sure it has the right skeleton to attach tf2 items to
 		if !gamemode.Call("CanProperty", ply, "tf2itembrowser_select", ent) then return false end
 		return true
@@ -2782,14 +2791,14 @@ if SERVER then
 			end
 			
 			if IsValid(parent) then
-				if merge_type or anim or is_fallback then //fallback models (hatlesses) use a custom boneinfo table to attach unusual effects to the head. since we don't have a good way to switch it from easybone to advbone if the player adds an unusual effect *after* spawning it, fallback models *always* have to use advbone. dumb!!
+				if tf.GetDependency("advbone") and (merge_type or anim or is_fallback) then //fallback models (hatlesses) use a custom boneinfo table to attach unusual effects to the head. since we don't have a good way to switch it from easybone to advbone if the player adds an unusual effect *after* spawning it, fallback models *always* have to use advbone. dumb!!
 					local old_e = e
 					e = CreateAdvBonemergeEntity(e, parent, ply, false, false, true)
 					if !IsValid(e) then return end
 					if is_fallback and parent:LookupBone("bip_head") then e.AdvBone_BoneInfo[0].parent = "bip_head" end
 					local const = constraint.AdvBoneMerge(parent, e, ply)
 					if e != old_e then old_e:Remove() end
-				else
+				elseif tf.GetDependency("easybone") then
 					e = rb655_ApplyBonemerge(e2, parent) //unlike advbone, this one expects AttachedEntity for prop_effects
 				end
 			end
@@ -2888,7 +2897,7 @@ if SERVER then
 					local p = PEPlus_SpawnParticle(ply, e:GetPos(), name, pcf, path, true)
 					if !IsValid(p) then return end
 
-					if data.pe_unusual_offset then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594; yes, this applies to ALL effects attached to the model, even if it makes genteel smoke look dumb (https://www.youtube.com/watch?v=A0CBN92OhrY)
+					if data.pe_unusual_offset and tf.GetDependency("advbone") then //https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/particle_property.cpp#L594; yes, this applies to ALL effects attached to the model, even if it makes genteel smoke look dumb (https://www.youtube.com/watch?v=A0CBN92OhrY)
 						local bone
 						if e2:LookupBone("bip_head") then
 							bone = "bip_head"
@@ -2922,7 +2931,7 @@ if SERVER then
 								p:AttachToEntity(e, 0, attachment, ply, false)
 							end
 						else
-							if tab.attach_to_rootbone then
+							if tab.attach_to_rootbone and tf.GetDependency("advbone") then
 								local old_g = p:GetParent()
 								local _g = CreateAdvBonemergeEntity(old_g, e, ply, false, false, true)
 								_g.AdvBone_BoneInfo[0].parent = e2:GetBoneName(0)
@@ -3195,7 +3204,7 @@ if SERVER then
 				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
 				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
 				local anim
-				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop")  then
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") and tf.GetDependency("advbone") then
 					anim = i.visuals.styles[data.style]._anim
 					if anim then
 						anim = {anim = anim[v.role] or "", undo = k == 1}
