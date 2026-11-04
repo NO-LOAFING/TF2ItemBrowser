@@ -37,7 +37,7 @@ function PANEL:Init()
 			table.insert(strs, "\n\"TF2 Warpaint Tool\" addon not found. You won't be able to add war paints.")
 		end
 		if !tf.GetDependency("animprop") then
-			table.insert(strs, "\n\"Animated Props\" addon not found. You won't be able to set item animations.") //this is, like, four items. is this still worth the warning?
+			table.insert(strs, "\n\"Animated Props\" addon not found. You won't be able to set animations on items.") //this is, like, four items. is this still worth the warning?
 		end
 
 		if #strs > 0 then
@@ -47,8 +47,8 @@ function PANEL:Init()
 				notification.AddLegacy(string.TrimLeft(str, "\n"), NOTIFY_ERROR, 6*#strs)
 			end
 			chat.AddText("TF2 Item Browser:", unpack(strs))
+			surface.PlaySound("ui/chat_display_text.wav")
 		end
-		surface.PlaySound("ui/chat_display_text.wav")
 		TF2ItemBrowser_DoneDependencyWarning = true //we only need to show this once per session
 	end
 
@@ -1141,6 +1141,7 @@ function PANEL:SetEntity(ent)
 		self.attopts.fx:ChooseOptionID(1)
 		self.attopts.fx.IsUpdating = nil
 	end
+	self:UpdateItemConflicts() //this also gets called by other things like atticons.AddItem(), but this one covers edge cases, like switching directly from an ent with attached items to an ent without attached items
 
 end
 
