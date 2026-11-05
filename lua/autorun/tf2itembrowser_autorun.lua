@@ -1076,7 +1076,7 @@ if SERVER then
 		local i = util.Decompress(net.ReadData(len/8), 8000) //max 8kb; these are small text files and definitely shouldn't be this large
 		if !tf.PlayerCanEditCustomItems(ply) then return end
 
-		local success = false
+		local success, name = false, ""
 		if i then
 			local tab = util.JSONToTable(i)
 			if tab and tab.name and tab.name != "" then //an empty string for a name will save properly, but won't load
@@ -1084,6 +1084,7 @@ if SERVER then
 					file.CreateDir("tf2itembrowser_customitems/")
 				end
 				success = file.Write("tf2itembrowser_customitems/" .. tab.name .. ".txt", i)
+				if success then name = tab.name end
 			end
 		end
 
@@ -1091,11 +1092,13 @@ if SERVER then
 			//Rebuild serverside custom items table with the new item, and make players retrieve it
 			LoadCustomItems()
 			net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+				net.WriteString(name)
 				net.WriteBool(false) //Other players don't care about confirmation status for this item
 			net.SendOmit(ply)
 		end
 		//Tell the player who sent the file if saving was successful
 		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+			net.WriteString(name)
 			net.WriteBool(true)
 			net.WriteBool(success)
 		net.Send(ply)
@@ -1111,17 +1114,24 @@ if SERVER then
 			//Rebuild serverside custom items table without the deleted item, and make players retrieve it
 			LoadCustomItems()
 			net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+				net.WriteString(name)
 				net.WriteBool(false) //Other players don't care about confirmation status for this item
 			net.SendOmit(ply)
 		end
 		//Tell the player who sent the file if deletion was successful
 		net.Start("TF2ItemBrowser_CustomItemsUpdate_SendToCl")
+			net.WriteString(name)
 			net.WriteBool(true)
 			net.WriteBool(success)
 		net.Send(ply)
 	end)
 else
 	net.Receive("TF2ItemBrowser_CustomItemsUpdate_SendToCl", function()
+		//If an item was updated, it might have changed its icon params, so delete its cached icon so the client recreates it
+		local name = net.ReadString()
+		if name != "" then
+			file.Delete("tf2itembrowser_customitemicons/" .. name .. ".png")
+		end
 		LoadCustomItems()
 		if net.ReadBool() then
 			local success = net.ReadBool()
@@ -1496,7 +1506,6 @@ if CLIENT then
 			gap_h = math.Round(6*(64/121)),
 			gap_w = math.Round(9*(64/121)),
 			cornericon = math.Round(36*(64/121)),
-			rticon_minusw = math.Round(15*(64/121)),
 		},]]
 		[1] = {},
 		[2] = {
@@ -1507,7 +1516,6 @@ if CLIENT then
 			gap_h = 6,
 			gap_w = 9,
 			cornericon = 36,
-			rticon_minusw = 15,
 		},
 	}
 	for k, v in pairs (tf.item_icon_sizes[2]) do //just make a small size that's exactly half the normal size, this works better
@@ -2091,6 +2099,8 @@ if CLIENT then
 		{},
 	}
 	function tf.DrawItemModels(x, y, w, h, models, particles, ang, CamPos, FOV)
+
+		if #models == 0 then return end
 
 		cam.Start3D(CamPos, ang, FOV, x, y, w, h, 5, 32768)
 		render.SuppressEngineLighting(true)

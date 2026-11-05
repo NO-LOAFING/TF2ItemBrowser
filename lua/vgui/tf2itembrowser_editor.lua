@@ -7,6 +7,7 @@ local rtmat = CreateMaterial("TF2ItemBrowser_EditorIconRT", "UnlitGeneric", {
 	["$translucent"] = "1",
 	["$vertexcolor"] = "1"
 })
+local icon_custom = Material("vgui/glyph_steamworkshop.vmt") //copy from tf2itembrowsericon, bah
 
 
 
@@ -1489,9 +1490,28 @@ function PANEL:OpenEditor(id)
 		render.PopRenderTarget()
 		rtmat:SetTexture("$basetexture", rt)
 		surface.SetMaterial(rtmat)
+
 		//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
 		local diff = (1-(h/w))/2
-		surface.DrawTexturedRectUV(0,0,w,h,0,0+diff,1,1-diff)
+		local ustart, uend, vstart, vend = 0, 1, 0+diff, 1-diff
+		//The rendertarget materials we generate will draw slightly *zoomed in* by default, cutting off the edges on all 
+		//sides as if they were rescaled using $basetexturetransform. Drawing them tiled (i.e with 0-to-2 UVs) shows that 
+		//the rest of the texture still *exists*, just *outside* of the 0-to-1 UV space, so we can fix this by zooming the 
+		//UVs out past 0 and 1, but why does this happen in the first place??
+		ustart = -0.0295
+		uend = 1.0295
+		vstart = math.Remap(vstart, 0, 1, ustart, uend)
+		vend = math.Remap(vend, 0, 1, ustart, uend)
+
+		surface.DrawTexturedRectUV(0,0,w,h,ustart,vstart,uend,vend)
+
+		//Also draw the "custom item" corner icon on top of it, to match the browser
+		local size = tf.item_icon_sizes[2].cornericon
+		local xpos = w - size - (3 * tf.item_icon_sizes[2].scale) 
+		local ypos = 2 * tf.item_icon_sizes[2].scale
+		surface.SetMaterial(icon_custom)
+		surface.SetDrawColor(255,255,255)
+		surface.DrawTexturedRect(xpos, ypos, size, size)
 	end
 	tf.AddTFButtonSounds(mdl, true) //hover sound only, not click
 	mdl:DockMargin(0,0,8,0)
@@ -1614,6 +1634,8 @@ function PANEL:OpenEditor(id)
 			for i = 0, ent:GetBoneCount() - 1 do
 				ent:ManipulateBoneJiggle(i, 2)
 			end
+			//if it has a default animation, then pause it
+			ent:SetPlaybackRate(0)
 		end
 		if mdl.models[1] then
 			mdl.models[1]:SetAngles(Angle(editor.bp_mdlang:GetText()))

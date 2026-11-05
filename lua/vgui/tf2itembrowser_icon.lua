@@ -506,7 +506,12 @@ function PANEL:SetData(data)
 	//remove self from icon render targets; we'll re-add ourself later if needed
 	local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
 	if rtkey then TF2ItemBrowser_IconRTs[rtkey] = nil end
-	if data.wp.enabled or data.models.attached_festive or (i._customitem_bp and !self.mat) then //paintkits and festivizers might need to re-render if a setting changed, but custom items never need to render more than once
+	//try to grab generated custom item icon if it already exists
+	if !img_override and i._customitem_bp and file.Exists("tf2itembrowser_customitemicons/" .. i.name .. ".png", "DATA") then
+		img_override = "data/tf2itembrowser_customitemicons/" .. i.name .. ".png"
+		//don't bother searching data_static for item icons, because gmad doesn't allow them to be uploaded to the workshop in that folder (https://github.com/Facepunch/gmad/blob/master/include/AddonWhiteList.h)
+	end
+	if data.wp.enabled or data.models.attached_festive or (!self.mat and !img_override and i._customitem_bp) then //paintkits or festivizers might need to re-render from a setting change, but this isn't necessary for custom items
 		//Tell our paint func to queue rendering a custom rendertarget icon
 		self.mat = nil
 		self.ImageToQueue = nil
@@ -3927,30 +3932,38 @@ function PANEL:Paint(w, h)
 			surface.SetDrawColor(255,255,255,255)
 		end
 		surface.SetMaterial(self.mat)
-		local x, y, w2, h2 = 0, 0, w, h
-		//Draw weapon skin/festivizer rendertarget icons at a slightly smaller size to match their appearance in TF2, otherwise they'll butt right up against the edges of the panel
-		if self.mat_smallericon then
-			local icon_size = tf.cv_icon_size:GetInt()
-			local minusw = tf.item_icon_sizes[icon_size].rticon_minusw
-			local minush = h*(minusw/w)
-			x = x + (minusw/2)
-			y = y + (minush/2)
-			w2 = w - minusw
-			h2 = h - minush
-		end
+		
 		//these panels are a bit shorter than they are wide, so cut off the bottom and top of the material to center it
-		local diff = (1-(h2/w2))/2
-		surface.DrawTexturedRectUV(x,y,w2,h2,0,0+diff,1,1-diff)
+		local diff = (1-(h/w))/2
+		local ustart, uend, vstart, vend = 0, 1, 0+diff, 1-diff
+		local x, y, w2, h2 = 0, 0, w, h
+		if self.mat_smallericon then
+			//The rendertarget materials we generate will draw slightly *zoomed in* by default, cutting off the edges on all 
+			//sides as if they were rescaled using $basetexturetransform. Drawing them tiled (i.e with 0-to-2 UVs) shows that 
+			//the rest of the texture still *exists*, just *outside* of the 0-to-1 UV space, so we can fix this by zooming the 
+			//UVs out past 0 and 1, but why does this happen in the first place??
+			ustart = -0.0295
+			uend = 1.0295
+			vstart = math.Remap(vstart, 0, 1, ustart, uend)
+			vend = math.Remap(vend, 0, 1, ustart, uend)
+			//Draw weapon skin/festivizer rendertarget icons at a slightly smaller size on top of that, to match their appearance in TF2
+			w2 = w * 0.9275
+			h2 = h * 0.9275
+			x = x + (w-w2)/2
+			y = y + (h-h2)/2
+		end
+		
+		surface.DrawTexturedRectUV(x,y,w2,h2,ustart,vstart,uend,vend)
 		if self.mat_overlay then
 			local col = self.data.paint.col[false]
 			surface.SetDrawColor(col.x, col.y, col.z, 255)
 			surface.SetMaterial(self.mat_overlay)
-			surface.DrawTexturedRectUV(x,y,w2,h2,0,0+diff,1,1-diff)
+			surface.DrawTexturedRectUV(x,y,w2,h2,ustart,vstart,uend,vend)
 		end
 	elseif self.ImageToQueue then
 		self.mat_smallericon = nil
 		if TF2ItemBrowser_ImageQueuedBefore[self.ImageToQueue] then
-			self.mat = Material(self.ImageToQueue .. ".vmt")
+			self.mat = Material(self.ImageToQueue, "smooth")
 		else
 			table.insert(TF2ItemBrowser.ImageQueue, {pnl = self, img = self.ImageToQueue})
 		end
@@ -4026,81 +4039,100 @@ function PANEL:Paint(w, h)
 				end
 			end
 
-			//if there's nothing to render (i.e. custom item backpack icons with no models set) then call it done
-			if table.Count(models) == 0 then
-				self.no_image = true
+			//For war paints and festivizers, use a temporary render target, because these 
+			//are just incidental changes to an item and aren't likely to be reused much
+			if !i._customitem_bp then
+				//if there's nothing to render, then call it done
+				if table.Count(models) == 0 then
+					self.no_image = true
+					CleanUpModels()
+					return true
+				end
+
+				local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
+				if !rtkey then
+					for i = 1, 128 do //unnecessary max number of simultaneous rt icons; this is just a safeguard to not generate infinite textures in case this really screws up somehow
+						//get first nil key we can find; as icons are removed from this list, they can leave gaps for us to take
+						if TF2ItemBrowser_IconRTs[i] == nil then
+							TF2ItemBrowser_IconRTs[i] = self
+							rtkey = i
+							break
+						end
+					end
+				end
+				if rtkey == nil then return false end
+				local rtname = "TF2ItemBrowser_IconRT_" .. tostring(rtkey)
+				local rt = GetRenderTarget(rtname, 128, 128)
+				--[[local rt = GetRenderTargetEx(rtname, //same texture parameters as all tf2 backpack icon vtfs; commented out because DXT5 keeps generating solid black textures, and using BGRA8888 looks the same as default
+					128, 128,
+					RT_SIZE_NO_CHANGE,
+					MATERIAL_RT_DEPTH_SEPARATE, //MATERIAL_RT_DEPTH_NONE,
+					bit.bor(
+						256, //TEXTUREFLAGS_NOMIP
+						512, //TEXTUREFLAGS_NOLOD
+						8192 //TEXTUREFLAGS_EIGHTBITALPHA	
+					),
+					0,
+					IMAGE_FORMAT_BGRA8888//15 //IMAGE_FORMAT_DXT5 	
+				)]]
+				if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return false end
+
+				//Don't render the icon until the paintkit material is no longer a placeholder
+				if self.data.wp.enabled and tf.GetDependency("wp") then
+					local wp_state = WP.Materials.GetForEntity(models[1])
+					if wp_state == nil then
+						//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
+						//caused by removing an ent with a WP material), then reinstantiate it and try again
+						WP.Materials.Apply(models[1], models[1].instance)
+						return false
+					elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
+						return false
+					end
+				end
+
+				//Render the icon texture
+				render.PushRenderTarget(rt, 0, 0, 128, 128)
+				render.OverrideAlphaWriteEnable(true, true)
+				local cam = i._customitem_bp or tf.DoItemModelCamera(models, self)
+				render.SetWriteDepthToDestAlpha(false)
+				render.Clear(0, 0, 0, 0, true, true)
+				tf.DrawItemModels(0, 0, 128, 128, models, {}, cam.ang, cam.pos, cam.fov)
+				render.OverrideAlphaWriteEnable(false)
+				render.PopRenderTarget()
+
+				local mat = CreateMaterial(rtname, "UnlitGeneric", {
+					["$basetexture"] = "color/white",
+					["$translucent"] = "1",
+					["$vertexcolor"] = "1",
+				})
+				mat:SetTexture("$basetexture", rt)
+				//self:SetMaterial("!" .. rtname)
+				self.mat = mat
+				self.mat_smallericon = true //we only want to use the smaller icons for weapon skins/festives to make them match TF2, not our custom items
+
+				CleanUpModels()
+				return true
+			//For custom items, save the icon to a png, because we'll reuse it every time the item is shown in the browser; 
+			//reusing these prevents the awful hitching caused by model loading when scrolling down to view them
+			else
+				render.OverrideAlphaWriteEnable(true, true)
+				local cam = i._customitem_bp
+				render.SetWriteDepthToDestAlpha(false)
+				render.Clear(0, 0, 0, 0, true, true)
+				tf.DrawItemModels(0, 0, 128, 128, models, {}, cam.ang, cam.pos, cam.fov)
+				render.OverrideAlphaWriteEnable(false)
+
+				local img = render.Capture({format = "png", x = 0, y = 0, w = 128, h = 128})
+				if !file.IsDir("tf2itembrowser_customitemicons/", "DATA") then 
+					file.CreateDir("tf2itembrowser_customitemicons/")
+				end
+				if file.Write("tf2itembrowser_customitemicons/" .. i.name .. ".png", img) then
+					self.mat = Material("data/tf2itembrowser_customitemicons/" .. i.name .. ".png", "smooth")
+				end
+
 				CleanUpModels()
 				return true
 			end
-
-			local rtkey = table.KeyFromValue(TF2ItemBrowser_IconRTs, self)
-			if !rtkey then
-				for i = 1, 8192 do //ridiculous max number of simultaneous rt icons; this is just a safeguard to not generate infinite textures in case this really screws up somehow
-					//get first nil key we can find; as icons are removed from this list, they can leave gaps for us to take
-					if TF2ItemBrowser_IconRTs[i] == nil then
-						TF2ItemBrowser_IconRTs[i] = self
-						rtkey = i
-						break
-					end
-				end
-			end
-			if rtkey == nil then return false end
-			local rtname = "TF2ItemBrowser_IconRT_" .. tostring(rtkey)
-			local rt = GetRenderTarget(rtname, 128, 128)
-			--[[local rt = GetRenderTargetEx(rtname, //same texture parameters as all tf2 backpack icon vtfs; commented out because DXT5 keeps generating solid black textures, and using BGRA8888 looks the same as default
-				128, 128,
-				RT_SIZE_NO_CHANGE,
-				MATERIAL_RT_DEPTH_SEPARATE, //MATERIAL_RT_DEPTH_NONE,
-				bit.bor(
-					256, //TEXTUREFLAGS_NOMIP
-					512, //TEXTUREFLAGS_NOLOD
-					8192 //TEXTUREFLAGS_EIGHTBITALPHA	
-				),
-				0,
-				IMAGE_FORMAT_BGRA8888//15 //IMAGE_FORMAT_DXT5 	
-			)]]
-			if rt == nil then MsgN("Failed to create render target ", rtname, "; out of memory?") return false end
-
-			//Don't render the icon until the paintkit material is no longer a placeholder
-			if self.data.wp.enabled and tf.GetDependency("wp") then
-				local wp_state = WP.Materials.GetForEntity(models[1])
-				if wp_state == nil then
-					//If WP.Materials.GetForEntity got stuck and can't retrieve the material (usually 
-					//caused by removing an ent with a WP material), then reinstantiate it and try again
-					WP.Materials.Apply(models[1], models[1].instance)
-					return false
-				elseif string.StartsWith(wp_state:GetName(), "warpaint_placeholder") then
-					return false
-				end
-			end
-
-			//Render the icon texture
-			render.PushRenderTarget(rt, 0, 0, 128, 128)
-			render.OverrideAlphaWriteEnable(true, true)
-			local cam
-			if i._customitem_bp then 
-				cam = i._customitem_bp
-			else
-				cam = tf.DoItemModelCamera(models, self)
-			end
-			render.SetWriteDepthToDestAlpha(false)
-			render.Clear(0, 0, 0, 0, true, true)
-			tf.DrawItemModels(0, 0, 128, 128, models, {}, cam.ang, cam.pos, cam.fov)
-			render.OverrideAlphaWriteEnable(false)
-			render.PopRenderTarget()
-
-			local mat = CreateMaterial(rtname, "UnlitGeneric", {
-				["$basetexture"] = "color/white",
-				["$translucent"] = "1",
-				["$vertexcolor"] = "1"
-			})
-			mat:SetTexture("$basetexture", rt)
-			//self:SetMaterial("!" .. rtname)
-			self.mat = mat
-			self.mat_smallericon = !isstring(self.data.id) //we only want to use the smaller icons for weapon skins/festives to make them match TF2, not our custom items
-
-			CleanUpModels()
-			return true
 		end})
 	elseif self.random then
 		surface.SetMaterial(mat_random)
@@ -4203,6 +4235,15 @@ function PANEL:DoRightClick()
 			menu:AddOption("Edit custom item", function()
 				TF2ItemBrowser_OpenCustomItemEditor(self.data.id)
 			end)
+
+			if tf.TF2Items.items[self.data.id]._customitem_bp then
+				menu:AddOption("#spawnmenu.menu.rerender", function()
+					//Tell our paint func to queue rendering a custom rendertarget icon
+					self.mat = nil
+					self.ImageToQueue = nil
+					self.IconRenderToQueue = true
+				end)
+			end
 		end
 
 		//also put this debug option here

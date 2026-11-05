@@ -1042,7 +1042,7 @@ function PANEL:Think(...)
 				v.pnl.ImageToQueue = v.img //requeue it if the icon moves back onscreen
 				continue
 			end
-			v.pnl.mat = Material(v.img .. ".vmt")
+			v.pnl.mat = Material(v.img, "smooth")
 			if !TF2ItemBrowser_ImageQueuedBefore[v.img] then
 				TF2ItemBrowser_ImageQueuedBefore[v.img] = true 
 				break //only load one material per frame to prevent bad perf
