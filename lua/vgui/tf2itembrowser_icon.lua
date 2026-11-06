@@ -3747,7 +3747,7 @@ function PANEL:CreateSpawnPanel()
 	elseif IsValid(TF2ItemBrowser:GetEntity()) then
 		button:SetText(tf.GetPhrase("#Equip") or "EQUIP")
 	else
-		button:SetText(tf.GetPhrase("#MMenu_Create") or "CREATE") //this is the closest thing the tf2 localization files have to the verb "spawn"; gmod's community.properties has the word "spawn" but it might be referring to the location (noun) instead which isn't right
+		button:SetText(string.upper(language.GetPhrase("#spawn") or "spawn")) //tf2's localization files don't have the word "spawn" so this is from gmod's community.properties; hopefully this is translated as the action of spawning (verb) and not the location (noun)
 	end
 	button:Dock(TOP)
 	button:DockMargin(side_margins,tf.betweencategories-tf.betweenitems,side_margins,tf.betweencategories)
@@ -4217,7 +4217,7 @@ function PANEL:DoRightClick()
 			surface.PlaySound(self.sound_drop)
 		end
 	else
-		str = string.NiceName(string.lower(tf.GetPhrase("#MMenu_Create") or "CREATE"))
+		str = string.NiceName(string.NiceName(language.GetPhrase("#spawn") or "spawn")) //tf2's localization files don't have the word "spawn" so this is from gmod's community.properties; hopefully this is translated as the action of spawning (verb) and not the location (noun)
 		func = func or function()
 			TF2ItemBrowser:DoInput("item_spawn", self.data)
 			surface.PlaySound(self.sound_drop)
