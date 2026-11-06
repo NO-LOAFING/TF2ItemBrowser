@@ -625,6 +625,7 @@ function PANEL:SetupRandomItemIcon(random_settings) //optional arg to set the ra
 		aus_chance = 0.2,
 	}
 
+	self.ImageToQueue = "vgui/backpack_custom/random.png"
 	self.quality = "unique"
 	self.sound_pressed = "ui/item_dueling_pistols_pickup.wav" //like a roulette wheel, you know
 	//self.sound_drop = "ui/item_default_drop.wav" //no drop sound - we'll use the drop sound of whatever random item we pick instead
@@ -3881,7 +3882,6 @@ local BackpackItemGreyedOutBorder = GWEN_CreateTextureBorderScaled(0, 0, 256, 12
 //no need for BackpackItemGreyedOutSelectedBorder, it uses the same material as the standard one
 local col_GrayedOut = Color(46,43,42,255)
 //more here if we decide to do quality colors https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/client/econ/backpack_panel.cpp#L69
-local mat_random = Material("vgui/class_sel_sm_random_red.vtf")
 
 TF2ItemBrowser_IconRTs = {}
 function PANEL:Paint(w, h)
@@ -4134,11 +4134,6 @@ function PANEL:Paint(w, h)
 				return true
 			end
 		end})
-	elseif self.random then
-		surface.SetMaterial(mat_random)
-		//this texture is twice as tall as it is wide, and slightly off-center
-		local diff = (1-(h/w))/4
-		surface.DrawTexturedRectUV(w*0.04,0,w,h,0,0.27+diff,1,0.77-diff)
 	elseif !self.no_image then
 		//show loading icon
 		surface.SetMaterial(tf.spinner)
