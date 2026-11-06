@@ -370,10 +370,78 @@ SafeAmendItem(528, "The Short Circuit", function(i) i._disable_icon_camera = tru
 SafeAmendItem(588, "The Pomson 6000", function(i) i._disable_icon_camera = true end)
 SafeAmendItem(1179, "The Thermal Thruster", function(i) i._disable_icon_camera = true end)
 
-//TODO: better backpack icons (and names?) for:
-//1155 TF_WEAPON_PASSTIME GUN - this is the pass time jack, currently uses wrench icon and no name
-//1057 MvM GateBotLight Scout (and the others) - missing textures and all use the same name, bad localization for names and styles
-//30143 tw_demobot_armor (and the others) - placeholder white circle
+//the pass time jack's name is the broken localization string #Weapon_Passtime_Gun, and its icon is the stock wrench
+SafeAmendItem(1155, "TF_WEAPON_PASSTIME_GUN", function(i)
+	i.image_inventory = "vgui/backpack_custom/passtime_ball.png"
+	if CLIENT then
+		i.item_name = (tf.GetPhrase("#GameType_Passtime") or "PASS Time") .. " JACK" //only semi-localized, bad!!
+		i.item_type_name = string.NiceName(string.lower(tf.GetPhrase("#TF_Ball"))) //questionable localization string usage
+	end
+end)
+
+//mvm gatebot lights all have the same bad localization strings for names and styles, and missing textures for icons
+for _, tab in ipairs ({
+	{1057, "MvM GateBot Light Scout"},
+	{1058, "MvM GateBot Light Pyro", },
+	{1059, "MvM GateBot Light Medic"},
+	{1060, "MvM GateBot Light Heavy"},
+	{1061, "MvM GateBot Light Demoman"},
+	{1062, "MvM GateBot Light Sniper"},
+	{1063, "MvM GateBot Light Soldier"},
+	{1064, "MvM GateBot Light Spy"},
+	{1065, "MvM GateBot Light Engineer"},
+}) do
+	SafeAmendItem(tab[1], tab[2], function(i)
+		local class
+		for k, v in pairs (i.used_by_classes) do
+			class = k
+			break
+		end
+		i.image_inventory = "vgui/backpack_custom/gatebot_" .. class .. ".png"
+		i.item_name = tab[2] //use the internal item name as a fallback; not localized, bad!!
+		i.visuals.styles[0].name = "#QuestLog_Active" //"Active"
+		i.visuals.styles[1].name = "#TF_Quest_Status_Inactive" //"Inactive"
+		//these items also all have team skin entries for each style that force skin 0 for active and skin 1 for inactive; these seem
+		//to be a relic because they were also split into separate active and inactive models.
+		//the really odd part about this, though, is that in TF2, these skin overrides don't work at all?? some of these hats like the 
+		//soldier one have team-colored bits that use the standard skin 0 for red and skin 1 for blu, and if the skin overrides from the 
+		//styles *were* applied, the hat wouldalways be red when active, and always blue when inactive, but when the hats are actually
+		//used by mvm bots in TF2, this isn't the case. (https://steamcommunity.com/sharedfiles/filedetails/?id=198499241). it seems this
+		//was also the same when they were equippable by players for a while. (https://wiki.teamfortress.com/w/images/5/56/Player_wearing_gatebot_hats.png)
+		//get rid of these skin overrides to make the functionality match TF2.
+		i.visuals.styles[0].skin_red = nil
+		i.visuals.styles[0].skin_blu = nil
+		i.visuals.styles[1].skin_red = nil
+		i.visuals.styles[1].skin_blu = nil
+	end)
+end
+
+//mvm romevision items all have placeholder white circles for icons, except for the heavybot helmet for some reason
+for _, tab in ipairs ({
+	{30143, "tw_demobot_armor"},
+	{30144, "tw_demobot_helmet"},
+	{30145, "tw_engineerbot_armor"},
+	{30146, "tw_engineerbot_helmet"},
+	{30147, "tw_heavybot_armor"},
+	{30148, "tw_heavybot_helmet"}, //use a custom icon for this one as well to match the familiar blue color of the rest
+	{30149, "tw_medibot_chariot"},
+	{30150, "tw_medibot_hat"},
+	{30151, "tw_pyrobot_armor"},
+	{30152, "tw_pyrobot_helmet"},
+	{30153, "tw_scoutbot_armor"},
+	{30154, "tw_scoutbot_hat"},
+	{30155, "tw_sniperbot_armor"},
+	{30156, "tw_sniperbot_helmet"},
+	{30157, "tw_soldierbot_armor"},
+	{30158, "tw_soldierbot_helmet"},
+	{30159, "tw_spybot_armor"},
+	{30160, "tw_spybot_hood"},
+	{30161, "tw_sentrybuster"},
+}) do
+	SafeAmendItem(tab[1], tab[2], function(i)
+		i.image_inventory = "vgui/backpack_custom/" .. tab[2] .. ".png"
+	end)
+end
 
 
 //Make items inherit values from prefabs, which themselves inherit values from other prefabs, and so on
