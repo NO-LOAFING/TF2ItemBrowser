@@ -1,4 +1,5 @@
 CreateClientConVar("cl_tf2itembrowser_advbone", "0", true, false, "Use advanced bonemerge to attach items", 0, 1)
+CreateClientConVar("cl_tf2itembrowser_hidedependencywarning", "0", true, false, "If 1, never show the \"missing addons\" popup when opening the browser", 0, 1)
 	
 local icon_red = Material("vgui/store/store_redteam.vmt")
 local icon_blu = Material("vgui/store/store_blueteam.vmt")
@@ -12,45 +13,6 @@ if !tf then return end
 DEFINE_BASECLASS("DFrame")
 
 function PANEL:Init()
-
-	if !TF2ItemBrowser_DoneDependencyWarning then
-		local strs = {}
-		if !tf.GetDependency("advbone") then
-			if tf.GetDependency("animprop") and tf.GetDependency("easybone") and tf.GetDependency("pe+") then
-				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. Unusuals won't be adjustable, and may not attach properly.\nYou also won't be able to set animations on attached items.")
-			elseif tf.GetDependency("animprop") and tf.GetDependency("easybone") then
-				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. You won't be able to set animations on attached items.")
-			elseif tf.GetDependency("pe+") then
-				table.insert(strs, "\n\"Advanced Bonemerge Tool\" addon not found. Unusuals won't be adjustable, and may not attach properly.")
-			end
-			if !tf.GetDependency("easybone") then
-				table.insert(strs, "\n\"Advanced Bonemerge Tool\" and \"Easy Bonemerge Tool\" addons both not found. You won't be able to attach items.")
-			end
-		end
-		if !tf.GetDependency("hatpainter") then
-			table.insert(strs, "\n\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow or jarate effects.")
-		end
-		if !tf.GetDependency("pe+") then
-			table.insert(strs, "\n\"Particle Effects+\" addon not found. You won't be able to add unusuals or other particle effects.")
-		end
-		if !tf.GetDependency("wp") then
-			table.insert(strs, "\n\"TF2 Warpaint Tool\" addon not found. You won't be able to add war paints.")
-		end
-		if !tf.GetDependency("animprop") then
-			table.insert(strs, "\n\"Animated Props\" addon not found. You won't be able to set animations on items.") //this is, like, four items. is this still worth the warning?
-		end
-
-		if #strs > 0 then
-			//Display these as nice notifications, but also print them in chat and console so that players 
-			//can go back and read them if they missed them, i.e. to check which addons they're missing
-			for _, str in ipairs (table.Reverse(strs)) do //make these appear in the same order as in the chat
-				notification.AddLegacy(string.TrimLeft(str, "\n"), NOTIFY_ERROR, 6*#strs)
-			end
-			chat.AddText("TF2 Item Browser:", unpack(strs))
-			surface.PlaySound("ui/chat_display_text.wav")
-		end
-		TF2ItemBrowser_DoneDependencyWarning = true //we only need to show this once per session
-	end
 
 	local right_holder = vgui.Create("DPanel", self)
 	right_holder.Paint = function() end
@@ -697,6 +659,76 @@ function PANEL:Init()
 		drop:SetEnabled(false)
 		drop:ChooseOptionID(advbone_id)
 	end
+
+
+	//Dependency warning message
+	if !GetConVar("cl_tf2itembrowser_hidedependencywarning"):GetBool() and !TF2ItemBrowser_DoneDependencyWarning then
+		TF2ItemBrowser_DoneDependencyWarning = true //we only need to show this once per session
+
+		local strs = {}
+		if !tf.GetDependency("advbone") then
+			if tf.GetDependency("animprop") and tf.GetDependency("easybone") and tf.GetDependency("pe+") then
+				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. Unusual effects won't be adjustable, and may not attach to items correctly. You also won't be able to animate items like the parachute or jetpack if they're attached to a model.")
+			elseif tf.GetDependency("animprop") and tf.GetDependency("easybone") then
+				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. You won't be able to animate items like the parachute or jetpack if they're attached to a model.")
+			elseif tf.GetDependency("pe+") then
+				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. Unusual effects won't be adjustable, and may not attach to items correctly.")
+			end
+			if !tf.GetDependency("easybone") then
+				table.insert(strs, "\"Advanced Bonemerge Tool\" and \"Easy Bonemerge Tool\" addons both not found. You won't be able to attach items to models.")
+			end
+		end
+		if !tf.GetDependency("hatpainter") then
+			table.insert(strs, "\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow, or jarate effects.")
+		end
+		if !tf.GetDependency("pe+") then
+			table.insert(strs, "\"Particle Effects+\" addon not found. You won't be able to add unusual effects or other particle effects.")
+		end
+		if !tf.GetDependency("wp") then
+			table.insert(strs, "\"TF2 Warpaint Tool\" addon not found. You won't be able to apply war paints.")
+		end
+		if !tf.GetDependency("animprop") then
+			table.insert(strs, "\"Animated Props\" addon not found. You won't be able to animate items like the parachute or jetpack.") //this is, like, four items. is this still worth the warning?
+		end
+
+		if #strs > 0 then
+			local pnl = tf.AddTFPopupOverlay(self, "Missing addons", function(pnl)
+				local text = vgui.Create("DLabel", pnl)
+				text:SetWrap(true)
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemDesc")
+				text:SetColor(tf.gui_colors.TanLight)
+				text:SetText("")
+				for _, str in ipairs (strs) do
+					if text:GetText() != "" then text:SetText(text:GetText() .. "\n\n") end
+					text:SetText(text:GetText() .. str)
+				end
+				text:SetText(text:GetText() .. "\n\nYou'll still be able to use the TF2 Item Browser, but these features will be disabled. To subscribe to missing addons, check out the Steam Workshop page!")
+				text:Dock(TOP)
+				text:DockMargin(0,tf.betweencategories*1.5,0,0)
+
+				local check = tf.TFStyleVGUI("DCheckBoxLabel", pnl)
+				check:SetText(tf.GetPhrase("#TF_Competitive_Welcome_DontShow") or "Don't show this again")
+				check:SetFont("TF2ItemBrowser_ItemDesc")
+				check:Dock(TOP)
+				check:DockMargin(70,tf.betweencategories*1.5,0,-tf.betweencategories*1)
+				check:SetChecked(tf.cv_icon_size:GetInt() == 1)
+				check.OnChange = function(_, val)
+					local data = 0
+					if val then data = 1 end
+					LocalPlayer():ConCommand("cl_tf2itembrowser_hidedependencywarning" .. data)
+				end
+			end, 
+			string.upper(tf.GetPhrase("#TF_OK") or "OK"), function(pnl)
+				pnl:Remove()
+			end,
+			"#problems.open_on_workshop", function(pnl)
+				gui.OpenURL("https://steamcommunity.com/sharedfiles/filedetails/?id=3054174781") //TODO: placeholder url, update this to the correct workshop url once uploaded
+			end)
+			timer.Simple(0, function() surface.PlaySound("ui/hint.wav") end) //wait until next frame to ensure the sound doesn't get cut off
+		end
+	end
+
 
 	filters:InvalidateLayout(true)
 	filters:SizeToChildren(false,true)

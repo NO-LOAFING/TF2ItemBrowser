@@ -41,148 +41,107 @@ function PANEL:OpenEditor(id)
 	button_1:SizeToContentsX(20)
 	button_1.DoClick = function()
 		//Open save gui
-		local back = vgui.Create("DPanel", editor)
-		back:SetSize(editor:GetSize())
-		function back:Paint(w,h)
-			surface.SetDrawColor(tf.gui_colors.TanDarker.r, tf.gui_colors.TanDarker.g, tf.gui_colors.TanDarker.b, 192)
-			surface.DrawRect(0,0,w,h)
-		end
-		local pnl = vgui.Create("DSizeToContents", editor)
-		pnl:DockPadding(20,20,20,20)
-		function pnl:Paint(w, h)
-			tf.GrayDialogBorder(0,0,w,h)
-		end
-		function pnl:OnRemove()
-			back:Remove()
-		end
-		pnl:SetSize(650,400)
-		pnl:Center()
-		editor.SavePopup = pnl
+		local pnl = tf.AddTFPopupOverlay(editor, "Save custom item", function(pnl)
+			local entry_holder = vgui.Create("Panel", pnl)
+			entry_holder:Dock(TOP)
+			entry_holder:DockMargin(0,tf.betweencategories*1.5,0,0)
+			entry_holder:SetHeight(28)
+			local text = vgui.Create("DLabel", entry_holder)
+			text:SetFont("TF2ItemBrowser_ItemName")
+			text:SetColor(tf.gui_colors.TanLight)
+			text:SetText("Save As:")
+			text:SetContentAlignment(6)
+			text:SizeToContentsX()
+			text:Dock(LEFT)
+			text:DockMargin(0,0,8,0)
+			local _pnl = vgui.Create("DPanel", entry_holder)
+			_pnl:Dock(FILL)
+			_pnl:DockPadding(4,4,4,4)
+			function _pnl:Paint(w,h)
+				draw.RoundedBox(12, 0,0,w,h, color_black)
+			end
+			local entry = tf.TFStyleVGUI("DTextEntry", _pnl)
+			entry:Dock(FILL)
+			entry:SetText(editor.SavedName)
+			entry:RequestFocus()
+			entry:SelectAllText(true)
+			pnl.entry = entry
+			local text = vgui.Create("DLabel", _pnl)
+			text:SetFont("TF2ItemBrowser_ItemDesc")
+			text:SetColor(tf.gui_colors.TanDark)
+			text:SetText("data/tf2itembrowser_customitems/")
+			text:SizeToContentsX()
+			text:Dock(LEFT)
+			text:DockMargin(0,0,4,0)
+			local text = vgui.Create("DLabel", _pnl)
+			text:SetFont("TF2ItemBrowser_ItemDesc")
+			text:SetColor(tf.gui_colors.TanDark)
+			text:SetText(".txt")
+			text:SizeToContentsX()
+			text:Dock(RIGHT)
+			text:DockMargin(4,0,0,0)
 
-		local text = vgui.Create("DLabel", pnl)
-		text:SetFont("TF2ItemBrowser_ItemName_Larger")
-		text:SetColor(tf.gui_colors.LightRed)
-		text:SetText("Save custom item")
-		text:SetContentAlignment(5)
-		text:Dock(TOP)
+			local text = vgui.Create("DLabel", pnl)
+			pnl.errortext = text
+			text:SetWrap(true)
+			text:SetFont("TF2ItemBrowser_ItemDesc")
+			text:SetColor(tf.desc_colors.negative)
+			text:SetText("")
+			text:Dock(TOP)
+			text:SetEnabled(false)
+			text:SetTall(0)
 
-		local entry_holder = vgui.Create("Panel", pnl)
-		entry_holder:Dock(TOP)
-		entry_holder:DockMargin(0,tf.betweencategories*1.5,0,0)
-		entry_holder:SetHeight(28)
-		local text = vgui.Create("DLabel", entry_holder)
-		text:SetFont("TF2ItemBrowser_ItemName")
-		text:SetColor(tf.gui_colors.TanLight)
-		text:SetText("Save As:")
-		text:SetContentAlignment(6)
-		text:SizeToContentsX()
-		text:Dock(LEFT)
-		text:DockMargin(0,0,8,0)
-		local _pnl = vgui.Create("DPanel", entry_holder)
-		_pnl:Dock(FILL)
-		_pnl:DockPadding(4,4,4,4)
-		function _pnl:Paint(w,h)
-			draw.RoundedBox(12, 0,0,w,h, color_black)
-		end
-		local entry = tf.TFStyleVGUI("DTextEntry", _pnl)
-		entry:Dock(FILL)
-		entry:SetText(editor.SavedName)
-		entry:RequestFocus()
-		entry:SelectAllText(true)
-		local text = vgui.Create("DLabel", _pnl)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.gui_colors.TanDark)
-		text:SetText("data/tf2itembrowser_customitems/")
-		text:SizeToContentsX()
-		text:Dock(LEFT)
-		text:DockMargin(0,0,4,0)
-		local text = vgui.Create("DLabel", _pnl)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.gui_colors.TanDark)
-		text:SetText(".txt")
-		text:SizeToContentsX()
-		text:Dock(RIGHT)
-		text:DockMargin(4,0,0,0)
+			local i = tf.TF2Items.items[editor.SavedName]
+			if i and i._file_origin.GAME then
+				local text = vgui.Create("DLabel", pnl)
+				text:SetWrap(true)
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemDesc")
+				text:SetColor(tf.quality_colors.unique) //dumb
+				if !i._file_origin.DATA then
+					text:SetText("NOTE: This item is being loaded from an addon. Saving over it using the same file name will cause your saved item to be loaded instead of the addon item.")
+				else
+					text:SetText("NOTE: This saved item is overriding an addon item with the same file name.")
+				end
+				text:Dock(TOP)
+				text:DockMargin(0,tf.betweencategories*1.5,0,0)
+			end
 
-		local text = vgui.Create("DLabel", pnl)
-		pnl.errortext = text
-		text:SetWrap(true)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.desc_colors.negative)
-		text:SetText("")
-		text:Dock(TOP)
-		text:SetEnabled(false)
-		text:SetTall(0)
-
-		local i = tf.TF2Items.items[editor.SavedName]
-		if i and i._file_origin.GAME then
 			local text = vgui.Create("DLabel", pnl)
 			text:SetWrap(true)
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemDesc")
-			text:SetColor(tf.quality_colors.unique) //dumb
-			if !i._file_origin.DATA then
-				text:SetText("NOTE: This item is being loaded from an addon. Saving over it using the same file name will cause your saved item to be loaded instead of the addon item.")
-			else
-				text:SetText("NOTE: This saved item is overriding an addon item with the same file name.")
-			end
+			text:SetColor(tf.gui_colors.TanLight)
+			text:SetText("Tips for developers:\n\n- Custom items in the browser are sorted alphabetically by file name. This means you can keep item sets together by giving them a shared prefix like \"setname_hat\", \"setname_shirt\", and so on.\n\n- To include a custom item in an addon, move the saved file into the addon's \"data_static/tf2itembrowser_customitems/\" folder. If the same file name is in both GMod's data folder AND an addon's data_static folder (i.e. because a player saved over an addon item), the one in the data folder takes priority.")
 			text:Dock(TOP)
 			text:DockMargin(0,tf.betweencategories*1.5,0,0)
-		end
-
-		local text = vgui.Create("DLabel", pnl)
-		text:SetWrap(true)
-		text:SetAutoStretchVertical(true)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.gui_colors.TanLight)
-		text:SetText("Tips for developers:\n\n- Custom items in the browser are sorted alphabetically by file name. This means you can keep item sets together by giving them a shared prefix like \"setname_hat\", \"setname_shirt\", and so on.\n\n- To include a custom item in an addon, move the saved file into the addon's \"data_static/tf2itembrowser_customitems/\" folder. If the same file name is in both GMod's data folder AND an addon's data_static folder (i.e. because a player saved over an addon item), the one in the data folder takes priority.")
-		text:Dock(TOP)
-		text:DockMargin(0,tf.betweencategories*1.5,0,0)
-
-		local button_holder = vgui.Create("Panel", pnl)
-		local button_1 = tf.TFStyleVGUI("DButton", button_holder)
-		button_1:SetText(tf.GetPhrase("#TF_SavePreset") or "SAVE")
-		button_1:SizeToContentsX(20)
-		button_1.DoClick = function()
+		end,
+		tf.GetPhrase("#TF_SavePreset") or "SAVE", function(pnl)
 			local i = {}
-			for pnl, funcs in pairs (editor.controls) do
+			for _, funcs in pairs (editor.controls) do
 				if funcs.Save then funcs.Save(i) end
 			end
-			i.name = entry:GetText():lower()
+			i.name = pnl.entry:GetText():lower()
 			MsgN("\n\n\n")
 			PrintTable(i)
 
 			net.Start("TF2ItemBrowser_NewCustomItem_SendToSv")
 				net.WriteData(util.Compress(util.TableToJSON(i)))
 			net.SendToServer()
-		end
-		local button_2 = tf.TFStyleVGUI("DButton", button_holder)
-		button_2:SetText(string.upper(language.GetPhrase("dialog.cancel")))
-		button_2:SizeToContentsX(20)
-		button_2.DoClick = function()
+		end,
+		string.upper(language.GetPhrase("dialog.cancel")), function(pnl)
 			pnl:Remove()
-		end
-		button_holder:Dock(TOP)
-		button_holder:DockMargin(0,tf.betweencategories*1.5,0,0)
-		local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
-		function button_holder:PerformLayout(w, h)
-			button_1:SetWide(button_w)
-			button_1:SetPos((w/2)-4-button_w, 0)
-			button_2:SetWide(button_w)
-			button_2:SetPos((w/2)+4, 0)
-			button_holder:SizeToChildren(false, true)
-		end
-
-		pnl:InvalidateLayout(true)
+		end)
+		editor.SavePopup = pnl
 		function pnl:DoConfirmation(success)
 			if success then
 				surface.PlaySound("replay/rendercomplete.wav")
-				editor.SavedName = entry:GetText():lower() //show this same filename in the save window if we open it again
+				editor.SavedName = pnl.entry:GetText():lower() //show this same filename in the save window if we open it again
 				pnl:Remove()
 			else
 				surface.PlaySound("replay/replaydialog_warn.wav")
 				local text = pnl.errortext
-				text:SetText("Couldn't save \"data/tf2itembrowser_customitems/" .. entry:GetText():lower() .. ".txt\" - bad file name?")
+				text:SetText("Couldn't save \"data/tf2itembrowser_customitems/" .. pnl.entry:GetText():lower() .. ".txt\" - bad file name?")
 				text:SetEnabled(true)
 				text:SetAutoStretchVertical(true)
 				text:DockMargin(0,4,0,0)
@@ -195,89 +154,47 @@ function PANEL:OpenEditor(id)
 	button_2:SizeToContentsX(20)
 	button_2.DoClick = function()
 		//Open delete gui
-		local back = vgui.Create("DPanel", editor)
-		back:SetSize(editor:GetSize())
-		function back:Paint(w,h)
-			surface.SetDrawColor(tf.gui_colors.TanDarker.r, tf.gui_colors.TanDarker.g, tf.gui_colors.TanDarker.b, 192)
-			surface.DrawRect(0,0,w,h)
-		end
-		local pnl = vgui.Create("DSizeToContents", editor)
-		pnl:DockPadding(20,20,20,20)
-		function pnl:Paint(w, h)
-			tf.GrayDialogBorder(0,0,w,h)
-		end
-		function pnl:OnRemove()
-			back:Remove()
-		end
-		pnl:SetSize(500,210)
-		pnl:Center()
-		editor.SavePopup = pnl
-
-		local text = vgui.Create("DLabel", pnl)
-		text:SetFont("TF2ItemBrowser_ItemName_Larger")
-		text:SetColor(tf.gui_colors.LightRed)
-		text:SetText("Delete custom item")
-		text:SetContentAlignment(5)
-		text:Dock(TOP)
-
-		local text = vgui.Create("DLabel", pnl)
-		text:SetWrap(true)
-		text:SetAutoStretchVertical(true)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.gui_colors.TanLight)
-		text:SetText("Are you sure you want to delete \"data/tf2itembrowser_customitems/" .. editor.SavedName .. ".txt\"?\nThis cannot be undone!")
-		text:Dock(TOP)
-		text:DockMargin(0,tf.betweencategories*1.5,0,0)
-
-		local i = tf.TF2Items.items[editor.SavedName]
-		if i and i._file_origin.GAME and i._file_origin.DATA then
+		local pnl = tf.AddTFPopupOverlay(editor, "Delete custom item", function(pnl)
 			local text = vgui.Create("DLabel", pnl)
 			text:SetWrap(true)
 			text:SetAutoStretchVertical(true)
 			text:SetFont("TF2ItemBrowser_ItemDesc")
-			text:SetColor(tf.quality_colors.unique) //dumb
-			text:SetText("NOTE: This saved item is overriding an addon item with the same file name. Deleting it will cause the addon item to be loaded instead.")
+			text:SetColor(tf.gui_colors.TanLight)
+			text:SetText("Are you sure you want to delete \"data/tf2itembrowser_customitems/" .. editor.SavedName .. ".txt\"?\nThis cannot be undone!")
 			text:Dock(TOP)
-			text:DockMargin(0,tf.betweencategories,0,0)
-		end
+			text:DockMargin(0,tf.betweencategories*1.5,0,0)
 
-		local text = vgui.Create("DLabel", pnl)
-		pnl.errortext = text
-		text:SetWrap(true)
-		text:SetFont("TF2ItemBrowser_ItemDesc")
-		text:SetColor(tf.desc_colors.negative)
-		text:SetText("")
-		text:Dock(TOP)
-		text:SetEnabled(false)
-		text:SetTall(0)
+			local i = tf.TF2Items.items[editor.SavedName]
+			if i and i._file_origin.GAME and i._file_origin.DATA then
+				local text = vgui.Create("DLabel", pnl)
+				text:SetWrap(true)
+				text:SetAutoStretchVertical(true)
+				text:SetFont("TF2ItemBrowser_ItemDesc")
+				text:SetColor(tf.quality_colors.unique) //dumb
+				text:SetText("NOTE: This saved item is overriding an addon item with the same file name. Deleting it will cause the addon item to be loaded instead.")
+				text:Dock(TOP)
+				text:DockMargin(0,tf.betweencategories,0,0)
+			end
 
-		local button_holder = vgui.Create("Panel", pnl)
-		local button_1 = tf.TFStyleVGUI("DButton", button_holder)
-		button_1:SetText(string.upper(tf.GetPhrase("#TF_SteamWorkshop_Delete") or "Delete"))
-		button_1:SizeToContentsX(20)
-		button_1.DoClick = function()
+			local text = vgui.Create("DLabel", pnl)
+			pnl.errortext = text
+			text:SetWrap(true)
+			text:SetFont("TF2ItemBrowser_ItemDesc")
+			text:SetColor(tf.desc_colors.negative)
+			text:SetText("")
+			text:Dock(TOP)
+			text:SetEnabled(false)
+			text:SetTall(0)
+		end,
+		string.upper(tf.GetPhrase("#TF_SteamWorkshop_Delete") or "Delete"), function(pnl)
 			net.Start("TF2ItemBrowser_DeleteCustomItem_SendToSv")
 				net.WriteString(editor.SavedName)
 			net.SendToServer()
-		end
-		local button_2 = tf.TFStyleVGUI("DButton", button_holder)
-		button_2:SetText(string.upper(language.GetPhrase("dialog.cancel")))
-		button_2:SizeToContentsX(20)
-		button_2.DoClick = function()
+		end,
+		string.upper(language.GetPhrase("dialog.cancel")), function(pnl)
 			pnl:Remove()
-		end
-		button_holder:Dock(TOP)
-		button_holder:DockMargin(0,tf.betweencategories*1.5,0,0)
-		local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
-		function button_holder:PerformLayout(w, h)
-			button_1:SetWide(button_w)
-			button_1:SetPos((w/2)-4-button_w, 0)
-			button_2:SetWide(button_w)
-			button_2:SetPos((w/2)+4, 0)
-			button_holder:SizeToChildren(false, true)
-		end
-
-		pnl:InvalidateLayout(true)
+		end)
+		editor.SavePopup = pnl
 		function pnl:DoConfirmation(success)
 			if success then
 				surface.PlaySound("replay/deleted_take.wav")

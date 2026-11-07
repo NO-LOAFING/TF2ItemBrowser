@@ -2138,6 +2138,62 @@ if CLIENT then
 		end
 		return pnl
 	end
+	//another shared func used to create editor save/delete popups and browser dependency popup
+	function tf.AddTFPopupOverlay(parent, header_text, populatefunc, button_1_text, button_1_doclick, button_2_text, button_2_doclick)
+		local back = vgui.Create("DPanel", parent)
+		back:SetMouseInputEnabled(false) //keep parent clickable, to avoid situations where if the popup was so much taller than the parent that its close button was offscreen, it would become impossible to close either of them
+		function back:Paint(w,h)
+			surface.SetDrawColor(tf.gui_colors.TanDarker.r, tf.gui_colors.TanDarker.g, tf.gui_colors.TanDarker.b, 192)
+			surface.DrawRect(0,0,w,h)
+		end
+		local pnl = vgui.Create("DSizeToContents", parent)
+		pnl:DockPadding(20,20,20,20)
+		function pnl:Paint(w, h)
+			tf.GrayDialogBorder(0,0,w,h)
+		end
+		function pnl:OnRemove()
+			back:Remove()
+		end
+		function pnl.Think()
+			back:SetSize(parent:GetSize())
+			pnl:Center()
+		end
+		pnl:SetSize(620,210)
+
+		local text = vgui.Create("DLabel", pnl)
+		text:SetFont("TF2ItemBrowser_ItemName_Larger")
+		text:SetColor(tf.gui_colors.LightRed)
+		text:SetText(header_text)
+		text:SetContentAlignment(5)
+		text:Dock(TOP)
+
+		//Populate other stuff for this specific popup
+		populatefunc(pnl)
+
+		local button_holder = vgui.Create("Panel", pnl)
+		local button_1 = tf.TFStyleVGUI("DButton", button_holder)
+		button_1:SetText(button_1_text)
+		button_1:SizeToContentsX(20)
+		button_1.DoClick = function() button_1_doclick(pnl) end
+		local button_2 = tf.TFStyleVGUI("DButton", button_holder)
+		button_2:SetText(button_2_text)
+		button_2:SizeToContentsX(20)
+		button_2.DoClick = function() button_2_doclick(pnl) end
+		button_holder:Dock(TOP)
+		button_holder:DockMargin(0,tf.betweencategories*1.5,0,0)
+		local button_w = math.max(180, button_1:GetWide(), button_2:GetWide()) //make these extra wide to better fill all the space they have, unless some language has a really long word here
+		function button_holder:PerformLayout(w, h)
+			button_1:SetWide(button_w)
+			button_1:SetPos((w/2)-4-button_w, 0)
+			button_2:SetWide(button_w)
+			button_2:SetPos((w/2)+4, 0)
+			button_holder:SizeToChildren(false, true)
+		end
+		
+		pnl:InvalidateChildren(true)
+		pnl:InvalidateLayout(true)
+		return pnl
+	end
 
 
 

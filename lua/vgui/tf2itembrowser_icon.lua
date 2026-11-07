@@ -755,13 +755,11 @@ function PANEL:GenerateRandomItem()
 	else
 		TF2ItemBrowser:DoInput("item_spawn", data)
 	end
-	timer.Simple(FrameTime(), function()
-		//if the item model hasn't been loaded yet, then the game will stutter when loading the model,
-		//so wait until the next frame so that the sound doesn't play and then immediately get cut off.
-		//the timing is a little tricky here because it won't load until the server receives the spawn input 
-		//from the client, but using FrameTime() here works for singleplayer without having a noticeable delay.
-		surface.PlaySound(i.drop_sound or "ui/item_default_drop.wav")
-	end)
+	//if the item model hasn't been loaded yet, then the game will stutter when loading the model,
+	//so wait until the next frame so that the sound doesn't play and then immediately get cut off.
+	//the timing is a little tricky here because it won't load until the server receives the spawn input 
+	//from the client, but using FrameTime() here works for singleplayer without having a noticeable delay.
+	timer.Simple(FrameTime(), function() surface.PlaySound(i.drop_sound or "ui/item_default_drop.wav") end)
 
 end
 
@@ -4182,21 +4180,20 @@ end
 
 function PANEL:DoClick()
 
-	timer.Simple(0, function()
-		//if the item model hasn't been loaded yet, the game will stutter when the spawnpanel is opened,
-		//so wait until the next frame so that the sound doesn't play and then immediately get cut off
-		surface.PlaySound(self.sound_pressed)
-	end)
+	//if the item model hasn't been loaded yet, the game will stutter when the spawnpanel is opened,
+	//so wait until the next frame so that the sound doesn't play and then immediately get cut off
+	timer.Simple(0, function() surface.PlaySound(self.sound_pressed) end)
+
 	self:CreateSpawnPanel()
 
 end
 
 function PANEL:DoRightClick()
 
-	timer.Simple(0, function()
-		//do this on a timer too just to make sure it doesn't sound subtly different from left-click
-		surface.PlaySound(self.sound_pressed) //not tf2-authentic to do this on right click, but feels better this way
-	end)
+	
+	//do this on a timer too just to make sure it doesn't sound subtly different from left-click
+	timer.Simple(0, function() surface.PlaySound(self.sound_pressed) end) //not tf2-authentic to do this on right click, but feels better this way
+	
 	local menu = DermaMenu()
 
 	//quick-spawn options, to spawn/equip items quickly without customizing them first, or to unequip items more efficiently
@@ -4214,13 +4211,13 @@ function PANEL:DoRightClick()
 		str = string.NiceName(string.lower(tf.GetPhrase("#Equip") or "EQUIP"))
 		func = func or function()
 			TF2ItemBrowser:DoInput("attach_item_spawn", self.data, false)
-			surface.PlaySound(self.sound_drop)
+			timer.Simple(FrameTime(), function() surface.PlaySound(self.sound_drop) end) //like GenerateRandomItem, wait a frame just to make sure first-time model loads don't cut the sound off
 		end
 	else
 		str = string.NiceName(string.NiceName(language.GetPhrase("#spawn") or "spawn")) //tf2's localization files don't have the word "spawn" so this is from gmod's community.properties; hopefully this is translated as the action of spawning (verb) and not the location (noun)
 		func = func or function()
 			TF2ItemBrowser:DoInput("item_spawn", self.data)
-			surface.PlaySound(self.sound_drop)
+			timer.Simple(FrameTime(), function() surface.PlaySound(self.sound_drop) end) //^^
 		end
 	end
 	menu:AddOption(str, func)
