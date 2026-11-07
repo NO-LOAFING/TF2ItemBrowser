@@ -666,7 +666,7 @@ function PANEL:GenerateRandomItem()
 
 	//select a random style; australium styles use a separate probability, so divide styles into australium and non-australium when selecting.
 	local did_australium
-	if i.visuals and i.visuals.styles then
+	if i.visuals and i.visuals.styles and !i._call_styles_animations then
 		local styles_normal, styles_aus = {}, {}
 		for k, v in SortedPairs (i.visuals.styles) do
 			if v.aus_prefix then

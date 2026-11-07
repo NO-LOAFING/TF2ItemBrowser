@@ -668,9 +668,9 @@ function PANEL:Init()
 		local strs = {}
 		if !tf.GetDependency("advbone") then
 			if tf.GetDependency("animprop") and tf.GetDependency("easybone") and tf.GetDependency("pe+") then
-				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. Unusual effects won't be adjustable, and may not attach to items correctly. You also won't be able to animate items like the parachute or jetpack if they're attached to a model.")
+				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. Unusual effects won't be adjustable, and may not attach to items correctly. You also won't be able to attach animated item models like the parachute or jetpack.")
 			elseif tf.GetDependency("animprop") and tf.GetDependency("easybone") then
-				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. You won't be able to animate items like the parachute or jetpack if they're attached to a model.")
+				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. You won't be able to attach animated item models like the parachute or jetpack.")
 			elseif tf.GetDependency("pe+") then
 				table.insert(strs, "\"Advanced Bonemerge Tool\" addon not found. Unusual effects won't be adjustable, and may not attach to items correctly.")
 			end
@@ -679,7 +679,7 @@ function PANEL:Init()
 			end
 		end
 		if !tf.GetDependency("hatpainter") then
-			table.insert(strs, "\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to add paint, crit glow, or jarate effects.")
+			table.insert(strs, "\"Hat Painter & Crit Glow Tools\" addon not found. You won't be able to apply paint colors, crit glow colors, or jarate effects.")
 		end
 		if !tf.GetDependency("pe+") then
 			table.insert(strs, "\"Particle Effects+\" addon not found. You won't be able to add unusual effects or other particle effects.")

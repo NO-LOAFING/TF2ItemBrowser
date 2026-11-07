@@ -2932,7 +2932,7 @@ if SERVER then
 					if is_fallback and parent:LookupBone("bip_head") then e.AdvBone_BoneInfo[0].parent = "bip_head" end
 					local const = constraint.AdvBoneMerge(parent, e, ply)
 					if e != old_e then old_e:Remove() end
-				elseif tf.GetDependency("easybone") then
+				elseif tf.GetDependency("easybone") and !anim then //in edge cases where advbone isn't nstalled but animprop is, make sure we don't try to easybonemerge an animprop (i.e. parachute submodels), because that doesn't work and just attaches a duplicate model to parent
 					e = rb655_ApplyBonemerge(e2, parent) //unlike advbone, this one expects AttachedEntity for prop_effects
 				end
 			end
@@ -3245,10 +3245,11 @@ if SERVER then
 				//off (which is what would happen if you were to spawn the thermal thruster with just the non-animated taunt prop, 
 				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
 				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
-				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") then
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") 
+				and (tf.GetDependency("advbone") or !IsValid(ent)) then //if there's a selected ent but no advbone, then spawn all submodels as un-animated props so we can still attach them. if there's *no* selected ent and no advbone, then spawn all submodels as a loose pile of unattached animprops.
 					anim = i.visuals.styles[data.style]._anim
 					if anim then
-						anim = {anim = anim[v.role] or "", undo = k == 1}
+						anim = {anim = anim[v.role] or "", undo = (k == 1 or !tf.GetDependency("advbone"))} //if advbone is uninstalled, submodels like the base jumper's parachute won't be attached to the main item model, so make sure we can undo them
 					else
 						anim = nil
 					end
@@ -3338,7 +3339,8 @@ if SERVER then
 				//and then enable the animated base item afterward). this also conveniently sidesteps the bone position lag that 
 				//otherwise happens when merging the base jumper's animated parachute to the non-animated main item.
 				local anim
-				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") and tf.GetDependency("advbone") then
+				if i.visuals and i.visuals.styles and i.visuals.styles[data.style] and tf.GetDependency("animprop") 
+				and tf.GetDependency("advbone") then
 					anim = i.visuals.styles[data.style]._anim
 					if anim then
 						anim = {anim = anim[v.role] or "", undo = k == 1}
