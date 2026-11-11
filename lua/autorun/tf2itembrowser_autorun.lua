@@ -405,9 +405,9 @@ for _, tab in ipairs ({
 		//to be a relic because they were also split into separate active and inactive models.
 		//the really odd part about this, though, is that in TF2, these skin overrides don't work at all?? some of these hats like the 
 		//soldier one have team-colored bits that use the standard skin 0 for red and skin 1 for blu, and if the skin overrides from the 
-		//styles *were* applied, the hat wouldalways be red when active, and always blue when inactive, but when the hats are actually
+		//styles *were* applied, the hat would always be red when active, and always blue when inactive, but when the hats are actually
 		//used by mvm bots in TF2, this isn't the case. (https://steamcommunity.com/sharedfiles/filedetails/?id=198499241). it seems this
-		//was also the same when they were equippable by players for a while. (https://wiki.teamfortress.com/w/images/5/56/Player_wearing_gatebot_hats.png)
+		//was also the case when they were equippable by players for a while. (https://wiki.teamfortress.com/w/images/5/56/Player_wearing_gatebot_hats.png)
 		//get rid of these skin overrides to make the functionality match TF2.
 		i.visuals.styles[0].skin_red = nil
 		i.visuals.styles[0].skin_blu = nil
@@ -2540,7 +2540,7 @@ if CLIENT then
 
 	list.Set("DesktopWindows", "TF2ItemBrowser", {
 		title		= "TF2 Items", //"TF2 Item Browser" is just ever-so-slightly too long to fit in the desktop icon's label, hrmph
-		icon		= "games/16/tf.png", //TODO: temp, make one that's the correct size later
+		icon		= "vgui/tf2itembrowser_logo.png",
 		width		= 924,
 		height		= 691,
 		onewindow	= true,
@@ -2561,7 +2561,7 @@ if CLIENT then
 
 		local editor = g_ContextMenu:Add("TF2ItemBrowser_Editor")
 		TF2ItemBrowser_Editor = editor
-		editor:SetSize(924,720) //TODO: finalize later
+		editor:SetSize(924,720)
 		editor:Center()
 		editor:OpenEditor(id)
 	end
@@ -2570,7 +2570,7 @@ end
 properties.Add("tf2itembrowser_select", {
 	MenuLabel = "Select with TF2 Item Browser",
 	Order = 1,
-	MenuIcon = "games/16/tf.png",
+	MenuIcon = "vgui/tf2itembrowser_logo_16_alt3.png", //the regular tf2itembrowser icon is incomprehensible at a 16px scale; use a tan tf logo instead
 	AppendSpacer = true, //doesn't work, lame
 	
 	Filter = function(self, ent, ply)
@@ -3436,7 +3436,7 @@ if SERVER then
 			local e = net.ReadEntity()
 			if !IsValid(e) or e:GetParent() != ent or e:IsPlayer() then return end
 			if !hook.Run("CanTool", ply, {Entity = e}, "remover", ply:GetTool("remover"), 1) then return end
-			//TODO: what other hooks should we check to make sure this player is allowed to remove this entity? sandbox doesn't seem to have anything else obvious.
+			//TODO: any other hooks we should check to make sure this player is allowed to remove this entity? sandbox doesn't seem to have anything else obvious.
 
 			//Revert bodygroup changes on the parent entity, and remove submodels
 			TF2ItemBrowser_Item_DoUnequip(nil, e)

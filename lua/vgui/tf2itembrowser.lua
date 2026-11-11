@@ -723,7 +723,7 @@ function PANEL:Init()
 				pnl:Remove()
 			end,
 			"#problems.open_on_workshop", function(pnl)
-				gui.OpenURL("https://steamcommunity.com/sharedfiles/filedetails/?id=3054174781") //TODO: placeholder url, update this to the correct workshop url once uploaded
+				gui.OpenURL("https://steamcommunity.com/sharedfiles/filedetails/?id=3054174781") //TODO: placeholder url, update this to the correct workshop url once uploaded, before releasing
 			end)
 			timer.Simple(0, function() surface.PlaySound("ui/hint.wav") end) //wait until next frame to ensure the sound doesn't get cut off
 		end

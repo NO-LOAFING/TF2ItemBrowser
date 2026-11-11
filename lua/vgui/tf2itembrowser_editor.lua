@@ -680,13 +680,14 @@ function PANEL:OpenEditor(id)
 		for _, style in pairs (editor.styles) do
 			style:UpdateVisibility()
 		end
-		editor.anim:SetEnabled(!not_wep)
-		if !editor.anim:IsEnabled() then editor.anim:ChooseOptionID(1) end
+		//editor.anim:SetEnabled(!not_wep)
+		//if !editor.anim:IsEnabled() then editor.anim:ChooseOptionID(1) end
 		holder:InvalidateLayout(true)
 	end
 
 	//Selector for weapon anim_slot as well as some relevant pose parameters
-	editor.anim = AddDropdown(box, tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation", nil, "anim_slot", {
+	//TODO: revisit this if we add an animation picker to the browser in a later update, currently this isn't used by anything
+	--[[editor.anim = AddDropdown(box, tf.GetPhrase("#TF_ImportFile_AnimationSource") or "Animation", nil, "anim_slot", {
 		{
 			Label = "Use slot default",
 			Load = function(i)
@@ -797,8 +798,8 @@ function PANEL:OpenEditor(id)
 			Label = (tf.GetPhrase("#GameType_Passtime") or "PASS Time") .. " JACK",
 			Value = "passtime_ball"
 		}
-		//TOOD: 357 The Half-Zatoichi uses anim_slot "", what's going on there?
-	})
+		//TODO: 357 The Half-Zatoichi uses anim_slot "", what's going on there? is that what makes it item1 for demo and melee for soldier?
+	})]]
 
 	//Dropdowns for equip region - this creates as many dropdowns as needed, 
 	//adding an empty one to the list when the existing ones are all filled

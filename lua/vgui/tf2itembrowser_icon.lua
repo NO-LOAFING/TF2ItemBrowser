@@ -1448,9 +1448,6 @@ function PANEL:CreateItemModels(data, disable_fallback_model) //data is a separa
 				ent:AddEffects(EF_BONEMERGE)
 				local scl = vis.stat_clock_scale or 1
 				ent:ManipulateBoneScale(ent:LookupBone("c_weapon_stattrack"), Vector(scl,scl,scl))
-				//TODO: *maybe* let players set the number shown by the stat clock? this is a really tiny
-				//detail, and it would need both its own gui and either a bunch of new materials or a whole 
-				//custom matproxy, is this worth the trouble?
 			else
 				ent:SetAngles(Angle(10,130,0))
 				//If we're rendering both the base item and wearables, then reposition wearables above the item
@@ -3624,7 +3621,6 @@ function PANEL:CreateSpawnPanel()
 								icon.RebuildIconTexture()
 							end
 							function icon.DoRightClick()
-								////TODO: either get rid of this or turn it into a proper dropdown-within-dropdown
 								//local menu = DermaMenu()
 
 								//local opt = menu:AddOption("Re-render", function()
@@ -3805,7 +3801,7 @@ function PANEL:CreateSpawnPanel()
 				end
 			end
 		else
-			//Reset random item settings (TODO: are we sure is this what we want? it matches all the other items, but might be worse for usability.)
+			//Reset random item settings
 			self:SetupRandomItemIcon()
 		end
 	end
