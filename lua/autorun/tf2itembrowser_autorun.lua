@@ -160,6 +160,8 @@ function tf.GetDependency(name)
 		return (SERVER and (CreateAdvBonemergeEntity != nil)) or duplicator.FindEntityClass("ent_advbonemerge") != nil //^
 	elseif name == "easybone" then
 		return (SERVER and (rb655_ApplyBonemerge != nil)) or (CLIENT and file.Exists("weapons/gmod_tool/stools/rb655_easy_bonemerge.lua", "LUA")) //^; this addon really has nothing better to check for clientside
+	elseif name == "ubermaterials" then
+		return UberMaterials_Enabled //dumb global value added specifically so this function can look for it
 	end
 
 end

@@ -687,6 +687,9 @@ function PANEL:Init()
 		if !tf.GetDependency("wp") then
 			table.insert(strs, "\"TF2 Warpaint Tool\" addon not found. You won't be able to apply war paints.")
 		end
+		if !tf.GetDependency("ubermaterials") then
+			table.insert(strs, "\"Ubercharge Materials\" addon not found. Uber effects may have visual issues, such as flashing or broken textures.")
+		end
 		if !tf.GetDependency("animprop") then
 			table.insert(strs, "\"Animated Props\" addon not found. You won't be able to animate items like the parachute or jetpack.") //this is, like, four items. is this still worth the warning?
 		end
