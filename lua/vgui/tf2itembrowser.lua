@@ -133,6 +133,7 @@ function PANEL:Init()
 			if IsValid(self) then self:RebuildIconList() end
 		end)
 	end
+	tf.AddTFStyleTooltip(search, "Searches in:\n- display name\n- internal name\n- model names\n- description text\n- classes\n- item slot\n- equip regions\n- style names\n- rarity grade\n- set/collection") //i guess we could localize *some* of these, but it would probably read badly
 
 	local function AddDropdownFilter(label, populatefunc, select_extras)
 		local combo = tf.TFStyleVGUI("DComboBox", filters)

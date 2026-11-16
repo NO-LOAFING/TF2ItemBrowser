@@ -3615,20 +3615,26 @@ function PANEL:CreateSpawnPanel()
 								end})
 								icon:SetMaterial(tf.spinner:GetName())
 							end
-							if file.Exists(iconpath, "DATA") then
-								icon:SetMaterial("data/" .. iconpath)
+							if file.Exists("materials/vgui/" .. iconpath, "GAME") then
+								//addon includes pre-rendered icons for these so that users won't have to render them,
+								//but in case new paintkits are added, they'll be able to render them on their own
+								icon:SetMaterial("materials/vgui/" .. iconpath)
 							else
-								icon.RebuildIconTexture()
-							end
-							function icon.DoRightClick()
-								//local menu = DermaMenu()
-
-								//local opt = menu:AddOption("Re-render", function()
+								if file.Exists(iconpath, "DATA") then
+									icon:SetMaterial("data/" .. iconpath)
+								else
 									icon.RebuildIconTexture()
-								//end)
-								//opt:SetIcon("icon16/picture_save.png")
+								end
+								function icon.DoRightClick()
+									//local menu = DermaMenu()
 
-								//menu:Open()
+									//local opt = menu:AddOption("Re-render", function()
+										icon.RebuildIconTexture()
+									//end)
+									//opt:SetIcon("icon16/picture_save.png")
+
+									//menu:Open()
+								end
 							end
 						end
 					end
@@ -3650,7 +3656,11 @@ function PANEL:CreateSpawnPanel()
 		local h = 0 //gotta do it this way again to make the multiline item text set the correct height
 		h = h + self:AddItemText(name_container, self.itemname, "TF2ItemBrowser_ItemName", tf.rarity_colors[self.rarity] or tf.quality_colors[self.quality])
 		//use additemtext for the help text as well, because pnl won't set its height correctly if a DLabel with SetAutoStretchVertical is docked inside
-		h = h + self:AddItemText(name_container, "\nAll settings here apply to items that support that option - setting paint chance to 100% will paint any random items that are paintable, not filter out items that aren't paintable. For that, use the filter options to the left!", "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
+		local str = "\nAll settings here apply to items that support that option - setting paint chance to 100% will paint any random items that are paintable, not filter out items that aren't paintable. For that, use the filter options to the left!"
+		if IsValid(TF2ItemBrowser:GetEntity()) then
+			str = str .. "\n\nTip: Filter out \"Conflicts with Equipped\" to always generate valid loadouts."
+		end
+		h = h + self:AddItemText(name_container, str, "TF2ItemBrowser_ItemDesc_Smaller", tf.gui_colors.TanLight)
 		name_container:SetHeight(h)
 		name_container:DockMargin(0,0,0,tf.betweencategories)
 
