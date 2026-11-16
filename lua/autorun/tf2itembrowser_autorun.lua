@@ -2571,12 +2571,11 @@ end
 
 properties.Add("tf2itembrowser_select", {
 	MenuLabel = "Select with TF2 Item Browser",
-	Order = 1,
+	Order = 1600,
 	MenuIcon = "vgui/tf2itembrowser_logo_16_alt3.png", //the regular tf2itembrowser icon is incomprehensible at a 16px scale; use a tan tf logo instead
-	AppendSpacer = true, //doesn't work, lame
 	
 	Filter = function(self, ent, ply)
-		if !IsValid(TF2ItemBrowser) or !IsValid(ent) then return false end
+		if !IsValid(ent) then return false end
 		if !tf.GetDependency("advbone") and !tf.GetDependency("easybone") then return false end //if both bonemerge tools are uninstalled, then we can't attach items, so don't let us select an ent to attach items to
 		if !(ent:LookupBone("bip_pelvis") or (IsValid(ent.AttachedEntity) and ent.AttachedEntity:LookupBone("bip_pelvis"))) then return false end //make sure it has the right skeleton to attach tf2 items to
 		if !gamemode.Call("CanProperty", ply, "tf2itembrowser_select", ent) then return false end
@@ -2584,6 +2583,20 @@ properties.Add("tf2itembrowser_select", {
 	end,
 
 	Action = function(self, ent)
+		//Open the browser if it's not open already
+		if !IsValid(TF2ItemBrowser) then
+			for _, icon in ipairs (g_ContextMenu.DesktopWidgets:GetChildren()) do
+				if icon.WidgetClass == "TF2ItemBrowser" then
+					icon.DoClick()
+					break
+				end
+			end
+		end
+		if !IsValid(TF2ItemBrowser) then
+			MsgN("TF2 Item Browser: Couldn't find desktop widget to open browser, this shouldn't happen!")
+			return
+		end
+
 		TF2ItemBrowser:SetEntity(ent)
 	end
 })
